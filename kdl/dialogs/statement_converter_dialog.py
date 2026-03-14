@@ -7,7 +7,7 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
     QWidget, QLineEdit, QFileDialog, QTextEdit, QMessageBox,
-    QGroupBox, QSizePolicy, QCheckBox
+    QGroupBox, QCheckBox, QGridLayout
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from kdl.styles import dialog_qss, accent_button_qss
@@ -178,12 +178,11 @@ class StatementConverterDialog(QDialog):
         sel_row.addStretch()
         sheet_outer.addLayout(sel_row)
 
-        # Checkbox area — all sheets visible, no scroll
+        # Checkbox area — 3-column grid, all sheets visible
         self._sheet_check_container = QWidget()
-        self._sheet_check_layout = QVBoxLayout(self._sheet_check_container)
-        self._sheet_check_layout.setSpacing(2)
+        self._sheet_check_layout = QGridLayout(self._sheet_check_container)
+        self._sheet_check_layout.setSpacing(4)
         self._sheet_check_layout.setContentsMargins(4, 2, 4, 2)
-        self._sheet_check_layout.addStretch()
         sheet_outer.addWidget(self._sheet_check_container)
         layout.addWidget(sheet_group)
 
@@ -215,7 +214,7 @@ class StatementConverterDialog(QDialog):
         result_layout = QVBoxLayout(result_group)
         self._result_text = QTextEdit()
         self._result_text.setReadOnly(True)
-        self._result_text.setFixedHeight(160)
+        self._result_text.setFixedHeight(110)
         self._result_text.setPlaceholderText('Conversion summary will appear here...')
         result_layout.addWidget(self._result_text)
         layout.addWidget(result_group)
@@ -264,17 +263,16 @@ class StatementConverterDialog(QDialog):
         try:
             import openpyxl
             wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
-            # Insert new checkboxes before the trailing stretch
-            stretch_item = self._sheet_check_layout.takeAt(
-                self._sheet_check_layout.count() - 1
-            )
-            for name in wb.sheetnames:
+            COLS = 3
+            for i, name in enumerate(wb.sheetnames):
+                row, col = divmod(i, COLS)
                 cb = QCheckBox(name)
-                cb.setChecked(True)
+                # Auto-uncheck generated output sheets
+                is_generated = (name == 'Output' or name.startswith('Audit_'))
+                cb.setChecked(not is_generated)
                 cb.stateChanged.connect(self._update_convert_btn)
-                self._sheet_check_layout.addWidget(cb)
+                self._sheet_check_layout.addWidget(cb, row, col)
                 self._sheet_checks.append(cb)
-            self._sheet_check_layout.addStretch()
             wb.close()
             self._update_convert_btn()
         except Exception as exc:

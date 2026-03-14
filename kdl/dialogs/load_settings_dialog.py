@@ -28,18 +28,18 @@ APP_TYPES = [
 
 # End-of-row actions for Form Mode
 END_OF_ROW_ACTIONS = [
-    ("None (Do Nothing)", "none"),
+    ("None", "none"),
     ("Next Row (Down Arrow)", "new_record"),
-    ("Next Row + Auto Save (Down Arrow + Ctrl+S every N rows)", "new_record_save_n"),
+    ("Next Row + Auto Save (Ctrl+S every N rows)", "new_record_save_n"),
     ("Tab to Next Field", "tab"),
     ("Press Enter", "enter"),
-    ("Save & Proceed (Ctrl+S then Down Arrow)", "save_proceed"),
+    ("Save & Proceed (Ctrl+S + Down Arrow)", "save_proceed"),
 ]
 
 LOAD_MODES = [
-    ("Per Cell - one cell at a time (manual Tab/Enter in data)", "per_cell"),
-    ("Per Row - auto-Tab between fields, action after each row", "per_row"),
-    ("Per Row Paste - copy row and paste once (testing)", "per_row_paste"),
+    ("Per Cell - one cell at a time", "per_cell"),
+    ("Per Row - auto-Tab, end-of-row action", "per_row"),
+    ("Per Row Paste - paste entire row (testing)", "per_row_paste"),
 ]
 
 
@@ -156,7 +156,7 @@ class LoadSettingsDialog(QDialog):
         self.save_interval_input.setFixedHeight(24)
         self.save_interval_input.setAlignment(Qt.AlignCenter)
         save_int_row.addWidget(self.save_interval_input)
-        self._save_int_suffix = QLabel("rows  (also saves automatically at the last row)")
+        self._save_int_suffix = QLabel("rows  (+ auto-save on last row)")
         save_int_row.addWidget(self._save_int_suffix)
         save_int_row.addStretch()
         mg.addLayout(save_int_row)
@@ -278,7 +278,7 @@ class LoadSettingsDialog(QDialog):
         self.setMaximumSize(max_w, max_h)
         hint = self.sizeHint()
         target_w = min(max(self.minimumWidth(), hint.width()), max_w)
-        target_h = min(max(320, hint.height()), max_h)
+        target_h = min(max(260, hint.height()), max_h)
         self.resize(target_w, target_h)
 
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
