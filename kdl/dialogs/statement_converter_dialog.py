@@ -142,6 +142,21 @@ class StatementConverterDialog(QDialog):
         self._build_ui()
         self._fit_to_screen()
 
+    def _release_worker(self):
+        worker = self._worker
+        self._worker = None
+        if worker is None:
+            return
+        try:
+            if worker.isRunning():
+                worker.wait()
+        except Exception:
+            pass
+        try:
+            worker.deleteLater()
+        except Exception:
+            pass
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -321,6 +336,8 @@ class StatementConverterDialog(QDialog):
         if result.success and self._worker is not None:
             self._wb = self._worker.wb
 
+        self._release_worker()
+
         self._result_text.setPlainText(result.message)
         if result.success:
             self._load_grid_btn.setEnabled(bool(result.output_data))
@@ -329,6 +346,7 @@ class StatementConverterDialog(QDialog):
             )
 
     def _on_error(self, msg: str):
+        self._release_worker()
         self._convert_btn.setEnabled(True)
         self._convert_btn.setText('  Convert  ')
         self._result_text.setPlainText(f'ERROR:\n{msg}')
@@ -373,6 +391,18 @@ class StatementConverterDialog(QDialog):
 
         self.load_into_grid.emit(self._result.output_data)
         self.accept()
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.warning(
+                self,
+                'Conversion In Progress',
+                'Wait for the conversion to finish before closing this window.'
+            )
+            event.ignore()
+            return
+        self._release_worker()
+        super().closeEvent(event)
 
     # ── Fit to screen ──────────────────────────────────────
 
