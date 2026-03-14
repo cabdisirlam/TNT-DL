@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QLabel, QProgressBar, QComboBox, QApplication, QFrame,
     QDialog, QDialogButtonBox, QCheckBox, QLineEdit, QPushButton,
     QGridLayout, QListView, QStyle, QToolButton, QInputDialog,
-    QSplitter, QTableWidgetItem
+    QSplitter, QTableWidgetItem, QRadioButton, QButtonGroup, QSpinBox
 )
 from PySide6.QtCore import Qt, QSize, QTimer, Signal
 from PySide6.QtGui import QAction, QFont, QKeySequence, QColor, QIcon, QGuiApplication, QCloseEvent
@@ -276,6 +276,10 @@ class MainWindow(QMainWindow):
         self._deferred_load_result = None
         self._load_overlay = LoadProgressOverlay()
         self._window_refresh_inflight = False
+        self._last_load_settings: dict = {}
+        self._last_started_row: int = -1
+        self._load_row_results: dict = {}
+        self._freeze_header_enabled: bool = False
         self._apply_saved_settings()
 
         # Build UI
@@ -583,6 +587,16 @@ class MainWindow(QMainWindow):
         find_next_action.triggered.connect(self._find_next_in_sheet)
         edit_menu.addAction(find_next_action)
 
+        replace_action = QAction("&Replace...", self)
+        replace_action.setShortcut(QKeySequence("Ctrl+H"))
+        replace_action.triggered.connect(self._find_replace_in_sheet)
+        edit_menu.addAction(replace_action)
+
+        fill_down_action = QAction("Fill &Down", self)
+        fill_down_action.setShortcut(QKeySequence("Ctrl+D"))
+        fill_down_action.triggered.connect(lambda: self.spreadsheet.fill_down())
+        edit_menu.addAction(fill_down_action)
+
         edit_menu.addSeparator()
 
         clear_action = QAction("Clear &All", self)
@@ -698,6 +712,12 @@ class MainWindow(QMainWindow):
         self.dark_mode_action.triggered.connect(self._toggle_dark_mode)
         view_menu.addAction(self.dark_mode_action)
 
+        self.freeze_header_action = QAction('&Freeze Header Row (Row 1)', self)
+        self.freeze_header_action.setCheckable(True)
+        self.freeze_header_action.setChecked(False)
+        self.freeze_header_action.triggered.connect(self._toggle_freeze_header)
+        view_menu.addAction(self.freeze_header_action)
+
         # â”€â”€ Help Menu â”€â”€
         help_menu = menubar.addMenu('&Help')
 
@@ -796,6 +816,10 @@ class MainWindow(QMainWindow):
         self.tb_forward_btn = QAction(self._icon("ic_forward.svg"), "Forward", self, triggered=self._go_forward_position)
         self.tb_forward_btn.setToolTip("Forward  (Alt+Right)")
         toolbar.addAction(self.tb_forward_btn)
+
+        self.tb_clear_btn = QAction(self._icon("ic_clear.svg"), "Clear All", self, triggered=self._clear_all)
+        self.tb_clear_btn.setToolTip("Clear All  (clear entire grid)")
+        toolbar.addAction(self.tb_clear_btn)
 
         toolbar.addSeparator()
 
@@ -1115,6 +1139,105 @@ class MainWindow(QMainWindow):
         self.status_label.setText(
             f"Find: '{query}' at R{row + 1} C{col + 1} ({scope_label})."
         )
+
+    def _find_replace_in_sheet(self):
+        """Open a Find & Replace dialog."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Find & Replace")
+        dlg.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        dlg.setMinimumWidth(380)
+
+        from kdl.styles import dialog_qss
+        from kdl.config_store import get_dark_mode
+        dlg.setStyleSheet(dialog_qss(dark=get_dark_mode()))
+
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(8)
+
+        grid = QGridLayout()
+        grid.addWidget(QLabel("Find:"), 0, 0)
+        find_edit = QLineEdit(self._find_query or "")
+        grid.addWidget(find_edit, 0, 1)
+        grid.addWidget(QLabel("Replace with:"), 1, 0)
+        replace_edit = QLineEdit()
+        grid.addWidget(replace_edit, 1, 1)
+        grid.addWidget(QLabel("Search in:"), 2, 0)
+        scope_combo = QComboBox()
+        scope_combo.addItems(["All cells", "Current row", "Current column"])
+        scope_map = {"all": 0, "row": 1, "column": 2}
+        scope_combo.setCurrentIndex(scope_map.get(self._find_scope or "all", 0))
+        grid.addWidget(scope_combo, 2, 1)
+        layout.addLayout(grid)
+
+        btn_row = QHBoxLayout()
+        find_next_btn = QPushButton("Find Next")
+        replace_btn = QPushButton("Replace")
+        replace_all_btn = QPushButton("Replace All")
+        close_btn = QPushButton("Close")
+        btn_row.addWidget(find_next_btn)
+        btn_row.addWidget(replace_btn)
+        btn_row.addWidget(replace_all_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        result_label = QLabel("")
+        result_label.setWordWrap(True)
+        layout.addWidget(result_label)
+
+        idx_to_scope = {0: "all", 1: "row", 2: "column"}
+
+        def _scope():
+            return idx_to_scope.get(scope_combo.currentIndex(), "all")
+
+        def _find_next():
+            q = find_edit.text().strip()
+            if not q:
+                result_label.setText("Enter text to find.")
+                return
+            self._find_query = q
+            self._find_scope = _scope()
+            match = self.spreadsheet.find_next_match(q, self._find_scope)
+            if match is None:
+                result_label.setText(f"'{q}' not found.")
+            else:
+                result_label.setText(f"Found at R{match[0]+1} C{match[1]+1}.")
+
+        def _replace_one():
+            q = find_edit.text().strip()
+            r = replace_edit.text()
+            if not q:
+                result_label.setText("Enter text to find.")
+                return
+            self._find_query = q
+            self._find_scope = _scope()
+            # Replace only in current cell if it matches, then advance
+            row = self.spreadsheet.currentRow()
+            col = self.spreadsheet.currentColumn()
+            item = self.spreadsheet.item(row, col)
+            if item and q.casefold() in item.text().casefold():
+                import re as _re
+                new_text = _re.sub(_re.escape(q), r, item.text(), flags=_re.IGNORECASE)
+                item.setText(new_text)
+                result_label.setText("Replaced 1 occurrence.")
+            _find_next()
+
+        def _replace_all():
+            q = find_edit.text().strip()
+            r = replace_edit.text()
+            if not q:
+                result_label.setText("Enter text to find.")
+                return
+            self._find_query = q
+            self._find_scope = _scope()
+            count = self.spreadsheet.replace_in_cells(q, r, self._find_scope)
+            result_label.setText(f"Replaced {count} occurrence(s).")
+
+        find_next_btn.clicked.connect(_find_next)
+        replace_btn.clicked.connect(_replace_one)
+        replace_all_btn.clicked.connect(_replace_all)
+        close_btn.clicked.connect(dlg.accept)
+        dlg.exec()
 
     def _icon_for_command_group(self, group_name: str) -> QIcon:
         name = (group_name or "").lower()
@@ -1825,6 +1948,9 @@ class MainWindow(QMainWindow):
 
     def _execute_load(self, settings: dict):
         """Execute the data load with given settings."""
+        self._last_load_settings = dict(settings)
+        self._load_row_results = {}
+        self._last_started_row = -1
         grid_data = self.spreadsheet.get_grid_data()
 
         # Keep latest settings as defaults for next Start popup.
@@ -2053,12 +2179,14 @@ class MainWindow(QMainWindow):
         current = max(0, int(current))
         total = max(0, int(total))
         if total > 0:
-            self.progress_bar.setRange(0, total)
+            if self.progress_bar.maximum() != total:
+                self.progress_bar.setRange(0, total)
             shown = min(current, total)
             self.progress_bar.setValue(shown)
             self.progress_bar.setFormat(f"{shown}/{total} (%p%)")
         else:
-            self.progress_bar.setRange(0, 0)
+            if self.progress_bar.maximum() != 0:
+                self.progress_bar.setRange(0, 0)
             self.progress_bar.setFormat("Loading...")
         # Extract ETA from message and show in dedicated label
         eta_text = ""
@@ -2076,6 +2204,11 @@ class MainWindow(QMainWindow):
         self._load_overlay.update_rows(overlay_current, self._overlay_total_rows)
 
     def _on_cell_processed(self, row, col, success):
+        # Track per-row result for status coloring
+        if not success:
+            self._load_row_results[row] = False
+        elif row not in self._load_row_results:
+            self._load_row_results[row] = True
         self._load_visual_cells_seen += 1
         update_visuals = (
             not self._load_visual_compact
@@ -2106,6 +2239,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_row_started(self, row):
+        self._last_started_row = row
         should_highlight_row = (
             not self._load_visual_compact
             or row == self._overlay_start_row
@@ -2188,10 +2322,20 @@ class MainWindow(QMainWindow):
         success, message = self._deferred_load_result
         self._deferred_load_result = None
         self.status_label.setText(message)
+        self._apply_load_row_colors()
         self.showNormal()
         self.raise_()
         self.activateWindow()
         self._show_load_result(success, message)
+
+    def _apply_load_row_colors(self):
+        """Apply green/red row highlights based on per-row load results."""
+        for row, ok in self._load_row_results.items():
+            self.spreadsheet.highlight_row_result(row, ok)
+
+    def _toggle_freeze_header(self, checked: bool):
+        self._freeze_header_enabled = checked
+        self.spreadsheet.set_freeze_header(checked)
 
     def _show_styled_message(self, title: str, message: str, status: str = "info"):
         dialog = LoadResultDialog(title=title, message=message, status=status, parent=self)
@@ -2232,6 +2376,83 @@ class MainWindow(QMainWindow):
             status = "error"
 
         self._show_styled_message(title, text, status)
+
+        # Offer resume after a stopped (non-success) load
+        if not success and self._last_load_settings:
+            QTimer.singleShot(100, self._show_resume_dialog)
+
+    def _show_resume_dialog(self):
+        """Ask user if they want to resume from where the load stopped."""
+        if not self._last_load_settings:
+            return
+
+        grid_data = self.spreadsheet.get_grid_data()
+        total_rows = len(grid_data)
+        last_row = self._last_started_row  # 0-based last row that started
+        stopped_display = last_row + 1 if last_row >= 0 else 1
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Resume Load")
+        dlg.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        dlg.setMinimumWidth(360)
+
+        from kdl.styles import dialog_qss
+        from kdl.config_store import get_dark_mode
+        dlg.setStyleSheet(dialog_qss(dark=get_dark_mode()))
+
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(10)
+
+        lbl = QLabel(f"Load stopped at row {stopped_display}. Where would you like to resume?")
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+
+        btn_group = QButtonGroup(dlg)
+
+        rb_stopped = QRadioButton(f"Continue from row {stopped_display} (last stopped)")
+        rb_stopped.setChecked(True)
+        btn_group.addButton(rb_stopped, 0)
+        layout.addWidget(rb_stopped)
+
+        rb_begin = QRadioButton("Start from beginning (row 1)")
+        btn_group.addButton(rb_begin, 1)
+        layout.addWidget(rb_begin)
+
+        rb_custom = QRadioButton("Choose row:")
+        btn_group.addButton(rb_custom, 2)
+        custom_row = QHBoxLayout()
+        custom_row.addWidget(rb_custom)
+        spin = QSpinBox()
+        spin.setMinimum(1)
+        spin.setMaximum(max(1, total_rows))
+        spin.setValue(stopped_display)
+        spin.setEnabled(False)
+        custom_row.addWidget(spin)
+        custom_row.addStretch()
+        layout.addLayout(custom_row)
+
+        rb_custom.toggled.connect(spin.setEnabled)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        chosen_id = btn_group.checkedId()
+        if chosen_id == 0:
+            from_row = max(0, last_row)
+        elif chosen_id == 1:
+            from_row = 0
+        else:
+            from_row = spin.value() - 1  # convert to 0-based
+
+        settings = dict(self._last_load_settings)
+        settings["from_row"] = from_row
+        settings["range_mode"] = "custom"
+        self._execute_load(settings)
 
     def _apply_toolbar_action_colors(self):
         """Apply high-contrast colours while keeping one consistent toolbar button system."""

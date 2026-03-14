@@ -5,9 +5,9 @@ Lets the user pick an Excel file, choose a sheet, and run the conversion.
 
 import os
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QLineEdit, QFileDialog, QTextEdit, QMessageBox,
-    QGroupBox, QSizePolicy
+    QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+    QListWidget, QAbstractItemView, QLineEdit, QFileDialog, QTextEdit, QMessageBox,
+    QGroupBox, QSizePolicy, QCheckBox
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from kdl.styles import dialog_qss, accent_button_qss
@@ -19,22 +19,22 @@ class _ConverterWorker(QThread):
     finished = Signal(object)   # ConversionResult
     error = Signal(str)
 
-    def __init__(self, filepath: str, sheet_name: str):
+    def __init__(self, filepath: str, sheet_names: list, skip_contra: bool = True):
         super().__init__()
         self.filepath = filepath
-        self.sheet_name = sheet_name
+        self.sheet_names = sheet_names if isinstance(sheet_names, list) else [sheet_names]
+        self.skip_contra = skip_contra
         self.wb = None          # workbook kept alive so the dialog can save it
 
     def run(self):
         tmp_path = None
         try:
             import openpyxl, tempfile
-            from kdl.engine.statement_converter import convert_statement
+            from kdl.engine.statement_converter import (
+                convert_statement, ConversionResult, _get_or_create_sheet, OUTPUT_LAST_COL
+            )
 
             # ── Pre-process via Excel COM ────────────────────────────────
-            # When the xlsx file contains formula-based cells (dates, amounts)
-            # openpyxl data_only=True returns None for stale/missing caches.
-            # Opening through Excel COM forces a full recalculation first.
             load_path = self.filepath
             try:
                 import win32com.client
@@ -48,23 +48,59 @@ class _ConverterWorker(QThread):
                 _app.CalculateFull()
                 _fd, tmp_path = tempfile.mkstemp(suffix='.xlsx')
                 os.close(_fd)
-                os.unlink(tmp_path)          # let Excel create it fresh
-                _wb.SaveAs(tmp_path, 51)     # 51 = xlOpenXMLWorkbook
+                os.unlink(tmp_path)
+                _wb.SaveAs(tmp_path, 51)
                 _wb.Close(False)
                 _app.Quit()
                 load_path = tmp_path
             except Exception:
                 pass  # COM unavailable — fall back to direct openpyxl read
 
-            # ── Convert ─────────────────────────────────────────────────
+            # ── Convert each selected sheet ──────────────────────────────
             wb = openpyxl.load_workbook(load_path, data_only=True)
-            result = convert_statement(wb, self.sheet_name)
+            multi = len(self.sheet_names) > 1
+            all_output_data = []
+            all_messages = []
+            any_success = False
 
-            # Keep the workbook alive — the dialog saves it on "Load into Grid"
-            if result.success:
+            for sheet_name in self.sheet_names:
+                result = convert_statement(wb, sheet_name, skip_contra=self.skip_contra)
+                if result.success:
+                    any_success = True
+                    all_output_data.extend(result.output_data)
+                    prefix = f'[{sheet_name}]\n' if multi else ''
+                    all_messages.append(f'{prefix}{result.message}')
+                    # Rename Audit_Skipped so the next sheet doesn't overwrite it
+                    if multi and 'Audit_Skipped' in wb.sheetnames:
+                        safe = ('Audit_' + sheet_name)[:31]
+                        # avoid duplicate sheet names
+                        if safe in wb.sheetnames:
+                            wb.remove(wb[safe])
+                        wb['Audit_Skipped'].title = safe
+                else:
+                    prefix = f'[{sheet_name}] FAILED\n' if multi else 'FAILED\n'
+                    all_messages.append(f'{prefix}{result.message}')
+
+            # ── Rebuild combined Output sheet when multi-sheet ────────────
+            if any_success and multi and all_output_data:
+                ws_out = _get_or_create_sheet(wb, 'Output')
+                for i, row_vals in enumerate(all_output_data):
+                    for c, val in enumerate(row_vals, 1):
+                        ws_out.cell(row=i + 2, column=c, value=val)
+
+            sep = '\n\n' + '─' * 40 + '\n\n' if multi else ''
+            combined_msg = sep.join(all_messages)
+
+            combined = ConversionResult(
+                success=any_success,
+                message=combined_msg,
+                output_data=all_output_data,
+            )
+
+            if any_success:
                 self.wb = wb
 
-            self.finished.emit(result)
+            self.finished.emit(combined)
         except Exception as exc:
             self.error.emit(str(exc))
         finally:
@@ -115,13 +151,39 @@ class StatementConverterDialog(QDialog):
         layout.addWidget(file_group)
 
         # ── Sheet picker ──
-        sheet_group = QGroupBox('Sheet / Tab')
-        sheet_layout = QHBoxLayout(sheet_group)
-        self._sheet_combo = QComboBox()
-        self._sheet_combo.setEnabled(False)
-        self._sheet_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        sheet_layout.addWidget(self._sheet_combo)
+        sheet_group = QGroupBox('Sheet / Tab  (Ctrl+click or Shift+click to select multiple)')
+        sheet_outer = QVBoxLayout(sheet_group)
+        sheet_row = QHBoxLayout()
+        self._sheet_list = QListWidget()
+        self._sheet_list.setEnabled(False)
+        self._sheet_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self._sheet_list.setMaximumHeight(110)
+        sheet_row.addWidget(self._sheet_list)
+        sel_col = QVBoxLayout()
+        sel_all_btn = QPushButton('All')
+        sel_all_btn.setFixedWidth(48)
+        sel_all_btn.clicked.connect(self._sheet_list.selectAll)
+        sel_none_btn = QPushButton('None')
+        sel_none_btn.setFixedWidth(48)
+        sel_none_btn.clicked.connect(self._sheet_list.clearSelection)
+        sel_col.addWidget(sel_all_btn)
+        sel_col.addWidget(sel_none_btn)
+        sel_col.addStretch()
+        sheet_row.addLayout(sel_col)
+        sheet_outer.addLayout(sheet_row)
         layout.addWidget(sheet_group)
+
+        # ── Options ──
+        options_group = QGroupBox('Options')
+        options_layout = QVBoxLayout(options_group)
+        self._skip_contra_check = QCheckBox('Skip contra/duplicate matched rows (CONTRA_MATCHED)')
+        self._skip_contra_check.setChecked(True)
+        self._skip_contra_check.setToolTip(
+            'When checked, rows that match as debit/credit pairs on the same reference '
+            'and amount are excluded from output. Uncheck to include all rows.'
+        )
+        options_layout.addWidget(self._skip_contra_check)
+        layout.addWidget(options_group)
 
         # ── Convert button ──
         btn_row = QHBoxLayout()
@@ -174,8 +236,8 @@ class StatementConverterDialog(QDialog):
         self._populate_sheets(path)
 
     def _populate_sheets(self, filepath: str):
-        self._sheet_combo.clear()
-        self._sheet_combo.setEnabled(False)
+        self._sheet_list.clear()
+        self._sheet_list.setEnabled(False)
         self._convert_btn.setEnabled(False)
         self._result = None
         self._wb = None
@@ -184,9 +246,10 @@ class StatementConverterDialog(QDialog):
             import openpyxl
             wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
             for name in wb.sheetnames:
-                self._sheet_combo.addItem(name)
+                self._sheet_list.addItem(name)
             wb.close()
-            self._sheet_combo.setEnabled(True)
+            self._sheet_list.setEnabled(True)
+            self._sheet_list.selectAll()
             self._convert_btn.setEnabled(True)
         except Exception as exc:
             QMessageBox.warning(self, 'File Error', f'Could not open file:\n{exc}')
@@ -195,8 +258,8 @@ class StatementConverterDialog(QDialog):
 
     def _run_conversion(self):
         filepath = self._file_edit.text().strip()
-        sheet_name = self._sheet_combo.currentText()
-        if not filepath or not sheet_name:
+        selected = [item.text() for item in self._sheet_list.selectedItems()]
+        if not filepath or not selected:
             return
 
         self._convert_btn.setEnabled(False)
@@ -206,7 +269,7 @@ class StatementConverterDialog(QDialog):
         self._result = None
         self._wb = None
 
-        self._worker = _ConverterWorker(filepath, sheet_name)
+        self._worker = _ConverterWorker(filepath, selected, skip_contra=self._skip_contra_check.isChecked())
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.start()
@@ -242,20 +305,30 @@ class StatementConverterDialog(QDialog):
         # Save Output + Audit_Skipped back to the Excel file
         if self._wb is not None:
             filepath = self._file_edit.text().strip()
+            saved_name = None
             try:
                 self._wb.save(filepath)
                 saved_name = os.path.basename(filepath)
             except PermissionError:
-                base, ext = os.path.splitext(filepath)
-                alt = base + '_converted' + (ext or '.xlsx')
-                self._wb.save(alt)
-                saved_name = os.path.basename(alt)
+                # File is open in Excel — save & close it via COM, then write output
+                try:
+                    import win32com.client
+                    abs_path = os.path.abspath(filepath)
+                    xl = win32com.client.GetActiveObject("Excel.Application")
+                    for wb_com in list(xl.Workbooks):
+                        if os.path.abspath(wb_com.FullName).lower() == abs_path.lower():
+                            wb_com.Save()
+                            wb_com.Close(SaveChanges=False)
+                            break
+                except Exception:
+                    pass
+                try:
+                    self._wb.save(filepath)
+                    saved_name = os.path.basename(filepath)
+                except Exception as exc:
+                    self._result_text.append(f'\nSave failed: {exc}')
             except Exception as exc:
-                QMessageBox.warning(
-                    self, 'Save Warning',
-                    f'Could not save to Excel:\n{exc}\n\nGrid will still be loaded.'
-                )
-                saved_name = None
+                self._result_text.append(f'\nSave failed: {exc}')
 
             if saved_name:
                 self._result_text.append(f'Saved to: {saved_name}')

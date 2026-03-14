@@ -147,6 +147,7 @@ class SpreadsheetWidget(QTableWidget):
         self._nav_forward_stack: List[Tuple[int, int]] = []
         self._nav_internal = False
         self._shift_anchor: Optional[Tuple[int, int]] = None
+        self._freeze_header: bool = False
 
         # Initialize grid
         self.setRowCount(self.DEFAULT_ROWS)
@@ -225,6 +226,8 @@ class SpreadsheetWidget(QTableWidget):
             self._push_undo_snapshot(self._last_snapshot)
             self._redo_stack.clear()
             self._last_snapshot = self._capture_snapshot_incremental()
+            if self._freeze_header and row == 0:
+                self._refresh_freeze_header()
 
         if not self._history_restoring:
             self.data_changed.emit()
@@ -844,6 +847,10 @@ class SpreadsheetWidget(QTableWidget):
         clear_action.triggered.connect(self._clear_selection)
         menu.addAction(clear_action)
 
+        fill_down_action = QAction("Fill Down  (Ctrl+D)", self)
+        fill_down_action.triggered.connect(self.fill_down)
+        menu.addAction(fill_down_action)
+
         # Key column toggle
         col = self.currentColumn()
         menu.addSeparator()
@@ -1231,6 +1238,9 @@ class SpreadsheetWidget(QTableWidget):
         if event.key() == Qt.Key_Delete:
             self._clear_selection()
             return
+        if event.modifiers() & Qt.ControlModifier and event.key() == Qt.Key_D:
+            self.fill_down()
+            return
         if event.key() in (Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
             self._shift_anchor = None
         super().keyPressEvent(event)
@@ -1410,3 +1420,111 @@ class SpreadsheetWidget(QTableWidget):
                     self.scrollTo(self.model().index(row, col))
                 return row, col
         return None
+
+    def replace_in_cells(self, query: str, replacement: str, scope: str = "all") -> int:
+        """Replace all occurrences of query with replacement. Returns count replaced."""
+        import re as _re
+        term = (query or "").strip()
+        if not term:
+            return 0
+        positions = self._search_positions(scope)
+        needle = term.casefold()
+        count = 0
+        self._begin_history_action()
+        self.blockSignals(True)
+        try:
+            for row, col in positions:
+                item = self.item(row, col)
+                if item is None:
+                    continue
+                text = item.text()
+                if needle in text.casefold():
+                    new_text = _re.sub(_re.escape(term), replacement, text, flags=_re.IGNORECASE)
+                    item.setText(new_text)
+                    self._apply_cell_style(row, col, item, new_text)
+                    if new_text:
+                        self._cell_cache[(row, col)] = new_text
+                    else:
+                        self._cell_cache.pop((row, col), None)
+                    count += 1
+        finally:
+            self.blockSignals(False)
+        self._end_history_action()
+        if count:
+            self.data_changed.emit()
+        return count
+
+    def fill_down(self):
+        """Fill the top row of the selection down through the selected range."""
+        selected = self.selectedRanges()
+        if not selected:
+            return
+        r = selected[0]
+        top_row = r.topRow()
+        bottom_row = r.bottomRow()
+        left_col = r.leftColumn()
+        right_col = r.rightColumn()
+        if top_row == bottom_row:
+            return
+        self._begin_history_action()
+        self.blockSignals(True)
+        try:
+            for col in range(left_col, right_col + 1):
+                source_item = self.item(top_row, col)
+                source_text = source_item.text() if source_item else ""
+                for row in range(top_row + 1, bottom_row + 1):
+                    item = self.item(row, col)
+                    if item is None:
+                        item = QTableWidgetItem()
+                        self.setItem(row, col, item)
+                    item.setText(source_text)
+                    self._apply_cell_style(row, col, item, source_text)
+                    if source_text:
+                        self._cell_cache[(row, col)] = source_text
+                    else:
+                        self._cell_cache.pop((row, col), None)
+        finally:
+            self.blockSignals(False)
+        self._end_history_action()
+        self.data_changed.emit()
+
+    # ── Freeze Header Row ──────────────────────────────────
+
+    def set_freeze_header(self, enabled: bool):
+        """When True, use row 0 cell values as column header labels."""
+        self._freeze_header = enabled
+        if enabled:
+            self._refresh_freeze_header()
+        else:
+            self._update_headers()
+
+    def _refresh_freeze_header(self):
+        if not self._freeze_header:
+            return
+        labels = []
+        for col in range(self.columnCount()):
+            item = self.item(0, col)
+            label = item.text().strip() if item else ""
+            labels.append(label if label else self._column_label(col))
+        self.setHorizontalHeaderLabels(labels)
+
+    # ── Row Result Coloring ────────────────────────────────
+
+    def highlight_row_result(self, row: int, success: bool):
+        """Color row green (success) or red (error) after a load."""
+        from kdl.config_store import get_dark_mode
+        dark = get_dark_mode()
+        if success:
+            color = QColor("#1B4332") if dark else QColor("#D4EDDA")
+        else:
+            color = QColor("#4A1919") if dark else QColor("#F8D7DA")
+        for col in range(self.columnCount()):
+            item = self.item(row, col)
+            if item is None:
+                item = QTableWidgetItem()
+                self.setItem(row, col, item)
+            item.setBackground(color)
+
+    def clear_row_results(self):
+        """Remove all row result highlights."""
+        self._refresh_highlighting()

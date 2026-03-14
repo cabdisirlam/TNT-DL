@@ -327,7 +327,7 @@ def _get_or_create_sheet(wb: Workbook, name: str) -> Worksheet:
 
 # ── Main converter ─────────────────────────────────────────
 
-def convert_statement(wb: Workbook, sheet_name: str) -> ConversionResult:
+def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -> ConversionResult:
     """
     Run the full conversion on wb[sheet_name].
     Writes Output and Audit_Skipped sheets into wb.
@@ -391,32 +391,33 @@ def convert_statement(wb: Workbook, sheet_name: str) -> ConversionResult:
                 closing_bal_stmt = v
                 break
 
-    # 6) Contra matching
+    # 6) Contra matching (only when skip_contra=True)
     skip_row: Dict[int, str] = {}
-    deb_map: Dict[str, List[int]] = {}
-    cr_map: Dict[str, List[int]] = {}
+    if skip_contra:
+        deb_map: Dict[str, List[int]] = {}
+        cr_map: Dict[str, List[int]] = {}
 
-    for r in range(data_start, last_row + 1):
-        details = str(ws.cell(row=r, column=col_details).value or '')
-        ref10 = _extract_doc_no_10(details)
-        if not ref10:
-            continue
-        d = _safe_double(ws.cell(row=r, column=col_debit).value)
-        c = _safe_double(ws.cell(row=r, column=col_credit).value)
-        key = f'{ref10}|{amt:.2f}' if (amt := max(d, c)) > 0 else ''
-        if not key:
-            continue
-        if d > 0 and c == 0:
-            deb_map.setdefault(key, []).append(r)
-        elif c > 0 and d == 0:
-            cr_map.setdefault(key, []).append(r)
+        for r in range(data_start, last_row + 1):
+            details = str(ws.cell(row=r, column=col_details).value or '')
+            ref10 = _extract_doc_no_10(details)
+            if not ref10:
+                continue
+            d = _safe_double(ws.cell(row=r, column=col_debit).value)
+            c = _safe_double(ws.cell(row=r, column=col_credit).value)
+            key = f'{ref10}|{amt:.2f}' if (amt := max(d, c)) > 0 else ''
+            if not key:
+                continue
+            if d > 0 and c == 0:
+                deb_map.setdefault(key, []).append(r)
+            elif c > 0 and d == 0:
+                cr_map.setdefault(key, []).append(r)
 
-    for key in deb_map:
-        if key in cr_map:
-            pairs = min(len(deb_map[key]), len(cr_map[key]))
-            for i in range(pairs):
-                skip_row[deb_map[key][i]] = 'CONTRA_MATCHED_DETAILS10_AMOUNT'
-                skip_row[cr_map[key][i]] = 'CONTRA_MATCHED_DETAILS10_AMOUNT'
+        for key in deb_map:
+            if key in cr_map:
+                pairs = min(len(deb_map[key]), len(cr_map[key]))
+                for i in range(pairs):
+                    skip_row[deb_map[key][i]] = 'CONTRA_MATCHED_DETAILS10_AMOUNT'
+                    skip_row[cr_map[key][i]] = 'CONTRA_MATCHED_DETAILS10_AMOUNT'
 
     # 7) Build output
     receipts = []

@@ -408,30 +408,7 @@ class MacroRecorderDialog(QDialog):
             return self._mouse_macro_text
         if not self._tokens:
             return ""
-
-        compressed = []
-        i = 0
-        while i < len(self._tokens):
-            token = self._tokens[i]
-            brace_match = re.fullmatch(r"\{([A-Z0-9]+)\}", token)
-            if brace_match:
-                key_name = brace_match.group(1)
-                count = 1
-                j = i + 1
-                while j < len(self._tokens) and self._tokens[j] == token:
-                    count += 1
-                    j += 1
-                if count > 1:
-                    compressed.append(f"{{{key_name} {count}}}")
-                else:
-                    compressed.append(token)
-                i = j
-                continue
-
-            compressed.append(token)
-            i += 1
-
-        return "\\" + "".join(compressed)
+        return "\\" + "".join(self._tokens)
 
     def _append_token_ui(self, token: str):
         self._tokens.append(token)
