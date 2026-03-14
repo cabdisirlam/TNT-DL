@@ -61,7 +61,8 @@ class LoadSettingsDialog(QDialog):
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
-        self.setStyleSheet(dialog_qss())
+        from kdl.config_store import get_dark_mode
+        self.setStyleSheet(dialog_qss(dark=get_dark_mode()))
         self._build_ui()
         self._refresh_windows()
         self._fit_to_screen()
@@ -245,7 +246,8 @@ class LoadSettingsDialog(QDialog):
         start_btn = QPushButton("  Start  ")
         start_btn.setDefault(True)
         start_btn.setFixedHeight(32)
-        start_btn.setStyleSheet(accent_button_qss())
+        from kdl.config_store import get_dark_mode
+        start_btn.setStyleSheet(accent_button_qss(dark=get_dark_mode()))
         start_btn.clicked.connect(self._start_loading)
         btn_row.addWidget(start_btn)
 

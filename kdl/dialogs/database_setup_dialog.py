@@ -35,7 +35,8 @@ class DatabaseSetupDialog(QDialog):
         self._active_profile = db.get("active_profile", "")
         self._mode = "ui_automation"
 
-        self.setStyleSheet(dialog_qss())
+        from kdl.config_store import get_dark_mode
+        self.setStyleSheet(dialog_qss(dark=get_dark_mode()))
         self._build_ui()
         self._load_profiles_to_combo()
         self._load_mode()

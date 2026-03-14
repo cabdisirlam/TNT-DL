@@ -121,6 +121,18 @@ def _decrypt_password(enc_pwd: str) -> str:
     return enc_pwd
 
 
+def get_dark_mode() -> bool:
+    """Return True if dark mode is enabled."""
+    return bool(load_settings().get("dark_mode", False))
+
+
+def set_dark_mode(value: bool) -> bool:
+    """Persist dark mode preference. Returns True on success."""
+    data = load_settings()
+    data["dark_mode"] = bool(value)
+    return save_settings(data)
+
+
 def load_settings() -> Dict[str, Any]:
     path = _settings_read_path()
     if not os.path.exists(path):

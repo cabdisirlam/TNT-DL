@@ -25,7 +25,8 @@ class ShortcutsDialog(QDialog):
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
         self.shortcuts = dict(shortcuts or DEFAULT_SHORTCUTS)
-        self.setStyleSheet(dialog_qss())
+        from kdl.config_store import get_dark_mode
+        self.setStyleSheet(dialog_qss(dark=get_dark_mode()))
         self._build_ui()
         self._populate()
         self._fit_to_screen()
@@ -73,7 +74,8 @@ class ShortcutsDialog(QDialog):
         btn_layout.addWidget(cancel_btn)
 
         save_btn = QPushButton("Save")
-        save_btn.setStyleSheet(accent_button_qss())
+        from kdl.config_store import get_dark_mode
+        save_btn.setStyleSheet(accent_button_qss(dark=get_dark_mode()))
         save_btn.clicked.connect(self._save)
         btn_layout.addWidget(save_btn)
 

@@ -592,6 +592,12 @@ class MainWindow(QMainWindow):
         # â”€â”€ Tools Menu â”€â”€
         tools_menu = menubar.addMenu("&Tools")
 
+        stmt_conv_action = QAction("Bank &Statement Converter...", self)
+        stmt_conv_action.triggered.connect(self._open_statement_converter)
+        tools_menu.addAction(stmt_conv_action)
+
+        tools_menu.addSeparator()
+
         start_load_action = QAction("&Start Load", self)
         start_load_action.setShortcut(QKeySequence("F5"))
         start_load_action.triggered.connect(self._start_loading)
@@ -683,8 +689,17 @@ class MainWindow(QMainWindow):
         clear_keys_action.triggered.connect(self._clear_key_columns)
         key_menu.addAction(clear_keys_action)
 
+        # -- View Menu --
+        view_menu = menubar.addMenu('&View')
+        self.dark_mode_action = QAction('&Dark Mode', self)
+        self.dark_mode_action.setCheckable(True)
+        from kdl.config_store import get_dark_mode
+        self.dark_mode_action.setChecked(get_dark_mode())
+        self.dark_mode_action.triggered.connect(self._toggle_dark_mode)
+        view_menu.addAction(self.dark_mode_action)
+
         # â”€â”€ Help Menu â”€â”€
-        help_menu = menubar.addMenu("&Help")
+        help_menu = menubar.addMenu('&Help')
 
         about_action = QAction("&About NT_DL", self)
         about_action.triggered.connect(self._show_about)
@@ -968,6 +983,11 @@ class MainWindow(QMainWindow):
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setVisible(False)
         self.status_bar.addPermanentWidget(self.progress_bar)
+
+        self.eta_label = QLabel("")
+        self.eta_label.setStyleSheet("font-weight: 600; font-size: 16px; color: #FFFFFF; padding: 0 8px;")
+        self.eta_label.setVisible(False)
+        self.status_bar.addPermanentWidget(self.eta_label)
 
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("font-weight: 600; font-size: 18px; color: #FFFFFF;")
@@ -1490,6 +1510,17 @@ class MainWindow(QMainWindow):
                 self.status_label.setText(f"Database setup saved: {mode_text}, profile '{profile}'")
             else:
                 self.status_label.setText(f"Database setup saved: {mode_text}")
+
+    def _open_statement_converter(self):
+        from kdl.dialogs.statement_converter_dialog import StatementConverterDialog
+        dlg = StatementConverterDialog(self)
+        dlg.load_into_grid.connect(self._load_statement_output_into_grid)
+        dlg.exec()
+
+    def _load_statement_output_into_grid(self, rows: list):
+        if rows:
+            self.spreadsheet.load_from_rows(rows)
+            self.status_label.setText(f"Statement Output loaded: {len(rows)} row(s)")
 
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # File Operations
@@ -2029,6 +2060,16 @@ class MainWindow(QMainWindow):
         else:
             self.progress_bar.setRange(0, 0)
             self.progress_bar.setFormat("Loading...")
+        # Extract ETA from message and show in dedicated label
+        eta_text = ""
+        if "ETA:" in message:
+            try:
+                eta_text = "ETA: " + message.split("ETA:")[1].strip()
+                message = message.split("| ETA:")[0].strip()
+            except Exception:
+                eta_text = ""
+        self.eta_label.setText(eta_text)
+        self.eta_label.setVisible(bool(eta_text))
         self.status_label.setText(message)
         absolute_by_progress = max(0, self._overlay_start_row + current)
         overlay_current = max(absolute_by_progress, self._overlay_active_row_abs)
@@ -2098,6 +2139,8 @@ class MainWindow(QMainWindow):
         self._load_visual_cells_seen = 0
         self._load_overlay.set_rows_marker("")
         self._load_overlay.hide()
+        self.eta_label.setText("")
+        self.eta_label.setVisible(False)
         self.status_label.setText(message)
 
     def _on_loader_thread_finished(self):
@@ -3048,6 +3091,20 @@ class MainWindow(QMainWindow):
 
 
     def _apply_styles(self):
-        """Apply premium dark theme."""
         from kdl.styles import main_window_qss
-        self.setStyleSheet(main_window_qss())
+        from kdl.config_store import get_dark_mode
+        dark = get_dark_mode()
+        self.setStyleSheet(main_window_qss(dark=dark))
+        self._apply_toolbar_action_colors()
+
+    def _toggle_dark_mode(self):
+        from kdl.config_store import get_dark_mode, set_dark_mode
+        from kdl.spreadsheet_widget import apply_spreadsheet_theme
+        dark = not get_dark_mode()
+        set_dark_mode(dark)
+        if hasattr(self, 'dark_mode_action'):
+            self.dark_mode_action.setChecked(dark)
+        self._apply_styles()
+        apply_spreadsheet_theme(dark)
+        self.spreadsheet.viewport().update()
+        self.spreadsheet.update()

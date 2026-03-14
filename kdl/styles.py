@@ -46,6 +46,60 @@ RED_BG = "#FDECEA"
 AMBER = "#D97706"
 AMBER_BG = "#FFF4E5"
 
+# ── Dark Mode Palette ───────────────────────────────────────
+DARK_BG_BASE = "#1E2330"
+DARK_BG_SURFACE = "#252B3B"
+DARK_BG_ELEVATED = "#2C3344"
+DARK_BG_HOVER = "#323A50"
+DARK_BG_ACTIVE = "#3A4560"
+DARK_NAVY = "#1A2744"
+DARK_NAVY_LIGHT = "#223360"
+DARK_NAVY_DARK = "#141F38"
+DARK_BORDER_SUBTLE = "#2A3450"
+DARK_BORDER_DEFAULT = "#344060"
+DARK_BORDER_STRONG = "#4A5878"
+DARK_TEXT_PRIMARY = "#D8E4F0"
+DARK_TEXT_SECONDARY = "#8FA8C0"
+DARK_TEXT_MUTED = "#5A7090"
+DARK_ACCENT = "#4A90D9"
+DARK_ACCENT_HOVER = "#5BA0E8"
+DARK_ACCENT_PRESSED = "#3A7FBE"
+DARK_ACCENT_MUTED = "rgba(74, 144, 217, 0.18)"
+DARK_ACCENT_LIGHT = "#1A2A40"
+
+
+def _palette(dark: bool):
+    """Return a dict of color values for the given theme."""
+    if dark:
+        return dict(
+            BG_BASE=DARK_BG_BASE, BG_SURFACE=DARK_BG_SURFACE,
+            BG_ELEVATED=DARK_BG_ELEVATED, BG_HOVER=DARK_BG_HOVER,
+            BG_ACTIVE=DARK_BG_ACTIVE, NAVY=DARK_NAVY,
+            NAVY_LIGHT=DARK_NAVY_LIGHT, NAVY_DARK=DARK_NAVY_DARK,
+            BORDER_SUBTLE=DARK_BORDER_SUBTLE, BORDER_DEFAULT=DARK_BORDER_DEFAULT,
+            BORDER_STRONG=DARK_BORDER_STRONG, TEXT_PRIMARY=DARK_TEXT_PRIMARY,
+            TEXT_SECONDARY=DARK_TEXT_SECONDARY, TEXT_MUTED=DARK_TEXT_MUTED,
+            TEXT_ON_NAVY=TEXT_ON_NAVY, TEXT_ON_ACCENT=TEXT_ON_ACCENT,
+            ACCENT=DARK_ACCENT, ACCENT_HOVER=DARK_ACCENT_HOVER,
+            ACCENT_PRESSED=DARK_ACCENT_PRESSED, ACCENT_MUTED=DARK_ACCENT_MUTED,
+            ACCENT_LIGHT=DARK_ACCENT_LIGHT,
+            GREEN=GREEN, GREEN_BG="#0F2A1A", RED=RED, RED_BG="#2A0F0F",
+            AMBER=AMBER, AMBER_BG="#2A1F0A",
+        )
+    return dict(
+        BG_BASE=BG_BASE, BG_SURFACE=BG_SURFACE, BG_ELEVATED=BG_ELEVATED,
+        BG_HOVER=BG_HOVER, BG_ACTIVE=BG_ACTIVE, NAVY=NAVY,
+        NAVY_LIGHT=NAVY_LIGHT, NAVY_DARK=NAVY_DARK,
+        BORDER_SUBTLE=BORDER_SUBTLE, BORDER_DEFAULT=BORDER_DEFAULT,
+        BORDER_STRONG=BORDER_STRONG, TEXT_PRIMARY=TEXT_PRIMARY,
+        TEXT_SECONDARY=TEXT_SECONDARY, TEXT_MUTED=TEXT_MUTED,
+        TEXT_ON_NAVY=TEXT_ON_NAVY, TEXT_ON_ACCENT=TEXT_ON_ACCENT,
+        ACCENT=ACCENT, ACCENT_HOVER=ACCENT_HOVER, ACCENT_PRESSED=ACCENT_PRESSED,
+        ACCENT_MUTED=ACCENT_MUTED, ACCENT_LIGHT=ACCENT_LIGHT,
+        GREEN=GREEN, GREEN_BG=GREEN_BG, RED=RED, RED_BG=RED_BG,
+        AMBER=AMBER, AMBER_BG=AMBER_BG,
+    )
+
 
 def _asset_path(filename: str) -> str:
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -60,7 +114,24 @@ def _arrow_rule() -> str:
 
 
 # ── Main Window QSS ───────────────────────────────────────
-def main_window_qss() -> str:
+def main_window_qss(dark: bool = False) -> str:
+    p = _palette(dark)
+    BG_BASE = p["BG_BASE"]; BG_SURFACE = p["BG_SURFACE"]; BG_ELEVATED = p["BG_ELEVATED"]
+    BG_HOVER = p["BG_HOVER"]; BG_ACTIVE = p["BG_ACTIVE"]
+    NAVY_DARK = p["NAVY_DARK"]
+    BORDER_SUBTLE = p["BORDER_SUBTLE"]; BORDER_DEFAULT = p["BORDER_DEFAULT"]; BORDER_STRONG = p["BORDER_STRONG"]
+    TEXT_PRIMARY = p["TEXT_PRIMARY"]; TEXT_SECONDARY = p["TEXT_SECONDARY"]; TEXT_MUTED = p["TEXT_MUTED"]
+    ACCENT = p["ACCENT"]; ACCENT_LIGHT = p["ACCENT_LIGHT"]
+    _nav_top = p["NAVY"] if dark else "#72BBE9"
+    _nav_bot = NAVY_DARK if dark else "#5BABE3"
+    _nav_border = NAVY_DARK if dark else "#4A9DD0"
+    _tb_top = p["NAVY"] if dark else "#6DB8E8"
+    _tb_bot = NAVY_DARK if dark else "#58A8DE"
+    _st_top = NAVY_DARK if dark else "#5BABE3"
+    _st_bot = "#0F1A30" if dark else "#4FA0D8"
+    _st_border = NAVY_DARK if dark else "#4A9DD0"
+    _hdr_top = BG_ELEVATED if dark else "#F1F7FD"
+    _hdr_bot = BG_HOVER if dark else "#E3EEF9"
     return f"""
         /* ─── Base ─── */
         QMainWindow {{
@@ -76,8 +147,8 @@ def main_window_qss() -> str:
         /* ─── Menu Bar (Light Blue Header) ─── */
         QMenuBar {{
             background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                              stop:0 #72BBE9, stop:1 #5BABE3);
-            border-bottom: 1px solid #4A9DD0;
+                                              stop:0 {_nav_top}, stop:1 {_nav_bot});
+            border-bottom: 1px solid {_nav_border};
             padding: 2px 8px;
             font-size: 18px;
             font-weight: 500;
@@ -124,8 +195,8 @@ def main_window_qss() -> str:
         /* ─── Toolbar (Light Blue Header) ─── */
         QToolBar {{
             background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                              stop:0 #6DB8E8, stop:1 #58A8DE);
-            border-bottom: 1px solid #4A9DD0;
+                                              stop:0 {_tb_top}, stop:1 {_tb_bot});
+            border-bottom: 1px solid {_nav_border};
             padding: 6px 12px;
             spacing: 4px;
         }}
@@ -228,8 +299,8 @@ def main_window_qss() -> str:
         /* ─── Status Bar ─── */
         QStatusBar {{
             background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                              stop:0 #5BABE3, stop:1 #4FA0D8);
-            border-top: 1px solid #4A9DD0;
+                                              stop:0 {_st_top}, stop:1 {_st_bot});
+            border-top: 1px solid {_st_border};
             font-size: 18px;
             color: #FFFFFF;
             min-height: 34px;
@@ -268,7 +339,7 @@ def main_window_qss() -> str:
         }}
         QHeaderView::section {{
             background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                              stop:0 #F1F7FD, stop:1 #E3EEF9);
+                                              stop:0 {_hdr_top}, stop:1 {_hdr_bot});
             border: none;
             border-right: 1px solid {BORDER_SUBTLE};
             border-bottom: 1px solid {BORDER_DEFAULT};
@@ -433,12 +504,13 @@ def main_window_qss() -> str:
 
 
 # ── Accent Button Style ──────────────────────────────────
-def accent_button_qss() -> str:
+def accent_button_qss(dark: bool = False) -> str:
     """Primary action button (Start, Save, OK)."""
+    p = _palette(dark)
     return f"""
         QPushButton {{
-            background-color: {ACCENT};
-            color: {TEXT_ON_ACCENT};
+            background-color: {p["ACCENT"]};
+            color: {p["TEXT_ON_ACCENT"]};
             border: none;
             border-radius: 5px;
             font-weight: 600;
@@ -446,21 +518,28 @@ def accent_button_qss() -> str:
             padding: 8px 24px;
         }}
         QPushButton:hover {{
-            background-color: {ACCENT_HOVER};
+            background-color: {p["ACCENT_HOVER"]};
         }}
         QPushButton:pressed {{
-            background-color: {ACCENT_PRESSED};
+            background-color: {p["ACCENT_PRESSED"]};
         }}
         QPushButton:disabled {{
-            background-color: {BG_HOVER};
-            color: {TEXT_MUTED};
+            background-color: {p["BG_HOVER"]};
+            color: {p["TEXT_MUTED"]};
         }}
     """
 
 
 # ── Dialog Base QSS ──────────────────────────────────────
-def dialog_qss() -> str:
+def dialog_qss(dark: bool = False) -> str:
     """Base style for all dialogs."""
+    p = _palette(dark)
+    BG_BASE = p["BG_BASE"]; BG_SURFACE = p["BG_SURFACE"]; BG_ELEVATED = p["BG_ELEVATED"]
+    BG_HOVER = p["BG_HOVER"]; BG_ACTIVE = p["BG_ACTIVE"]
+    BORDER_SUBTLE = p["BORDER_SUBTLE"]; BORDER_DEFAULT = p["BORDER_DEFAULT"]; BORDER_STRONG = p["BORDER_STRONG"]
+    TEXT_PRIMARY = p["TEXT_PRIMARY"]; TEXT_SECONDARY = p["TEXT_SECONDARY"]
+    TEXT_ON_NAVY = p["TEXT_ON_NAVY"]; NAVY = p["NAVY"]; NAVY_DARK = p["NAVY_DARK"]
+    ACCENT = p["ACCENT"]; ACCENT_LIGHT = p["ACCENT_LIGHT"]
     return f"""
         QDialog {{
             background-color: {BG_BASE};
@@ -618,7 +697,12 @@ def dialog_qss() -> str:
 
 
 # ── Load Result Dialog QSS ───────────────────────────────
-def load_result_qss(accent: str, panel_bg: str) -> str:
+def load_result_qss(accent: str, panel_bg: str, dark: bool = False) -> str:
+    p = _palette(dark)
+    BG_BASE = p["BG_BASE"]; BG_SURFACE = p["BG_SURFACE"]
+    BG_HOVER = p["BG_HOVER"]; BG_ACTIVE = p["BG_ACTIVE"]
+    BORDER_SUBTLE = p["BORDER_SUBTLE"]; BORDER_DEFAULT = p["BORDER_DEFAULT"]; BORDER_STRONG = p["BORDER_STRONG"]
+    TEXT_PRIMARY = p["TEXT_PRIMARY"]; TEXT_SECONDARY = p["TEXT_SECONDARY"]
     return f"""
         QDialog {{
             background-color: {BG_BASE};

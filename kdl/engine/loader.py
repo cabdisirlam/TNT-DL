@@ -257,6 +257,17 @@ class LoaderThread(QThread):
         secs = elapsed_sec % 60
         return f"{mins} min(s), {secs} sec(s)"
 
+    def _format_eta(self, started_at: float, rows_processed: int, total_rows: int) -> str:
+        if rows_processed <= 0:
+            return "Calculating..."
+        elapsed = time.time() - started_at
+        avg = elapsed / rows_processed
+        remaining = avg * (total_rows - rows_processed)
+        if remaining <= 0:
+            return "Done"
+        mins, secs = divmod(int(remaining), 60)
+        return f"{mins}m {secs}s" if mins else f"{secs}s"
+
     def _build_stopped_message(self, rows_processed: int, total_rows: int, started_at: float) -> str:
         reason = self._stop_reason or "user request"
         elapsed = self._format_elapsed(started_at)
@@ -634,9 +645,10 @@ class LoaderThread(QThread):
             row_had_activity = False
             self.row_started.emit(row_idx)
             elapsed = self._format_elapsed(started_at)
+            eta = self._format_eta(started_at, rows_processed, total_rows)
             self.progress_updated.emit(
                 rows_processed, total_rows,
-                f"Loading row {row_idx + 1}... ({rows_processed}/{total_rows}) [{elapsed}]"
+                f"Loading row {row_idx + 1}... ({rows_processed}/{total_rows}) | Elapsed: {elapsed} | ETA: {eta}"
             )
 
             if self._check_blocking_popup(rows_processed, total_rows):
@@ -817,9 +829,10 @@ class LoaderThread(QThread):
 
             rows_processed += 1
             elapsed = self._format_elapsed(started_at)
+            eta = self._format_eta(started_at, rows_processed, total_rows)
             self.progress_updated.emit(
                 rows_processed, total_rows,
-                f"Loaded {rows_processed}/{total_rows} row(s) [{elapsed}]"
+                f"Loaded {rows_processed}/{total_rows} row(s) | Elapsed: {elapsed} | ETA: {eta}"
             )
 
         # Done UI mode

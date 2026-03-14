@@ -33,6 +33,28 @@ BRUSH_ACTIVE_HEADER_BG = QBrush(COLOR_ACTIVE_HEADER_BG)
 BRUSH_ACTIVE_HEADER_FG = QBrush(COLOR_ACTIVE_HEADER_FG)
 
 
+def apply_spreadsheet_theme(dark: bool = False):
+    """Update module-level cell colors for the given theme."""
+    global COLOR_DATA, COLOR_KEYSTROKE, COLOR_COMMAND, COLOR_KEY_COLUMN
+    global COLOR_ACTIVE_ROW, COLOR_ACTIVE_CELL, COLOR_GUIDE_CELL
+    if dark:
+        COLOR_DATA.setNamedColor("#1E2330")
+        COLOR_KEYSTROKE.setNamedColor("#1A2A40")
+        COLOR_COMMAND.setNamedColor("#1E2E44")
+        COLOR_KEY_COLUMN.setNamedColor("#1A2C42")
+        COLOR_ACTIVE_ROW.setNamedColor("#1A3A50")
+        COLOR_ACTIVE_CELL.setNamedColor("#1A4A60")
+        COLOR_GUIDE_CELL.setNamedColor("#1A3550")
+    else:
+        COLOR_DATA.setNamedColor("#FFFFFF")
+        COLOR_KEYSTROKE.setNamedColor("#E6F3FD")
+        COLOR_COMMAND.setNamedColor("#EEF7FE")
+        COLOR_KEY_COLUMN.setNamedColor("#E3F1FC")
+        COLOR_ACTIVE_ROW.setNamedColor("#CFE8FA")
+        COLOR_ACTIVE_CELL.setNamedColor("#9CCFF3")
+        COLOR_GUIDE_CELL.setNamedColor("#DAEEFC")
+
+
 class _HighlightHeaderView(QHeaderView):
     """QHeaderView that respects model ForegroundRole even when QSS sets color."""
 
@@ -690,6 +712,28 @@ class SpreadsheetWidget(QTableWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Import Error", f"Failed to import Excel:\n{str(e)}")
+
+    def load_from_rows(self, rows: list):
+        """Load data from a list-of-lists directly into the grid (no file I/O)."""
+        if not rows:
+            return
+        self._begin_history_action()
+        if len(rows) > self.rowCount():
+            self.setRowCount(len(rows) + 10)
+        max_cols = max((len(r) for r in rows), default=0)
+        if max_cols > self.columnCount():
+            self.setColumnCount(max_cols + 5)
+            self._update_headers()
+        self.blockSignals(True)
+        for r, row in enumerate(rows):
+            for c, val in enumerate(row):
+                text = str(val) if val is not None else ''
+                self.setItem(r, c, QTableWidgetItem(text))
+        self.blockSignals(False)
+        self._rebuild_cell_cache()
+        self._refresh_highlighting()
+        self._end_history_action()
+        self.data_changed.emit()
 
     def export_csv(self, filepath: str):
         """Export grid data to a CSV file."""

@@ -219,8 +219,9 @@ class LoadResultDialog(QDialog):
         panel.style().polish(panel)
 
     def _apply_style(self):
+        from kdl.config_store import get_dark_mode
         palette = self._status_palette()
-        self.setStyleSheet(load_result_qss(palette["accent"], palette["panel"]))
+        self.setStyleSheet(load_result_qss(palette["accent"], palette["panel"], dark=get_dark_mode()))
 
     def _fit_to_screen(self):
         screen = self.screen() or QGuiApplication.primaryScreen()

@@ -84,7 +84,8 @@ class MacroRecorderDialog(QDialog):
         self._modifiers_lock = threading.Lock()
         self._mouse_macro_text: str = ""
 
-        self.setStyleSheet(dialog_qss())
+        from kdl.config_store import get_dark_mode
+        self.setStyleSheet(dialog_qss(dark=get_dark_mode()))
         self._build_ui()
         self.token_captured.connect(self._append_token_ui)
         self.stop_requested.connect(self._stop_recording)
