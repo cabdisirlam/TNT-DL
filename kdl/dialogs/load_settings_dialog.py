@@ -57,7 +57,7 @@ class LoadSettingsDialog(QDialog):
         self._command_group = command_group
 
         self.setWindowTitle("NT_DL - Load Settings")
-        self.setMinimumWidth(430)
+        self.setMinimumWidth(380)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
@@ -85,26 +85,25 @@ class LoadSettingsDialog(QDialog):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(4)
+        layout.setContentsMargins(8, 8, 8, 8)
 
         # â”€â”€â”€ Target Window â”€â”€â”€
         target_group = QGroupBox("Target Application")
         tg = QVBoxLayout(target_group)
-        tg.setSpacing(6)
+        tg.setSpacing(4)
 
         tw_row = QHBoxLayout()
         tw_label = QLabel("Window:")
-        tw_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
         tw_row.addWidget(tw_label)
 
         self.window_combo = QComboBox()
         self.window_combo.setEditable(True)
-        self.window_combo.setMinimumHeight(28)
+        self.window_combo.setMinimumHeight(24)
         tw_row.addWidget(self.window_combo, 1)
 
         self.refresh_btn = QPushButton("Refresh")
-        self.refresh_btn.setFixedSize(66, 28)
+        self.refresh_btn.setFixedSize(60, 24)
         self.refresh_btn.clicked.connect(self._refresh_windows)
         tw_row.addWidget(self.refresh_btn)
         tg.addLayout(tw_row)
@@ -112,11 +111,10 @@ class LoadSettingsDialog(QDialog):
         # Oracle version
         ver_row = QHBoxLayout()
         ver_label = QLabel("Version:")
-        ver_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
         ver_row.addWidget(ver_label)
         self.app_combo = QComboBox()
         self.app_combo.addItems(APP_TYPES)
-        self.app_combo.setMinimumHeight(26)
+        self.app_combo.setMinimumHeight(24)
         ver_row.addWidget(self.app_combo, 1)
         tg.addLayout(ver_row)
 
@@ -125,19 +123,16 @@ class LoadSettingsDialog(QDialog):
         # â”€â”€â”€ Loading Mode â”€â”€â”€
         mode_group = QGroupBox("Loading Mode")
         mg = QVBoxLayout(mode_group)
-        mg.setSpacing(5)
+        mg.setSpacing(3)
 
         self.radio_per_cell = QRadioButton(LOAD_MODES[0][0])
         self.radio_per_cell.setChecked(True)
-        self.radio_per_cell.setFont(QFont("Segoe UI", 12, QFont.Bold))
         mg.addWidget(self.radio_per_cell)
 
         self.radio_per_row = QRadioButton(LOAD_MODES[1][0])
-        self.radio_per_row.setFont(QFont("Segoe UI", 12))
         mg.addWidget(self.radio_per_row)
 
         self.radio_per_row_paste = QRadioButton(LOAD_MODES[2][0])
-        self.radio_per_row_paste.setFont(QFont("Segoe UI", 12))
         mg.addWidget(self.radio_per_row_paste)
 
         # End of row action (indent under Per Row)
@@ -147,7 +142,7 @@ class LoadSettingsDialog(QDialog):
         self.eor_combo = QComboBox()
         for text, _ in END_OF_ROW_ACTIONS:
             self.eor_combo.addItem(text)
-        self.eor_combo.setMinimumHeight(26)
+        self.eor_combo.setMinimumHeight(24)
         eor_row.addWidget(self.eor_combo, 1)
         mg.addLayout(eor_row)
 
@@ -158,7 +153,7 @@ class LoadSettingsDialog(QDialog):
         save_int_row.addWidget(self._save_int_lbl)
         self.save_interval_input = QLineEdit("50")
         self.save_interval_input.setFixedWidth(52)
-        self.save_interval_input.setFixedHeight(26)
+        self.save_interval_input.setFixedHeight(24)
         self.save_interval_input.setAlignment(Qt.AlignCenter)
         save_int_row.addWidget(self.save_interval_input)
         self._save_int_suffix = QLabel("rows  (also saves automatically at the last row)")
@@ -177,7 +172,7 @@ class LoadSettingsDialog(QDialog):
         # â”€â”€â”€ Row Range â”€â”€â”€
         range_group = QGroupBox("Rows to Load")
         rg = QVBoxLayout(range_group)
-        rg.setSpacing(5)
+        rg.setSpacing(3)
 
         self.radio_all = QRadioButton("All Rows")
         self.radio_all.setChecked(True)
@@ -192,18 +187,15 @@ class LoadSettingsDialog(QDialog):
 
         self.from_input = QLineEdit("1")
         self.from_input.setFixedWidth(64)
-        self.from_input.setFixedHeight(28)
+        self.from_input.setFixedHeight(24)
         self.from_input.setAlignment(Qt.AlignCenter)
-        self.from_input.setFont(QFont("Segoe UI", 12, QFont.Bold))
 
         to_lbl = QLabel("To Row")
-        to_lbl.setFont(QFont("Segoe UI", 12, QFont.Bold))
 
         self.to_input = QLineEdit(str(max(1, self.max_rows)))
         self.to_input.setFixedWidth(64)
-        self.to_input.setFixedHeight(28)
+        self.to_input.setFixedHeight(24)
         self.to_input.setAlignment(Qt.AlignCenter)
-        self.to_input.setFont(QFont("Segoe UI", 12, QFont.Bold))
 
         range_row.addWidget(self.radio_range)
         range_row.addWidget(self.from_input)
@@ -217,7 +209,7 @@ class LoadSettingsDialog(QDialog):
         # â”€â”€â”€ Delays & Options â”€â”€â”€
         delay_group = QGroupBox("Delays && Options")
         dg = QGridLayout(delay_group)
-        dg.setSpacing(6)
+        dg.setSpacing(4)
 
         # Delay after cell processed (recommended default: 0.1s)
         dg.addWidget(QLabel("Delay after cell processed:"), 0, 0)
@@ -262,7 +254,7 @@ class LoadSettingsDialog(QDialog):
 
         start_btn = QPushButton("  Start  ")
         start_btn.setDefault(True)
-        start_btn.setFixedHeight(32)
+        start_btn.setFixedHeight(28)
         from kdl.config_store import get_dark_mode
         start_btn.setStyleSheet(accent_button_qss(dark=get_dark_mode()))
         start_btn.clicked.connect(self._start_loading)
@@ -286,7 +278,7 @@ class LoadSettingsDialog(QDialog):
         self.setMaximumSize(max_w, max_h)
         hint = self.sizeHint()
         target_w = min(max(self.minimumWidth(), hint.width()), max_w)
-        target_h = min(max(380, hint.height()), max_h)
+        target_h = min(max(320, hint.height()), max_h)
         self.resize(target_w, target_h)
 
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -306,9 +298,9 @@ class LoadSettingsDialog(QDialog):
         self.eor_combo.setEnabled(is_per_row)
 
         if is_per_row:
-            # Per Row default end-of-row = Next Row
+            # Per Row default end-of-row = Auto Save every 50
             if self.eor_combo.currentIndex() == 0:  # "None" selected
-                self.eor_combo.setCurrentIndex(1)    # auto-select "Next Row (Down Arrow)"
+                self.eor_combo.setCurrentIndex(2)    # auto-select "Auto Save every N"
         else:
             # Per Cell defaults: end-of-row disabled
             self.eor_combo.setCurrentIndex(0)  # reset to "None"

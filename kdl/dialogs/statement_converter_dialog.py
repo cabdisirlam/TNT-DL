@@ -1,12 +1,12 @@
 """
 Bank Statement Converter Dialog.
-Lets the user pick an Excel file, choose a sheet, and run the conversion.
+Lets the user pick an Excel file, choose sheets, and run the conversion.
 """
 
 import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QListWidget, QAbstractItemView, QLineEdit, QFileDialog, QTextEdit, QMessageBox,
+    QWidget, QLineEdit, QFileDialog, QTextEdit, QMessageBox,
     QGroupBox, QSizePolicy, QCheckBox
 )
 from PySide6.QtCore import Qt, QThread, Signal
@@ -31,7 +31,8 @@ class _ConverterWorker(QThread):
         try:
             import openpyxl, tempfile
             from kdl.engine.statement_converter import (
-                convert_statement, ConversionResult, _get_or_create_sheet, OUTPUT_LAST_COL
+                convert_statement, ConversionResult, _get_or_create_sheet,
+                OUTPUT_LAST_COL, AUDIT_DETAIL_FIRST_ROW, _write_audit_header
             )
 
             # ── Pre-process via Excel COM ────────────────────────────────
@@ -60,6 +61,7 @@ class _ConverterWorker(QThread):
             wb = openpyxl.load_workbook(load_path, data_only=True)
             multi = len(self.sheet_names) > 1
             all_output_data = []
+            all_audit_rows = []   # detail rows collected across all sheets
             all_messages = []
             any_success = False
 
@@ -70,23 +72,30 @@ class _ConverterWorker(QThread):
                     all_output_data.extend(result.output_data)
                     prefix = f'[{sheet_name}]\n' if multi else ''
                     all_messages.append(f'{prefix}{result.message}')
-                    # Rename Audit_Skipped so the next sheet doesn't overwrite it
+                    # Harvest audit detail rows before next sheet clears Audit_Skipped
                     if multi and 'Audit_Skipped' in wb.sheetnames:
-                        safe = ('Audit_' + sheet_name)[:31]
-                        # avoid duplicate sheet names
-                        if safe in wb.sheetnames:
-                            wb.remove(wb[safe])
-                        wb['Audit_Skipped'].title = safe
+                        ws_a = wb['Audit_Skipped']
+                        for r in range(AUDIT_DETAIL_FIRST_ROW, ws_a.max_row + 1):
+                            row_vals = [ws_a.cell(row=r, column=c).value for c in range(1, 11)]
+                            if any(v is not None for v in row_vals):
+                                all_audit_rows.append(row_vals)
                 else:
                     prefix = f'[{sheet_name}] FAILED\n' if multi else 'FAILED\n'
                     all_messages.append(f'{prefix}{result.message}')
 
-            # ── Rebuild combined Output sheet when multi-sheet ────────────
-            if any_success and multi and all_output_data:
+            # ── Rebuild single combined Output + Audit_Skipped ────────────
+            if any_success and multi:
+                # Combined Output
                 ws_out = _get_or_create_sheet(wb, 'Output')
                 for i, row_vals in enumerate(all_output_data):
                     for c, val in enumerate(row_vals, 1):
                         ws_out.cell(row=i + 2, column=c, value=val)
+                # Combined Audit_Skipped (detail rows only, no per-sheet summary)
+                ws_audit = _get_or_create_sheet(wb, 'Audit_Skipped')
+                _write_audit_header(ws_audit)
+                for i, row_vals in enumerate(all_audit_rows):
+                    for c, val in enumerate(row_vals, 1):
+                        ws_audit.cell(row=AUDIT_DETAIL_FIRST_ROW + i, column=c, value=val)
 
             sep = '\n\n' + '─' * 40 + '\n\n' if multi else ''
             combined_msg = sep.join(all_messages)
@@ -124,7 +133,8 @@ class StatementConverterDialog(QDialog):
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
         self._worker = None
         self._result = None
-        self._wb = None         # workbook ready to save on "Load into Grid"
+        self._wb = None
+        self._sheet_checks = []     # QCheckBox widgets for each sheet
 
         from kdl.config_store import get_dark_mode
         self.setStyleSheet(dialog_qss(dark=get_dark_mode()))
@@ -150,27 +160,31 @@ class StatementConverterDialog(QDialog):
         file_layout.addWidget(browse_btn)
         layout.addWidget(file_group)
 
-        # ── Sheet picker ──
-        sheet_group = QGroupBox('Sheet / Tab  (Ctrl+click or Shift+click to select multiple)')
+        # ── Sheet picker (checkboxes) ──
+        sheet_group = QGroupBox('Sheets to Convert')
         sheet_outer = QVBoxLayout(sheet_group)
-        sheet_row = QHBoxLayout()
-        self._sheet_list = QListWidget()
-        self._sheet_list.setEnabled(False)
-        self._sheet_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self._sheet_list.setMaximumHeight(110)
-        sheet_row.addWidget(self._sheet_list)
-        sel_col = QVBoxLayout()
-        sel_all_btn = QPushButton('All')
-        sel_all_btn.setFixedWidth(48)
-        sel_all_btn.clicked.connect(self._sheet_list.selectAll)
-        sel_none_btn = QPushButton('None')
-        sel_none_btn.setFixedWidth(48)
-        sel_none_btn.clicked.connect(self._sheet_list.clearSelection)
-        sel_col.addWidget(sel_all_btn)
-        sel_col.addWidget(sel_none_btn)
-        sel_col.addStretch()
-        sheet_row.addLayout(sel_col)
-        sheet_outer.addLayout(sheet_row)
+        sheet_outer.setSpacing(6)
+
+        # Select All / Select None row
+        sel_row = QHBoxLayout()
+        sel_all_btn = QPushButton('Select All')
+        sel_all_btn.setFixedWidth(90)
+        sel_all_btn.clicked.connect(self._select_all_sheets)
+        sel_none_btn = QPushButton('Select None')
+        sel_none_btn.setFixedWidth(90)
+        sel_none_btn.clicked.connect(self._select_no_sheets)
+        sel_row.addWidget(sel_all_btn)
+        sel_row.addWidget(sel_none_btn)
+        sel_row.addStretch()
+        sheet_outer.addLayout(sel_row)
+
+        # Checkbox area — all sheets visible, no scroll
+        self._sheet_check_container = QWidget()
+        self._sheet_check_layout = QVBoxLayout(self._sheet_check_container)
+        self._sheet_check_layout.setSpacing(2)
+        self._sheet_check_layout.setContentsMargins(4, 2, 4, 2)
+        self._sheet_check_layout.addStretch()
+        sheet_outer.addWidget(self._sheet_check_container)
         layout.addWidget(sheet_group)
 
         # ── Options ──
@@ -236,29 +250,56 @@ class StatementConverterDialog(QDialog):
         self._populate_sheets(path)
 
     def _populate_sheets(self, filepath: str):
-        self._sheet_list.clear()
-        self._sheet_list.setEnabled(False)
+        # Remove old checkboxes
+        for cb in self._sheet_checks:
+            self._sheet_check_layout.removeWidget(cb)
+            cb.deleteLater()
+        self._sheet_checks.clear()
+
         self._convert_btn.setEnabled(False)
         self._result = None
         self._wb = None
         self._load_grid_btn.setEnabled(False)
+
         try:
             import openpyxl
             wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+            # Insert new checkboxes before the trailing stretch
+            stretch_item = self._sheet_check_layout.takeAt(
+                self._sheet_check_layout.count() - 1
+            )
             for name in wb.sheetnames:
-                self._sheet_list.addItem(name)
+                cb = QCheckBox(name)
+                cb.setChecked(True)
+                cb.stateChanged.connect(self._update_convert_btn)
+                self._sheet_check_layout.addWidget(cb)
+                self._sheet_checks.append(cb)
+            self._sheet_check_layout.addStretch()
             wb.close()
-            self._sheet_list.setEnabled(True)
-            self._sheet_list.selectAll()
-            self._convert_btn.setEnabled(True)
+            self._update_convert_btn()
         except Exception as exc:
             QMessageBox.warning(self, 'File Error', f'Could not open file:\n{exc}')
+
+    # ── Sheet selection helpers ────────────────────────────
+
+    def _select_all_sheets(self):
+        for cb in self._sheet_checks:
+            cb.setChecked(True)
+
+    def _select_no_sheets(self):
+        for cb in self._sheet_checks:
+            cb.setChecked(False)
+
+    def _update_convert_btn(self):
+        has_file = bool(self._file_edit.text().strip())
+        has_selection = any(cb.isChecked() for cb in self._sheet_checks)
+        self._convert_btn.setEnabled(has_file and has_selection)
 
     # ── Conversion ─────────────────────────────────────────
 
     def _run_conversion(self):
         filepath = self._file_edit.text().strip()
-        selected = [item.text() for item in self._sheet_list.selectedItems()]
+        selected = [cb.text() for cb in self._sheet_checks if cb.isChecked()]
         if not filepath or not selected:
             return
 
@@ -279,7 +320,6 @@ class StatementConverterDialog(QDialog):
         self._convert_btn.setEnabled(True)
         self._convert_btn.setText('  Convert  ')
 
-        # Keep the workbook so we can save it when the user clicks Load
         if result.success and self._worker is not None:
             self._wb = self._worker.wb
 
