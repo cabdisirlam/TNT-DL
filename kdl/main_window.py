@@ -1646,10 +1646,24 @@ class MainWindow(QMainWindow):
         dlg.load_into_grid.connect(self._load_statement_output_into_grid)
         dlg.exec()
 
+    @staticmethod
+    def _default_file_dialog_dir() -> str:
+        downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+        return downloads if os.path.isdir(downloads) else os.path.expanduser("~")
+
     def _load_statement_output_into_grid(self, rows: list):
-        if rows:
+        if not rows:
+            return
+        try:
             self.spreadsheet.load_from_rows(rows)
             self.status_label.setText(f"Statement Output loaded: {len(rows)} row(s)")
+        except Exception as exc:
+            self.status_label.setText("Statement Output load failed.")
+            QMessageBox.critical(
+                self,
+                "Bank Statement Error",
+                f"Failed to load the converted Output into the grid:\n{exc}",
+            )
 
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # File Operations
@@ -1666,7 +1680,7 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard():
             return
         filepath, _ = QFileDialog.getOpenFileName(
-            self, "Open File", "",
+            self, "Open File", self._default_file_dialog_dir(),
             "NT_DL Files (*.csv *.xlsx);;CSV Files (*.csv);;Excel Files (*.xlsx);;All Files (*)"
         )
         if filepath:
@@ -1695,7 +1709,7 @@ class MainWindow(QMainWindow):
 
     def _save_file_as(self) -> bool:
         filepath, selected_filter = QFileDialog.getSaveFileName(
-            self, "Save File As", "",
+            self, "Save File As", self._default_file_dialog_dir(),
             "CSV Files (*.csv);;Excel Files (*.xlsx);;All Files (*)"
         )
         if filepath:
@@ -1712,7 +1726,7 @@ class MainWindow(QMainWindow):
 
     def _import_csv(self):
         filepath, _ = QFileDialog.getOpenFileName(
-            self, "Import CSV", "", "CSV Files (*.csv);;All Files (*)"
+            self, "Import CSV", self._default_file_dialog_dir(), "CSV Files (*.csv);;All Files (*)"
         )
         if filepath:
             self.spreadsheet.import_csv(filepath)
@@ -1721,7 +1735,7 @@ class MainWindow(QMainWindow):
 
     def _import_excel(self):
         filepath, _ = QFileDialog.getOpenFileName(
-            self, "Import Excel", "", "Excel Files (*.xlsx *.xls);;All Files (*)"
+            self, "Import Excel", self._default_file_dialog_dir(), "Excel Files (*.xlsx *.xls);;All Files (*)"
         )
         if filepath:
             self.spreadsheet.import_excel(filepath)
@@ -2400,7 +2414,6 @@ class MainWindow(QMainWindow):
         grid_data = self.spreadsheet.get_grid_data()
         total_rows = len(grid_data)
         last_row = self._last_started_row  # 0-based last row that started
-        stopped_display = last_row + 1 if last_row >= 0 else 1
 
         dlg = QDialog(self)
         dlg.setWindowTitle("Load Stopped — Action Required")
@@ -2416,20 +2429,21 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # ── Status line ──
-        lbl_status = QLabel(f"<b>Load stopped at row {stopped_display}.</b>")
+        lbl_status = QLabel("<b>Load stopped.</b>")
         lbl_status.setWordWrap(True)
         layout.addWidget(lbl_status)
 
         # ── Step-by-step guidance ──
         from PySide6.QtWidgets import QGroupBox as _GB, QFrame as _Fr
-        guide_box = _GB("Before resuming — do the following steps:")
+        guide_box = _GB("Before resuming or closing — do the following steps:")
         guide_layout = QVBoxLayout(guide_box)
         guide_layout.setSpacing(4)
         steps = [
-            f"1.  Minimise this dialog  (click the  ─  button above)",
-            f"2.  In IFMIS/Oracle, clear any partial data in row {stopped_display}",
-            f"3.  Click the <b>first field</b> of row {stopped_display} to position the cursor there",
-            f"4.  Return here and click  <b>Resume</b>",
+            "1.  Minimise this dialog  (click the  ─  button above)",
+            "2.  In IFMIS/Oracle, clear any partial data from the row you want to continue from",
+            "3.  If you want to close and save first, do that now",
+            "4.  Click the <b>first field</b> of the row you want to continue from",
+            "5.  Return here and choose how you want to resume",
         ]
         for step in steps:
             lbl = QLabel(step)
@@ -2444,12 +2458,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(sep)
 
         # ── Resume options ──
-        resume_lbl = QLabel("Resume from row:")
+        resume_lbl = QLabel("Resume options:")
         layout.addWidget(resume_lbl)
 
         btn_group = QButtonGroup(dlg)
 
-        rb_stopped = QRadioButton(f"Row {stopped_display}  (re-enter the stopped row)")
+        rb_stopped = QRadioButton("Retry the stopped row  (re-enter the same grid row)")
         rb_stopped.setChecked(True)
         btn_group.addButton(rb_stopped, 0)
         layout.addWidget(rb_stopped)
@@ -2465,7 +2479,7 @@ class MainWindow(QMainWindow):
         spin = QSpinBox()
         spin.setMinimum(1)
         spin.setMaximum(max(1, total_rows))
-        spin.setValue(stopped_display)
+        spin.setValue(1)
         spin.setEnabled(False)
         custom_row.addWidget(spin)
         custom_row.addStretch()
@@ -3141,53 +3155,71 @@ class MainWindow(QMainWindow):
 
     def _convert_to_table_format(self):
         """Convert legacy cell-format rows into table-style rows for per-row workflows."""
-        has_content, normalized = self._normalize_sheet_cell_macros()
-        if not has_content:
-            self.status_label.setText("Convert to Table: nothing to convert.")
-            return
+        try:
+            has_content, normalized = self._normalize_sheet_cell_macros()
+            if not has_content:
+                self.status_label.setText("Convert to Table: nothing to convert.")
+                return
 
-        grid_data = self.spreadsheet.get_grid_data()
-        col_map, has_header = self._detect_table_col_map(grid_data)
-        start_row = 1 if has_header else 0
-        table_rows: list[list[str]] = []
-        line_no = 1
+            grid_data = self.spreadsheet.get_grid_data()
+            col_map, has_header = self._detect_table_col_map(grid_data)
+            start_row = 1 if has_header else 0
+            table_rows: list[list[str]] = []
+            line_no = 1
 
-        for row in grid_data[start_row:]:
-            if not any(self._clean_cell_text(v) for v in row):
-                continue
+            for row in grid_data[start_row:]:
+                if not any(self._clean_cell_text(v) for v in row):
+                    continue
 
-            fields = self._extract_table_fields_from_cell_row(row)
-            if fields is None:
-                fields = self._extract_table_fields_from_table_row(row, col_map)
-            if not fields:
-                continue
+                fields = self._extract_table_fields_from_cell_row(row)
+                if fields is None:
+                    fields = self._extract_table_fields_from_table_row(row, col_map)
+                if not fields:
+                    continue
 
-            norm = self._normalize_table_fields(fields)
-            if not any([norm["number"], norm["transaction_date"], norm["value_date"], norm["amount"], norm["code"]]):
-                continue
+                norm = self._normalize_table_fields(fields)
+                if not any(
+                    [
+                        norm["number"],
+                        norm["transaction_date"],
+                        norm["value_date"],
+                        norm["amount"],
+                        norm["code"],
+                    ]
+                ):
+                    continue
 
-            table_rows.append([
-                "tab",
-                norm["type"],
-                norm["code"],
-                norm["number"],
-                norm["transaction_date"],
-                norm["value_date"],
-                norm["amount"],
-            ])
-            line_no += 1
+                table_rows.append(
+                    [
+                        "tab",
+                        norm["type"],
+                        norm["code"],
+                        norm["number"],
+                        norm["transaction_date"],
+                        norm["value_date"],
+                        norm["amount"],
+                    ]
+                )
+                line_no += 1
 
-        if line_no == 1:
-            self.status_label.setText("Convert to Table: no compatible rows found.")
-            return
+            if line_no == 1:
+                self.status_label.setText("Convert to Table: no compatible rows found.")
+                return
 
-        self._replace_sheet_data(table_rows, key_columns=set(), has_header_row=False)
-        if normalized > 0:
-            self.status_label.setText(
-                f"Converted {line_no - 1} row(s) to Table Format (normalized {normalized} cell(s) first)."
+            self._replace_sheet_data(table_rows, key_columns=set(), has_header_row=False)
+            if normalized > 0:
+                self.status_label.setText(
+                    f"Converted {line_no - 1} row(s) to Table Format (normalized {normalized} cell(s) first)."
+                )
+            else:
+                self.status_label.setText(f"Converted {line_no - 1} row(s) to Table Format.")
+        except Exception as exc:
+            self.status_label.setText("Convert to Table failed.")
+            QMessageBox.critical(
+                self,
+                "Convert to Table Error",
+                f"Failed to convert the current grid to Table Format:\n{exc}",
             )
-        else:
-            self.status_label.setText(f"Converted {line_no - 1} row(s) to Table Format.")
 
     def _convert_macros_to_app_format(self):
         """Backward-compatible alias: Convert to Cell Format."""

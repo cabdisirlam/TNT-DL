@@ -682,36 +682,22 @@ class SpreadsheetWidget(QTableWidget):
         """Import data from an Excel file."""
         try:
             import openpyxl
-            wb = openpyxl.load_workbook(filepath, data_only=True)
-            ws = wb.active
+            wb = openpyxl.load_workbook(
+                filepath,
+                read_only=True,
+                data_only=True,
+                keep_links=False,
+            )
+            try:
+                ws = wb.active
+                rows = list(ws.iter_rows(values_only=True))
+            finally:
+                wb.close()
 
-            rows = list(ws.iter_rows(values_only=True))
             if not rows:
                 return
 
-            self._begin_history_action()
-
-            # Resize grid if needed
-            if len(rows) > self.rowCount():
-                self.setRowCount(len(rows) + 10)
-            max_cols = max(len(row) for row in rows)
-            if max_cols > self.columnCount():
-                self.setColumnCount(max_cols + 5)
-                self._update_headers()
-
-            # Populate
-            self.blockSignals(True)
-            for r, row in enumerate(rows):
-                for c, val in enumerate(row):
-                    text = str(val) if val is not None else ""
-                    item = QTableWidgetItem(text)
-                    self.setItem(r, c, item)
-            self.blockSignals(False)
-
-            self._rebuild_cell_cache()
-            self._refresh_highlighting()
-            self._end_history_action()
-            self.data_changed.emit()
+            self.load_from_rows(rows)
 
         except Exception as e:
             QMessageBox.critical(self, "Import Error", f"Failed to import Excel:\n{str(e)}")
