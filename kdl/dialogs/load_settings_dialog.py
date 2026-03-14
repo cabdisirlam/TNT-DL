@@ -30,7 +30,7 @@ APP_TYPES = [
 END_OF_ROW_ACTIONS = [
     ("None (Do Nothing)", "none"),
     ("Next Row (Down Arrow)", "new_record"),
-    ("Next Row + Save Every 50 (Down Arrow, Ctrl+S each 50)", "new_record_save_50"),
+    ("Next Row + Auto Save (Down Arrow + Ctrl+S every N rows)", "new_record_save_n"),
     ("Tab to Next Field", "tab"),
     ("Press Enter", "enter"),
     ("Save & Proceed (Ctrl+S then Down Arrow)", "save_proceed"),
@@ -151,9 +151,26 @@ class LoadSettingsDialog(QDialog):
         eor_row.addWidget(self.eor_combo, 1)
         mg.addLayout(eor_row)
 
+        # Save interval row (only visible when "Auto Save" action is selected)
+        save_int_row = QHBoxLayout()
+        save_int_row.addSpacing(22)
+        self._save_int_lbl = QLabel("Save every:")
+        save_int_row.addWidget(self._save_int_lbl)
+        self.save_interval_input = QLineEdit("50")
+        self.save_interval_input.setFixedWidth(52)
+        self.save_interval_input.setFixedHeight(26)
+        self.save_interval_input.setAlignment(Qt.AlignCenter)
+        save_int_row.addWidget(self.save_interval_input)
+        self._save_int_suffix = QLabel("rows  (also saves automatically at the last row)")
+        save_int_row.addWidget(self._save_int_suffix)
+        save_int_row.addStretch()
+        mg.addLayout(save_int_row)
+        self._save_int_widgets = [self._save_int_lbl, self.save_interval_input, self._save_int_suffix]
+
         self.radio_per_cell.toggled.connect(self._update_mode_controls)
         self.radio_per_row.toggled.connect(self._update_mode_controls)
         self.radio_per_row_paste.toggled.connect(self._update_mode_controls)
+        self.eor_combo.currentIndexChanged.connect(self._update_save_interval_visibility)
 
         layout.addWidget(mode_group)
 
@@ -210,9 +227,9 @@ class LoadSettingsDialog(QDialog):
         dg.addWidget(self.cell_delay_input, 0, 1)
         dg.addWidget(QLabel("seconds"), 0, 2)
 
-        # Delay after window activated (recommended default: 0.1s)
+        # Delay after window activated (recommended default: 0.05s)
         dg.addWidget(QLabel("Delay after window activated:"), 1, 0)
-        self.window_delay_input = QLineEdit("0.1")
+        self.window_delay_input = QLineEdit("0.05")
         self.window_delay_input.setFixedWidth(52)
         self.window_delay_input.setAlignment(Qt.AlignCenter)
         dg.addWidget(self.window_delay_input, 1, 1)
@@ -295,6 +312,14 @@ class LoadSettingsDialog(QDialog):
         else:
             # Per Cell defaults: end-of-row disabled
             self.eor_combo.setCurrentIndex(0)  # reset to "None"
+        self._update_save_interval_visibility()
+
+    def _update_save_interval_visibility(self):
+        eor_idx = self.eor_combo.currentIndex()
+        action = END_OF_ROW_ACTIONS[eor_idx][1] if 0 <= eor_idx < len(END_OF_ROW_ACTIONS) else "none"
+        visible = (action == "new_record_save_n") and self.eor_combo.isEnabled()
+        for w in self._save_int_widgets:
+            w.setVisible(visible)
 
     @staticmethod
     def _is_oracle_like_window(title: str) -> bool:
@@ -364,7 +389,7 @@ class LoadSettingsDialog(QDialog):
         try:
             window_delay = float(self.window_delay_input.text())
         except ValueError:
-            window_delay = 0.1
+            window_delay = 0.05
 
         # Range mode
         if self.radio_selected.isChecked():
@@ -391,6 +416,11 @@ class LoadSettingsDialog(QDialog):
         eor_idx = self.eor_combo.currentIndex()
         end_of_row_action = END_OF_ROW_ACTIONS[eor_idx][1] if eor_idx >= 0 else "none"
 
+        try:
+            save_interval = max(1, int(self.save_interval_input.text()))
+        except ValueError:
+            save_interval = 50
+
         settings = {
             "range_mode": range_mode,
             "from_row": from_row,
@@ -403,6 +433,7 @@ class LoadSettingsDialog(QDialog):
             "load_mode": load_mode,
             "form_mode": load_mode in {"per_row", "per_row_paste"},
             "end_of_row_action": end_of_row_action,
+            "save_interval": save_interval,
             "validate_before_load": self.validate_check.isChecked(),
             "app_type": self.app_combo.currentText(),
         }

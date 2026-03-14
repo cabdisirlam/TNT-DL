@@ -90,7 +90,7 @@ class LoaderThread(QThread):
                   speed_delay=0.1, wait_hourglass=False,
                   key_columns=None, selected_columns=None, delay_columns=None,
                   form_mode=False, load_mode="per_cell", end_of_row_action="none",
-                  window_delay=0.1, db_settings=None):
+                  window_delay=0.1, save_interval=50, db_settings=None):
         """Configure the loader before starting."""
         self.grid_data = grid_data
         self.start_row = start_row
@@ -112,6 +112,7 @@ class LoaderThread(QThread):
         self.form_mode = form_mode
         self.load_mode = str(load_mode or "per_cell").strip().lower()
         self.end_of_row_action = end_of_row_action
+        self.save_interval = max(1, int(save_interval or 50))
         self.db_settings = db_settings or {}
 
         self._stop_requested = False
@@ -569,16 +570,17 @@ class LoaderThread(QThread):
 
         return "\t".join(row_tokens), True
 
-    def _perform_end_of_row_action(self, rows_processed: int) -> bool:
+    def _perform_end_of_row_action(self, rows_processed: int, is_last_row: bool = False) -> bool:
         eor_delay = max(0.0, float(self.sender.speed_delay))
         save_settle = max(0.1, float(self.sender.speed_delay))
         if self.end_of_row_action == "new_record":
             pyautogui.press('down')
             if not self._interruptible_delay(eor_delay):
                 return False
-        elif self.end_of_row_action == "new_record_save_50":
+        elif self.end_of_row_action in ("new_record_save_n", "new_record_save_50"):
             completed_rows = rows_processed + 1
-            if completed_rows % 50 == 0:
+            interval = self.save_interval if self.end_of_row_action == "new_record_save_n" else 50
+            if completed_rows % interval == 0 or is_last_row:
                 pyautogui.hotkey('ctrl', 's')
                 if not self._interruptible_delay(save_settle):
                     return False
@@ -772,7 +774,7 @@ class LoaderThread(QThread):
                                 break
 
                 if not self._stop_requested and row_had_activity:
-                    if not self._perform_end_of_row_action(rows_processed):
+                    if not self._perform_end_of_row_action(rows_processed, is_last_row=(row_idx == self.end_row)):
                         break
 
             else:

@@ -253,7 +253,7 @@ class MainWindow(QMainWindow):
 
         # Global load defaults (used to prefill Start Load popup)
         self._default_speed_delay = 0.1
-        self._default_window_delay = 0.1
+        self._default_window_delay = 0.05
         self._default_wait_hourglass = True
         self._default_form_mode = False
         self._default_load_mode = "per_cell"
@@ -405,7 +405,7 @@ class MainWindow(QMainWindow):
         if defaults_version < LOAD_DEFAULTS_VERSION:
             # Migrate old installs to the new IFMIS-friendly defaults once.
             self._default_speed_delay = 0.1
-            self._default_window_delay = 0.1
+            self._default_window_delay = 0.05
             self._default_wait_hourglass = True
             migrated_defaults = True
         else:
@@ -2090,6 +2090,7 @@ class MainWindow(QMainWindow):
             form_mode=load_mode in {"per_row", "per_row_paste"},
             load_mode=load_mode,
             end_of_row_action=settings.get("end_of_row_action", "none"),
+            save_interval=settings.get("save_interval", 50),
             db_settings=self._db_settings,
         )
         self.loader_thread.parser.shortcuts = self.parser.shortcuts
@@ -2281,10 +2282,14 @@ class MainWindow(QMainWindow):
         finished_thread = self.sender()
 
         self.start_btn.setEnabled(True)
+        # Only snap to 100% if load completed successfully; keep partial value on stopped loads
+        was_success = self._pending_load_result[0] if self._pending_load_result else True
         maximum = self.progress_bar.maximum()
         if maximum > 0:
-            self.progress_bar.setValue(maximum)
-            self.progress_bar.setFormat(f"{maximum}/{maximum} (100%)")
+            if was_success:
+                self.progress_bar.setValue(maximum)
+                self.progress_bar.setFormat(f"{maximum}/{maximum} (100%)")
+            # else: leave the bar showing actual rows reached
             self._progress_hide_timer.start(3000)
         else:
             self.progress_bar.setVisible(False)
@@ -2392,9 +2397,9 @@ class MainWindow(QMainWindow):
         stopped_display = last_row + 1 if last_row >= 0 else 1
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Resume Load")
+        dlg.setWindowTitle("Load Stopped — Action Required")
         dlg.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
-        dlg.setMinimumWidth(360)
+        dlg.setMinimumWidth(420)
 
         from kdl.styles import dialog_qss
         from kdl.config_store import get_dark_mode
@@ -2402,23 +2407,52 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout(dlg)
         layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        lbl = QLabel(f"Load stopped at row {stopped_display}. Where would you like to resume?")
-        lbl.setWordWrap(True)
-        layout.addWidget(lbl)
+        # ── Status line ──
+        lbl_status = QLabel(f"<b>Load stopped at row {stopped_display}.</b>")
+        lbl_status.setWordWrap(True)
+        layout.addWidget(lbl_status)
+
+        # ── Step-by-step guidance ──
+        from PySide6.QtWidgets import QGroupBox as _GB, QFrame as _Fr
+        guide_box = _GB("Before resuming — do the following steps:")
+        guide_layout = QVBoxLayout(guide_box)
+        guide_layout.setSpacing(4)
+        steps = [
+            f"1.  Minimise this dialog  (click the  ─  button above)",
+            f"2.  In IFMIS/Oracle, clear any partial data in row {stopped_display}",
+            f"3.  Click the <b>first field</b> of row {stopped_display} to position the cursor there",
+            f"4.  Return here and click  <b>Resume</b>",
+        ]
+        for step in steps:
+            lbl = QLabel(step)
+            lbl.setWordWrap(True)
+            guide_layout.addWidget(lbl)
+        layout.addWidget(guide_box)
+
+        # ── Separator ──
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(sep)
+
+        # ── Resume options ──
+        resume_lbl = QLabel("Resume from row:")
+        layout.addWidget(resume_lbl)
 
         btn_group = QButtonGroup(dlg)
 
-        rb_stopped = QRadioButton(f"Continue from row {stopped_display} (last stopped)")
+        rb_stopped = QRadioButton(f"Row {stopped_display}  (re-enter the stopped row)")
         rb_stopped.setChecked(True)
         btn_group.addButton(rb_stopped, 0)
         layout.addWidget(rb_stopped)
 
-        rb_begin = QRadioButton("Start from beginning (row 1)")
+        rb_begin = QRadioButton("Row 1  (start from the beginning)")
         btn_group.addButton(rb_begin, 1)
         layout.addWidget(rb_begin)
 
-        rb_custom = QRadioButton("Choose row:")
+        rb_custom = QRadioButton("Custom row:")
         btn_group.addButton(rb_custom, 2)
         custom_row = QHBoxLayout()
         custom_row.addWidget(rb_custom)
@@ -2434,6 +2468,7 @@ class MainWindow(QMainWindow):
         rb_custom.toggled.connect(spin.setEnabled)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.button(QDialogButtonBox.Ok).setText("Resume")
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
         layout.addWidget(btns)
