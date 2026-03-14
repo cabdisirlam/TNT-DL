@@ -16,7 +16,7 @@ from kdl.styles import dialog_qss, accent_button_qss
 # ── Worker thread so the UI doesn't freeze ────────────────
 
 class _ConverterWorker(QThread):
-    finished = Signal(object)   # ConversionResult
+    result_ready = Signal(object)   # ConversionResult
     error = Signal(str)
 
     def __init__(self, filepath: str, sheet_names: list, skip_contra: bool = True):
@@ -28,6 +28,8 @@ class _ConverterWorker(QThread):
 
     def run(self):
         tmp_path = None
+        combined = None
+        error_msg = None
         try:
             import openpyxl, tempfile
             from kdl.engine.statement_converter import (
@@ -108,16 +110,19 @@ class _ConverterWorker(QThread):
 
             if any_success:
                 self.wb = wb
-
-            self.finished.emit(combined)
         except Exception as exc:
-            self.error.emit(str(exc))
+            error_msg = str(exc)
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.unlink(tmp_path)
                 except Exception:
                     pass
+
+        if error_msg is not None:
+            self.error.emit(error_msg)
+        elif combined is not None:
+            self.result_ready.emit(combined)
 
 
 # ── Dialog ─────────────────────────────────────────────────
@@ -147,11 +152,6 @@ class StatementConverterDialog(QDialog):
         self._worker = None
         if worker is None:
             return
-        try:
-            if worker.isRunning():
-                worker.wait()
-        except Exception:
-            pass
         try:
             worker.deleteLater()
         except Exception:
@@ -364,7 +364,7 @@ class StatementConverterDialog(QDialog):
         self._wb = None
 
         self._worker = _ConverterWorker(filepath, selected, skip_contra=self._skip_contra_check.isChecked())
-        self._worker.finished.connect(self._on_finished)
+        self._worker.result_ready.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.start()
 
