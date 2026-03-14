@@ -1,0 +1,17 @@
+# KDL local/runtime settings
+.kdl/
+.claude/settings.local.json
+
+# Python cache artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build outputs
+build/
+dist/
+
+# Local patch helpers / scratch files
+_patch_*.py
+nul

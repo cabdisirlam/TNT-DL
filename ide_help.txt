@@ -1,0 +1,23 @@
+You can configure Claude Code to use your IDE with the `/ide` command. Here are the available options:
+
+**Set your IDE:**
+```
+/ide vscode       # VS Code (default)
+/ide cursor        # Cursor
+/ide windsurf      # Windsurf
+/ide terminal      # Terminal only (no IDE integration)
+```
+
+**What it does:**
+- Configures which IDE extension Claude Code integrates with
+- Enables features like clicking file paths to open them directly in your editor
+- Sets up the connection for inline diffs and other IDE-specific features
+
+**Current setup:**
+Since you're on Windows and have a `.vscode/launch.json` in your workspace, you're likely using VS Code. If you haven't set it yet, run:
+
+```
+/ide vscode
+```
+
+You can also check your current setting with just `/ide` by itself.

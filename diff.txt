@@ -1,0 +1,500 @@
+diff --git a/KenyafromsDL/kdl/main_window.py b/KenyafromsDL/kdl/main_window.py
+index 3439a7c..c390c09 100644
+--- a/KenyafromsDL/kdl/main_window.py
++++ b/KenyafromsDL/kdl/main_window.py
+@@ -50,6 +50,18 @@ COMMAND_GROUPS = [
+ 
+ LOAD_DEFAULTS_VERSION = 4
+ VALID_LOAD_MODES = {"per_cell", "per_row"}
++TABLE_FORMAT_HEADERS = [
++    "Line",
++    "Type",
++    "Code",
++    "Number",
++    "Transaction Date",
++    "Value Date",
++    "Amount",
++]
++CELL_FORMAT_KEY_COLUMNS = {0, 1, 2, 3, 5, 7, 9, 11, 13, 14, 15}
++DATE_TEXT_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{4}$")
++AMOUNT_TEXT_RE = re.compile(r"^-?\d[\d,]*(?:\.\d+)?$")
+ 
+ 
+ class LoadProgressOverlay(QWidget):
+@@ -568,10 +580,15 @@ class MainWindow(QMainWindow):
+         validate_action.triggered.connect(self._validate_current_data)
+         tools_menu.addAction(validate_action)
+ 
+-        convert_macros_action = QAction("Convert &Macros", self)
+-        convert_macros_action.setShortcut(QKeySequence("Ctrl+Shift+M"))
+-        convert_macros_action.triggered.connect(self._convert_macros_to_app_format)
+-        tools_menu.addAction(convert_macros_action)
++        convert_table_action = QAction("Convert to &Table Format", self)
++        convert_table_action.setShortcut(QKeySequence("Ctrl+Shift+T"))
++        convert_table_action.triggered.connect(self._convert_to_table_format)
++        tools_menu.addAction(convert_table_action)
++
++        convert_cell_action = QAction("Convert to &Cell Format", self)
++        convert_cell_action.setShortcut(QKeySequence("Ctrl+Shift+M"))
++        convert_cell_action.triggered.connect(self._convert_to_cell_format)
++        tools_menu.addAction(convert_cell_action)
+ 
+         browser_menu = tools_menu.addMenu("&Browser Control")
+         browser_menu.addAction(
+@@ -717,14 +734,25 @@ class MainWindow(QMainWindow):
+         self.rec_btn.setToolTip("Macro Recorder")
+         toolbar.addAction(self.rec_btn)
+ 
+-        self.convert_macros_btn = QAction(
+-            self._icon("ic_convert.svg"),
+-            "Convert Macros",
++        self.convert_table_btn = QAction(
++            self._icon("ic_table_format.svg"),
++            "To Table",
++            self,
++            triggered=self._convert_to_table_format,
++        )
++        self.convert_table_btn.setToolTip("Convert to Table Format  (Ctrl+Shift+T)")
++        toolbar.addAction(self.convert_table_btn)
++
++        self.convert_cell_btn = QAction(
++            self._icon("ic_cell_format.svg"),
++            "To Cell",
+             self,
+-            triggered=self._convert_macros_to_app_format,
++            triggered=self._convert_to_cell_format,
+         )
+-        self.convert_macros_btn.setToolTip("Convert macros to App Format  (Ctrl+Shift+M)")
+-        toolbar.addAction(self.convert_macros_btn)
++        self.convert_cell_btn.setToolTip("Convert to Cell Format  (Ctrl+Shift+M)")
++        toolbar.addAction(self.convert_cell_btn)
++        # Backward-compatible anchor name used by layout alignment.
++        self.convert_macros_btn = self.convert_cell_btn
+         self._normalize_toolbar_button_geometry()
+         self._apply_toolbar_action_colors()
+ 
+@@ -2026,7 +2054,8 @@ class MainWindow(QMainWindow):
+         style_action(self.pause_btn, "#D97706", "#111827", "#92400E")
+         style_action(self.step_btn, "#2563EB", "#FFFFFF", "#1E3A8A")
+         style_action(self.rec_btn, "#BE123C", "#FFFFFF", "#881337")
+-        style_action(self.convert_macros_btn, "#0EA5E9", "#0F172A", "#0369A1")
++        style_action(self.convert_table_btn, "#0F766E", "#FFFFFF", "#115E59")
++        style_action(self.convert_cell_btn, "#0EA5E9", "#0F172A", "#0369A1")
+ 
+     @staticmethod
+     def _normalize_backslash_macro(text: str) -> str:
+@@ -2145,35 +2174,302 @@ class MainWindow(QMainWindow):
+ 
+         return text
+ 
+-    def _get_macro_conversion_targets(self) -> tuple[list[tuple[int, int, QTableWidgetItem]], str]:
+-        """
+-        Resolve conversion scope as the whole used sheet.
+-        One click converts all non-empty used cells.
+-        """
+-        targets: list[tuple[int, int, QTableWidgetItem]] = []
++    @staticmethod
++    def _normalize_header_text(value) -> str:
++        text = str(value or "").strip().lower()
++        text = re.sub(r"[^a-z0-9]+", " ", text)
++        return re.sub(r"\s+", " ", text).strip()
++
++    @staticmethod
++    def _clean_cell_text(value) -> str:
++        return str(value or "").strip()
++
++    @classmethod
++    def _detect_table_col_map(cls, grid_data: list) -> tuple[dict, bool]:
++        aliases = {
++            "line": {"line", "line no", "line number", "no", "no.", "serial", "serial no"},
++            "type": {"type", "transaction type", "trx type"},
++            "code": {"code", "transaction code", "trx code"},
++            "number": {"number", "reference", "reference number", "transaction number"},
++            "transaction_date": {"transaction date", "trx date", "date"},
++            "value_date": {"value date"},
++            "amount": {"amount", "transaction amount"},
++        }
++        if grid_data:
++            normalized = [cls._normalize_header_text(v) for v in grid_data[0]]
++            found = {}
++            for idx, name in enumerate(normalized):
++                if not name:
++                    continue
++                for key, names in aliases.items():
++                    if key in found:
++                        continue
++                    if name in names:
++                        found[key] = idx
++            required = {"type", "code", "number", "transaction_date", "value_date", "amount"}
++            if required.issubset(set(found)):
++                return found, True
++
++        # Default fallback by positional layout.
++        return {
++            "line": 0,
++            "type": 1,
++            "code": 2,
++            "number": 3,
++            "transaction_date": 4,
++            "value_date": 5,
++            "amount": 6,
++        }, False
++
++    @staticmethod
++    def _normalize_table_type(raw_type: str, raw_code: str) -> str:
++        lowered = (raw_type or "").strip().lower()
++        if lowered in {"receipt", "r"}:
++            return "Receipt"
++        if lowered in {"payment", "p"}:
++            return "Payment"
++        if (raw_code or "").strip().upper() == "TRFC":
++            return "Receipt"
++        return "Payment"
++
++    @staticmethod
++    def _is_cell_format_row(row: list) -> bool:
++        if len(row) < 9:
++            return False
++        vals = [str(v or "").strip().lower() for v in row]
++        tab_hits = 0
++        for token in vals:
++            if token in {"tab", r"\{tab}"}:
++                tab_hits += 1
++        has_code = any(token in {"trfd", "trfc"} for token in vals)
++        has_tail_macro = any(token in {"*s", "*sv", "*dn", "*nx"} for token in vals)
++        return tab_hits >= 3 and has_code and has_tail_macro
++
++    @staticmethod
++    def _is_control_token(token: str) -> bool:
++        low = token.strip().lower()
++        if not low:
++            return True
++        if low in {
++            "tab", r"\{tab}", "dn", "down", "up", "left", "right", "enter", "esc", "escape",
++            r"\r", r"\n",
++            "*s", "*sv", "*sp", "*dn", "*nx", "*nr", "*pv", "*up", "*cl", "*nb",
++        }:
++            return True
++        if low.startswith("*"):
++            return True
++        if low.startswith("\\{") and low.endswith("}"):
++            return True
++        return False
++
++    @classmethod
++    def _extract_table_fields_from_cell_row(cls, row: list) -> dict | None:
++        if not cls._is_cell_format_row(row):
++            return None
++        vals = [cls._clean_cell_text(v) for v in row]
++        lower_vals = [v.lower() for v in vals]
++
++        code_idx = -1
++        for idx, token in enumerate(lower_vals):
++            if token in {"trfd", "trfc"}:
++                code_idx = idx
++                break
++        if code_idx < 0:
++            return None
++
++        code = vals[code_idx].upper()
++        type_val = "Receipt" if code == "TRFC" else "Payment"
++
++        # Receipt hints may appear before code in macro rows.
++        prefix = lower_vals[:code_idx]
++        if any(tok in {"*dn", "dn", "down", r"\r", "r", "receipt"} for tok in prefix):
++            type_val = "Receipt"
++
++        payload = []
++        for token in vals[code_idx + 1:]:
++            if cls._is_control_token(token):
++                continue
++            payload.append(token)
++
++        if not payload:
++            return None
++
++        number = payload[0]
++        date_values = [p for p in payload[1:] if DATE_TEXT_RE.fullmatch(p)]
++        t_date = date_values[0] if len(date_values) >= 1 else ""
++        v_date = date_values[1] if len(date_values) >= 2 else (t_date if t_date else "")
++
++        amount = ""
++        for p in reversed(payload):
++            if p in {number, t_date, v_date}:
++                continue
++            amount = p
++            break
++        if not amount and len(payload) > 1:
++            amount = payload[-1]
++
++        if not any([code, number, t_date, v_date, amount]):
++            return None
++        return {
++            "type": type_val,
++            "code": code,
++            "number": number,
++            "transaction_date": t_date,
++            "value_date": v_date,
++            "amount": amount,
++        }
++
++    @classmethod
++    def _extract_table_fields_from_table_row(cls, row: list, col_map: dict) -> dict | None:
++        def cell(key: str) -> str:
++            idx = col_map.get(key)
++            if idx is None or idx < 0 or idx >= len(row):
++                return ""
++            return cls._clean_cell_text(row[idx])
++
++        row_vals = [cls._clean_cell_text(v) for v in row]
++
++        def normalize_data_token(token: str) -> str:
++            if cls._is_control_token(token):
++                return ""
++            return token
++
++        def normalize_date_token(token: str) -> str:
++            token = normalize_data_token(token)
++            return token if token and DATE_TEXT_RE.fullmatch(token) else ""
++
++        def normalize_amount_token(token: str) -> str:
++            token = normalize_data_token(token)
++            return token if token and AMOUNT_TEXT_RE.fullmatch(token) else ""
++
++        raw_code = normalize_data_token(cell("code"))
++        code_idx = col_map.get("code", -1)
++        if not raw_code:
++            for idx, token in enumerate(row_vals):
++                low = token.lower()
++                if low in {"trfd", "trfc"}:
++                    raw_code = token
++                    code_idx = idx
++                    break
+ 
++        raw_number = normalize_data_token(cell("number"))
++        raw_tdate = normalize_date_token(cell("transaction_date"))
++        raw_vdate = normalize_date_token(cell("value_date"))
++        raw_amount = normalize_amount_token(cell("amount"))
++
++        # Fallback from row payload after code when mapped columns are noisy/misaligned.
++        payload = []
++        if code_idx is not None and isinstance(code_idx, int) and code_idx >= 0:
++            for token in row_vals[code_idx + 1:]:
++                if cls._is_control_token(token):
++                    continue
++                payload.append(token)
++
++        if not raw_number and payload:
++            raw_number = payload[0]
++
++        date_candidates = [p for p in payload if DATE_TEXT_RE.fullmatch(p)]
++        if not raw_tdate and date_candidates:
++            raw_tdate = date_candidates[0]
++        if not raw_vdate:
++            if len(date_candidates) > 1:
++                raw_vdate = date_candidates[1]
++            elif raw_tdate:
++                raw_vdate = raw_tdate
++
++        if not raw_amount:
++            for p in reversed(payload):
++                if p in {raw_number, raw_tdate, raw_vdate}:
++                    continue
++                if AMOUNT_TEXT_RE.fullmatch(p):
++                    raw_amount = p
++                    break
++            if not raw_amount and payload:
++                candidate = payload[-1]
++                if candidate not in {raw_number, raw_tdate, raw_vdate} and AMOUNT_TEXT_RE.fullmatch(candidate):
++                    raw_amount = candidate
++
++        values = {
++            "type": normalize_data_token(cell("type")),
++            "code": raw_code,
++            "number": raw_number,
++            "transaction_date": raw_tdate,
++            "value_date": raw_vdate,
++            "amount": raw_amount,
++        }
++        if not any(values.values()):
++            return None
++        return values
++
++    @classmethod
++    def _normalize_table_fields(cls, fields: dict) -> dict:
++        tx_type = cls._normalize_table_type(fields.get("type", ""), fields.get("code", ""))
++        code = cls._clean_cell_text(fields.get("code", "")).upper()
++        if not code:
++            code = "TRFC" if tx_type == "Receipt" else "TRFD"
++        return {
++            "type": tx_type,
++            "code": code,
++            "number": cls._clean_cell_text(fields.get("number", "")),
++            "transaction_date": cls._clean_cell_text(fields.get("transaction_date", "")),
++            "value_date": cls._clean_cell_text(fields.get("value_date", "")),
++            "amount": cls._clean_cell_text(fields.get("amount", "")),
++        }
++
++    def _replace_sheet_data(self, rows: list[list[str]], *, key_columns: set | None, has_header_row: bool):
++        max_cols = max((len(r) for r in rows), default=0)
++        target_rows = max(1, len(rows) + 10)
++        target_cols = max(1, max_cols + 5)
++
++        self.spreadsheet._begin_history_action()
++        self.spreadsheet.setUpdatesEnabled(False)
++        self.spreadsheet.blockSignals(True)
++        try:
++            self.spreadsheet.clearContents()
++            self.spreadsheet.setRowCount(target_rows)
++            self.spreadsheet.setColumnCount(target_cols)
++            self.spreadsheet._update_headers()
++
++            for r, row in enumerate(rows):
++                for c, value in enumerate(row):
++                    text = str(value) if value is not None else ""
++                    if text == "":
++                        continue
++                    self.spreadsheet.setItem(r, c, QTableWidgetItem(text))
++        finally:
++            self.spreadsheet.blockSignals(False)
++            self.spreadsheet.setUpdatesEnabled(True)
++            self.spreadsheet._end_history_action()
++
++        self.spreadsheet._rebuild_cell_cache()
++        if key_columns is not None:
++            self.spreadsheet.set_key_columns(set(key_columns))
++        self.spreadsheet._refresh_highlighting()
++        self._has_header_row = bool(has_header_row)
++        self.spreadsheet.data_changed.emit()
++
++    def _convert_to_cell_format(self):
++        """Normalize keystroke tokens in-place for cell workflows (no column remapping)."""
+         grid_data = self.spreadsheet.get_grid_data()
+         if not grid_data:
+-            return [], "whole sheet"
++            self.status_label.setText("To Cell: nothing to normalize.")
++            return
+ 
++        targets: list[QTableWidgetItem] = []
+         max_row = len(grid_data) - 1
+         max_col = max((len(r) for r in grid_data), default=0) - 1
+         if max_row < 0 or max_col < 0:
+-            return [], "whole sheet"
++            self.status_label.setText("To Cell: nothing to normalize.")
++            return
+ 
+         for row in range(max_row + 1):
+             for col in range(max_col + 1):
+                 item = self.spreadsheet.item(row, col)
+                 if item and item.text().strip():
+-                    targets.append((row, col, item))
+-
+-        return targets, "whole sheet"
++                    targets.append(item)
+ 
+-    def _convert_macros_to_app_format(self):
+-        """One-click macro normalization for easier IFMIS-ready formatting."""
+-        targets, scope = self._get_macro_conversion_targets()
+         if not targets:
+-            self.status_label.setText("Convert macros: nothing to convert.")
++            self.status_label.setText("To Cell: nothing to normalize.")
+             return
+ 
+         changed = 0
+@@ -2181,7 +2477,7 @@ class MainWindow(QMainWindow):
+         self.spreadsheet.setUpdatesEnabled(False)
+         self.spreadsheet.blockSignals(True)
+         try:
+-            for _, _, item in targets:
++            for item in targets:
+                 before = item.text()
+                 after = self._normalize_macro_cell_value(before)
+                 if after != before:
+@@ -2193,10 +2489,59 @@ class MainWindow(QMainWindow):
+             self.spreadsheet._end_history_action()
+ 
+         if changed > 0:
++            self.spreadsheet._rebuild_cell_cache()
+             self.spreadsheet._refresh_highlighting()
+-            self.status_label.setText(f"Converted {changed} cell(s) ({scope}) to Standard Format.")
++            self.status_label.setText(f"To Cell: normalized {changed} cell(s).")
+         else:
+-            self.status_label.setText(f"Convert macros: no changes needed in {scope}.")
++            self.status_label.setText("To Cell: no changes needed.")
++
++    def _convert_to_table_format(self):
++        """Convert legacy cell-format rows into table-style rows for per-row workflows."""
++        grid_data = self.spreadsheet.get_grid_data()
++        if not grid_data:
++            self.status_label.setText("Convert to Table: nothing to convert.")
++            return
++
++        col_map, has_header = self._detect_table_col_map(grid_data)
++        start_row = 1 if has_header else 0
++        table_rows: list[list[str]] = []
++        line_no = 1
++
++        for row in grid_data[start_row:]:
++            if not any(self._clean_cell_text(v) for v in row):
++                continue
++
++            fields = self._extract_table_fields_from_cell_row(row)
++            if fields is None:
++                fields = self._extract_table_fields_from_table_row(row, col_map)
++            if not fields:
++                continue
++
++            norm = self._normalize_table_fields(fields)
++            if not any([norm["number"], norm["transaction_date"], norm["value_date"], norm["amount"], norm["code"]]):
++                continue
++
++            table_rows.append([
++                "tab",
++                norm["type"],
++                norm["code"],
++                norm["number"],
++                norm["transaction_date"],
++                norm["value_date"],
++                norm["amount"],
++            ])
++            line_no += 1
++
++        if line_no == 1:
++            self.status_label.setText("Convert to Table: no compatible rows found.")
++            return
++
++        self._replace_sheet_data(table_rows, key_columns=set(), has_header_row=False)
++        self.status_label.setText(f"Converted {line_no - 1} row(s) to Table Format.")
++
++    def _convert_macros_to_app_format(self):
++        """Backward-compatible alias: Convert to Cell Format."""
++        self._convert_to_cell_format()
+ 
+     # Shortcuts
+     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@@ -2297,12 +2642,10 @@ class MainWindow(QMainWindow):
+             "&nbsp;&nbsp;- <code>*S</code> = Save (Ctrl+S)<br>"
+             "&nbsp;&nbsp;- <code>*NX</code> = Next row (Down + Home)<br>"
+             "&nbsp;&nbsp;- <code>\\r</code> = Type r for Receipt (after <code>*DN</code>)</li>"
+-            "<li><b>Clean Macros:</b> Use <b>Tools &gt; Convert Macros</b> (Ctrl+Shift+M) "
+-            "to auto-convert entries like <code>\\*s</code> / <code>tab</code> "
+-            "to the standard format (<code>*S</code> / <code>\\{TAB}</code>) and force typed dropdown keys "
+-            "like <code>r</code> to <code>\\r</code>.</li>"
+-            "<li><b>Default Standard:</b> In KDL sheets use <code>\\{TAB}</code> for Tab. "
+-            "Plain <code>tab</code> is accepted and Convert Macros changes it to <code>\\{TAB}</code>.</li>"
++            "<li><b>Prepare Format:</b> Use <b>To Table</b> (Ctrl+Shift+T) for Per Row sheets "
++            "or <b>To Cell</b> (Ctrl+Shift+M) for legacy macro sheets.</li>"
++            "<li><b>Default Standard:</b> In Cell Format sheets use <code>\\{TAB}</code> for Tab. "
++            "Plain <code>tab</code> is accepted and To Cell normalizes it to <code>\\{TAB}</code>.</li>"
+             "<li><b>Start Loading:</b> Click Start, set row range "
+             "(e.g. rows 1 to 500), and click Start</li>"
+             "</ol>"
+@@ -2336,7 +2679,7 @@ class MainWindow(QMainWindow):
+             "<code>*S</code> is the default Save command for IFMIS. "
+             "<code>*SV</code> is an alias for Save. "
+             "If you need right then tab, use two steps: <code>right</code> then <code>\\{TAB}</code>. "
+-            "Plain <code>tab</code> is compatibility input and Convert Macros normalizes it to <code>\\{TAB}</code>.</p>"
++            "Plain <code>tab</code> is compatibility input and To Cell normalizes it to <code>\\{TAB}</code>.</p>"
+             "<h4>Shortcuts</h4>"
+             "<table border='1' cellpadding='4'>"
+             "<tr><th>Shortcut</th><th>Action</th></tr>"

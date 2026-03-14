@@ -1,0 +1,70 @@
+# -*- mode: python ; coding: utf-8 -*-
+
+
+a = Analysis(
+    ['kdl\\main.py'],
+    pathex=[],
+    binaries=[],
+    datas=[('kdl/assets', 'kdl/assets'), ('kdl/templates', 'kdl/templates')],
+    hiddenimports=['pyautogui', 'pyperclip', 'pyscreeze', 'pygetwindow', 'pymsgbox', 'pytweening', 'win32gui', 'win32con', 'win32api', 'openpyxl', 'pynput'],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        # Optional platform-specific modules pulled by pyautogui/pynput stack.
+        # Excluding them on Windows keeps warn-KDL.txt cleaner without affecting runtime.
+        'AppKit',
+        'Quartz',
+        'CoreFoundation',
+        'Foundation',
+        'HIServices',
+        'objc',
+        'Xlib',
+        'Xlib.display',
+        'Xlib.ext',
+        'Xlib.keysymdef',
+        'Xlib.protocol',
+        'Xlib.threaded',
+        'evdev',
+        'evdev.events',
+        # Optional parsing/interop extras we do not use in KDL runtime.
+        'BeautifulSoup',
+        'bs4',
+        'html5lib',
+        'html5lib.treebuilders',
+        'cssselect',
+        'lxml_html_clean',
+        'defusedxml',
+        'defusedxml.ElementTree',
+        'cv2',
+        'numpy',
+        'numpy.typing',
+        'PyQt5',
+        'qtpy',
+    ],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='NT_DL',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=['kdl\\assets\\kdl_a.ico'],
+)

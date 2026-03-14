@@ -1,0 +1,14 @@
+On Windows, Claude Code's global settings file is located at:
+
+```
+C:\Users\cabdi\.claude\settings.json
+```
+
+This is where preferences like the `/ide` setting (preferred IDE/editor) are stored. The `.claude` directory under your user home folder contains all global Claude Code configuration:
+
+- **`settings.json`** - Global settings (IDE preference, permissions, etc.)
+- **`keybindings.json`** - Custom keyboard shortcuts
+- **`memory/`** - Auto-memory files
+- **`projects/`** - Per-project memory and settings
+
+For project-specific settings, there's also a `CLAUDE.md` file that can live in your project root (`C:\Users\cabdi\Google code\KenyafromsDL\CLAUDE.md`).
