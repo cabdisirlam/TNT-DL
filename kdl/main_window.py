@@ -785,18 +785,24 @@ class MainWindow(QMainWindow):
         self.stop_btn = QAction(self._icon("ic_stop.svg"), "Stop", self, triggered=self._stop_loading)
         self.stop_btn.setToolTip("Stop Load")
         self.stop_btn.setEnabled(False)
-        toolbar.addAction(self.stop_btn)
 
         self.pause_btn = QAction(self._icon("ic_pause.svg"), "Pause", self, triggered=self._pause_resume)
         self.pause_btn.setShortcut(QKeySequence("F6"))
         self.pause_btn.setToolTip("Pause / Resume  (F6)")
         self.pause_btn.setEnabled(False)
-        toolbar.addAction(self.pause_btn)
 
         self.step_btn = QAction(self._icon("ic_step.svg"), "Step", self, triggered=self._next_step)
         self.step_btn.setToolTip("Step Forward")
         self.step_btn.setEnabled(False)
-        toolbar.addAction(self.step_btn)
+
+        self.statement_btn = QAction(
+            self._icon("ic_statement.svg"),
+            "Bank Statement",
+            self,
+            triggered=self._open_statement_converter,
+        )
+        self.statement_btn.setToolTip("Bank Statement Converter")
+        toolbar.addAction(self.statement_btn)
 
         toolbar.addSeparator()
 
@@ -2559,6 +2565,7 @@ class MainWindow(QMainWindow):
         style_action(self.stop_btn, "#DC2626", "#FFFFFF", "#7F1D1D")
         style_action(self.pause_btn, "#D97706", "#111827", "#92400E")
         style_action(self.step_btn, "#2563EB", "#FFFFFF", "#1E3A8A")
+        style_action(self.statement_btn, "#2563EB", "#FFFFFF", "#1D4ED8")
         style_action(self.rec_btn, "#BE123C", "#FFFFFF", "#881337")
         style_action(self.convert_table_btn, "#0F766E", "#FFFFFF", "#115E59")
         style_action(self.convert_cell_btn, "#0EA5E9", "#0F172A", "#0369A1")

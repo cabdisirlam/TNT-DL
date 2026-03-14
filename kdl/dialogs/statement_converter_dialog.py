@@ -251,6 +251,49 @@ class StatementConverterDialog(QDialog):
         action_row.addWidget(self._close_btn)
         layout.addLayout(action_row)
 
+    @staticmethod
+    def _get_sheet_names(filepath: str) -> list[str]:
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext == '.xls':
+            excel = None
+            workbook = None
+            try:
+                import win32com.client
+
+                excel = win32com.client.DispatchEx("Excel.Application")
+                excel.Visible = False
+                excel.DisplayAlerts = False
+                workbook = excel.Workbooks.Open(
+                    os.path.abspath(filepath),
+                    UpdateLinks=0,
+                    ReadOnly=True,
+                )
+                return [sheet.Name for sheet in workbook.Worksheets]
+            except Exception as exc:
+                raise RuntimeError(
+                    "Could not read this .xls workbook. Open it in Excel and save as .xlsx, "
+                    "or make sure Excel is installed for legacy .xls support."
+                ) from exc
+            finally:
+                if workbook is not None:
+                    try:
+                        workbook.Close(False)
+                    except Exception:
+                        pass
+                if excel is not None:
+                    try:
+                        excel.Quit()
+                    except Exception:
+                        pass
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+        try:
+            return list(wb.sheetnames)
+        finally:
+            wb.close()
+
     # ── File browsing ──────────────────────────────────────
 
     def _browse_file(self):
@@ -276,10 +319,8 @@ class StatementConverterDialog(QDialog):
         self._load_grid_btn.setEnabled(False)
 
         try:
-            import openpyxl
-            wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
             COLS = 3
-            for i, name in enumerate(wb.sheetnames):
+            for i, name in enumerate(self._get_sheet_names(filepath)):
                 row, col = divmod(i, COLS)
                 cb = QCheckBox(name)
                 # Auto-uncheck generated output sheets
@@ -288,7 +329,6 @@ class StatementConverterDialog(QDialog):
                 cb.stateChanged.connect(self._update_convert_btn)
                 self._sheet_check_layout.addWidget(cb, row, col)
                 self._sheet_checks.append(cb)
-            wb.close()
             self._update_convert_btn()
         except Exception as exc:
             QMessageBox.warning(self, 'File Error', f'Could not open file:\n{exc}')
