@@ -11,6 +11,10 @@ __pycache__/
 # Build outputs
 build/
 dist/
+*.spec
+
+# Installer staging area
+installer/staging/
 
 # Local patch helpers / scratch files
 _patch_*.py
