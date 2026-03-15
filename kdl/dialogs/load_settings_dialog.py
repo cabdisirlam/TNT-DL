@@ -39,7 +39,6 @@ END_OF_ROW_ACTIONS = [
 LOAD_MODES = [
     ("Per Cell - one cell at a time", "per_cell"),
     ("Per Row - auto-Tab, end-of-row action", "per_row"),
-    ("Per Row Paste - paste entire row (testing)", "per_row_paste"),
 ]
 
 
@@ -132,9 +131,6 @@ class LoadSettingsDialog(QDialog):
         self.radio_per_row = QRadioButton(LOAD_MODES[1][0])
         mg.addWidget(self.radio_per_row)
 
-        self.radio_per_row_paste = QRadioButton(LOAD_MODES[2][0])
-        mg.addWidget(self.radio_per_row_paste)
-
         # End of row action (indent under Per Row)
         eor_row = QHBoxLayout()
         eor_row.addSpacing(22)
@@ -164,7 +160,6 @@ class LoadSettingsDialog(QDialog):
 
         self.radio_per_cell.toggled.connect(self._update_mode_controls)
         self.radio_per_row.toggled.connect(self._update_mode_controls)
-        self.radio_per_row_paste.toggled.connect(self._update_mode_controls)
         self.eor_combo.currentIndexChanged.connect(self._update_save_interval_visibility)
 
         layout.addWidget(mode_group)
@@ -211,9 +206,9 @@ class LoadSettingsDialog(QDialog):
         dg = QGridLayout(delay_group)
         dg.setSpacing(4)
 
-        # Delay after cell processed (recommended default: 0.1s)
+        # Delay after cell processed (recommended default: 0.12s)
         dg.addWidget(QLabel("Delay after cell processed:"), 0, 0)
-        self.cell_delay_input = QLineEdit("0.1")
+        self.cell_delay_input = QLineEdit("0.12")
         self.cell_delay_input.setFixedWidth(52)
         self.cell_delay_input.setAlignment(Qt.AlignCenter)
         dg.addWidget(self.cell_delay_input, 0, 1)
@@ -285,14 +280,12 @@ class LoadSettingsDialog(QDialog):
     # Actions
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _selected_load_mode(self) -> str:
-        if self.radio_per_row_paste.isChecked():
-            return "per_row_paste"
         if self.radio_per_row.isChecked():
             return "per_row"
         return "per_cell"
 
     def _update_mode_controls(self):
-        is_per_row = self.radio_per_row.isChecked() or self.radio_per_row_paste.isChecked()
+        is_per_row = self.radio_per_row.isChecked()
 
         # End-of-row action only matters in Per Row mode
         self.eor_combo.setEnabled(is_per_row)
@@ -356,12 +349,11 @@ class LoadSettingsDialog(QDialog):
             "  Validate before start: catches data issues early\n\n"
             "LOAD MODES\n"
             "  Per Cell: sends one cell at a time (you control Tab/Enter)\n"
-            "  Per Row: auto-Tabs between fields, runs end-of-row action\n"
-            "  Per Row Paste: paste whole row once (testing mode)\n\n"
+            "  Per Row: auto-Tabs between fields, runs end-of-row action\n\n"
             "STOP: Press ESC once or click Stop button.\n\n"
             "Default delays in this build:\n"
-            "  Cell processed: 0.1s\n"
-            "  Window activated: 0.1s\n"
+            "  Cell processed: 0.12s\n"
+            "  Window activated: 0.05s\n"
         )
 
     def _start_loading(self):
@@ -377,7 +369,7 @@ class LoadSettingsDialog(QDialog):
         try:
             cell_delay = float(self.cell_delay_input.text())
         except ValueError:
-            cell_delay = 0.1
+            cell_delay = 0.12
         try:
             window_delay = float(self.window_delay_input.text())
         except ValueError:
@@ -423,7 +415,7 @@ class LoadSettingsDialog(QDialog):
             "speed_delay": cell_delay,
             "window_delay": window_delay,
             "load_mode": load_mode,
-            "form_mode": load_mode in {"per_row", "per_row_paste"},
+            "form_mode": load_mode == "per_row",
             "end_of_row_action": end_of_row_action,
             "save_interval": save_interval,
             "validate_before_load": self.validate_check.isChecked(),

@@ -49,7 +49,7 @@ COMMAND_GROUPS = [
 ]
 
 LOAD_DEFAULTS_VERSION = 6
-VALID_LOAD_MODES = {"per_cell", "per_row", "per_row_paste"}
+VALID_LOAD_MODES = {"per_cell", "per_row"}
 TABLE_FORMAT_HEADERS = [
     "Line",
     "Type",
@@ -431,7 +431,7 @@ class MainWindow(QMainWindow):
             self._default_load_mode = saved_mode
         else:
             self._default_load_mode = "per_cell"
-        self._default_form_mode = self._default_load_mode in {"per_row", "per_row_paste"}
+        self._default_form_mode = self._default_load_mode == "per_row"
 
         self._default_validate_before_load = bool(
             load_defaults.get("validate_before_load", self._default_validate_before_load)
@@ -1459,7 +1459,7 @@ class MainWindow(QMainWindow):
         chosen_mode = mode_combo.currentData() or "per_cell"
         self._default_wait_hourglass = wait_check.isChecked()
         self._default_load_mode = chosen_mode if chosen_mode in VALID_LOAD_MODES else "per_cell"
-        self._default_form_mode = self._default_load_mode in {"per_row", "per_row_paste"}
+        self._default_form_mode = self._default_load_mode == "per_row"
         self._default_validate_before_load = validate_check.isChecked()
         self._compact_mode_enabled = compact_check.isChecked()
         self._default_end_of_row_action = eor_combo.currentData()
@@ -1829,8 +1829,6 @@ class MainWindow(QMainWindow):
         dialog.hourglass_check.setChecked(self._default_wait_hourglass)
         if self._default_load_mode == "per_row":
             dialog.radio_per_row.setChecked(True)
-        elif self._default_load_mode == "per_row_paste":
-            dialog.radio_per_row_paste.setChecked(True)
         else:
             dialog.radio_per_cell.setChecked(True)
         dialog._update_mode_controls()
@@ -1981,7 +1979,7 @@ class MainWindow(QMainWindow):
         if chosen_mode not in VALID_LOAD_MODES:
             chosen_mode = "per_cell"
         self._default_load_mode = chosen_mode
-        self._default_form_mode = chosen_mode in {"per_row", "per_row_paste"}
+        self._default_form_mode = chosen_mode == "per_row"
         self._default_validate_before_load = settings.get(
             "validate_before_load", self._default_validate_before_load
         )
@@ -2046,7 +2044,6 @@ class MainWindow(QMainWindow):
             mode_label = {
                 "per_cell": "Per Cell",
                 "per_row": "Per Row",
-                "per_row_paste": "Per Row Paste",
             }.get(load_mode, "Per Cell")
             reply = QMessageBox.question(
                 self,
@@ -2107,7 +2104,7 @@ class MainWindow(QMainWindow):
             key_columns=list(self.spreadsheet.key_columns),
             selected_columns=list(selected_cols) if selected_cols else None,
             delay_columns=list(delay_cols),
-            form_mode=load_mode in {"per_row", "per_row_paste"},
+            form_mode=load_mode == "per_row",
             load_mode=load_mode,
             end_of_row_action=settings.get("end_of_row_action", "none"),
             save_interval=settings.get("save_interval", 50),
@@ -2166,7 +2163,6 @@ class MainWindow(QMainWindow):
         mode_label = {
             "per_cell": "Per Cell",
             "per_row": "Per Row",
-            "per_row_paste": "Per Row Paste",
         }.get(load_mode, "Per Cell")
         self._load_overlay.set_mode_label(mode_label)
         self.status_label.setText(f"Loading ({mode_label})... Switch to target window!")
