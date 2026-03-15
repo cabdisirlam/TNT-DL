@@ -4,17 +4,15 @@ Reads a bank statement sheet from an openpyxl workbook and writes
 Output + Audit_Skipped sheets back into the same workbook.
 """
 
-import re
-from datetime import date, datetime
-from typing import Optional, List, Tuple, Dict
+from datetime import date, datetime, timedelta
+from typing import Optional, List, Dict
 from dataclasses import dataclass, field
 
 try:
     import openpyxl
     from openpyxl import Workbook
     from openpyxl.worksheet.worksheet import Worksheet
-    from openpyxl.styles import Font, PatternFill, Alignment
-    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Font
 except ImportError:
     openpyxl = None
 
@@ -38,6 +36,7 @@ class ConversionResult:
     closing_balance_calc: Optional[float] = None
     variance: Optional[float] = None
     output_data: List[List] = field(default_factory=list)   # rows for TNT DL grid
+    audit_rows: List[List] = field(default_factory=list)    # skipped-row detail records
     saved_path: str = ""
 
 
@@ -82,8 +81,6 @@ _EXCEL_EPOCH = date(1899, 12, 30)   # Excel serial-date epoch (accounts for 1900
 def _parse_date_cell(cell_value, cell_text: str = '') -> Optional[date]:
     """Parse date from cell value or text. Supports date objects, M/D/YYYY, D-MMM-YYYY,
     and raw Excel serial numbers (int/float) that openpyxl sometimes returns."""
-    from datetime import timedelta
-
     if isinstance(cell_value, datetime):
         return cell_value.date()
     if isinstance(cell_value, date):
@@ -224,7 +221,7 @@ def _find_txn_header_row(ws: Worksheet) -> int:
     return 0
 
 
-# ── Output writers ─────────────────────────────────────────
+# ── Output row builders (return plain lists, no worksheet I/O) ─────────────
 
 def _fmt_date(d: date) -> str:
     months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -232,8 +229,8 @@ def _fmt_date(d: date) -> str:
     return f"{d.day:02d}-{months[d.month - 1]}-{d.year}"
 
 
-def _write_payment(ws_out: Worksheet, r: int, doc_no, dt: date, amt: float):
-    row = [
+def _make_payment_row(doc_no, dt: date, amt: float) -> list:
+    return [
         'tab', 'tab', 'trfd', 'tab',
         str(doc_no) if doc_no else '',
         'tab',
@@ -241,24 +238,23 @@ def _write_payment(ws_out: Worksheet, r: int, doc_no, dt: date, amt: float):
         amt,
         'tab', DN_PREFIX_CELL, '*dn', '', ''
     ]
-    for c, val in enumerate(row, 1):
-        ws_out.cell(row=r, column=c, value=val)
 
 
-def _write_receipt(ws_out: Worksheet, r: int, doc_no: str, dt: date, amt: float):
-    row = [
+def _make_receipt_row(doc_no: str, dt: date, amt: float) -> list:
+    return [
         'tab', '*dn', 'r', 'tab', 'trfc', 'tab',
         doc_no,
         'tab', _fmt_date(dt), 'tab', _fmt_date(dt), 'tab',
         amt,
         'tab', DN_PREFIX_CELL, '*dn'
     ]
-    for c, val in enumerate(row, 1):
-        ws_out.cell(row=r, column=c, value=val)
 
 
-def _row_to_list(ws_out: Worksheet, r: int) -> list:
-    return [ws_out.cell(row=r, column=c).value for c in range(1, OUTPUT_LAST_COL + 1)]
+def _write_rows_to_sheet(ws_out: Worksheet, rows: list[list]):
+    """Write a list of value-lists to ws_out starting at row 2."""
+    for i, row_vals in enumerate(rows):
+        for c, val in enumerate(row_vals, 1):
+            ws_out.cell(row=i + 2, column=c, value=val)
 
 
 # ── Audit writers ──────────────────────────────────────────
@@ -317,11 +313,9 @@ def _write_audit_summary(ws_audit: Worksheet, opening, additions, outs,
 
 def _get_or_create_sheet(wb: Workbook, name: str) -> Worksheet:
     if name in wb.sheetnames:
-        ws = wb[name]
-        for row in ws.iter_rows():
-            for cell in row:
-                cell.value = None
-        return ws
+        idx = wb.sheetnames.index(name)
+        del wb[name]
+        return wb.create_sheet(title=name, index=idx)
     return wb.create_sheet(title=name)
 
 
@@ -419,15 +413,18 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
                     skip_row[deb_map[key][i]] = 'CONTRA_MATCHED_DETAILS10_AMOUNT'
                     skip_row[cr_map[key][i]] = 'CONTRA_MATCHED_DETAILS10_AMOUNT'
 
-    # 7) Build output
-    receipts = []
+    # 7) Build output rows in memory (no worksheet I/O yet)
+    payment_rows: List[list] = []
+    receipt_rows: List[list] = []
+    audit_detail_rows: List[list] = []   # collected in memory for multi-sheet merge
     audit_row = AUDIT_DETAIL_FIRST_ROW
-    out_row = 2
+    skip_tally: Dict[str, int] = {}
     tot_deb = 0.0
     tot_cred = 0.0
 
     for r in range(data_start, last_row + 1):
-        raw_date_text = str(ws.cell(row=r, column=col_date).value or '')
+        raw_date_val = ws.cell(row=r, column=col_date).value
+        raw_date_text = str(raw_date_val or '')
         raw_ref = ws.cell(row=r, column=col_ref).value if col_ref else ''
         raw_debit = ws.cell(row=r, column=col_debit).value
         raw_credit = ws.cell(row=r, column=col_credit).value
@@ -435,75 +432,63 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
         txn_type = str(ws.cell(row=r, column=col_type).value or '') if col_type else ''
         ref10 = _extract_doc_no_10(details)
 
-        if r in skip_row:
-            _add_audit(ws_audit, audit_row, r, raw_date_text, ref10,
-                       txn_type, details, raw_debit, raw_credit, skip_row[r])
+        def _audit(reason: str, ref=raw_ref):
+            nonlocal audit_row
+            vals = [r, raw_date_text, ref, txn_type, details,
+                    raw_debit, raw_credit,
+                    _safe_double(raw_debit), _safe_double(raw_credit), reason]
+            audit_detail_rows.append(vals)
+            _add_audit(ws_audit, audit_row, r, raw_date_text, ref,
+                       txn_type, details, raw_debit, raw_credit, reason)
+            skip_tally[reason] = skip_tally.get(reason, 0) + 1
             audit_row += 1
+
+        if r in skip_row:
+            _audit(skip_row[r], ref=ref10)
             continue
 
-        dt = _parse_date_cell(
-            ws.cell(row=r, column=col_date).value, raw_date_text
-        )
+        dt = _parse_date_cell(raw_date_val, raw_date_text)
         if dt is None:
-            _add_audit(ws_audit, audit_row, r, raw_date_text, raw_ref,
-                       txn_type, details, raw_debit, raw_credit, 'BLANK_OR_INVALID_DATE')
-            audit_row += 1
+            _audit('BLANK_OR_INVALID_DATE')
             continue
 
         d2 = _safe_double(raw_debit)
         c2 = _safe_double(raw_credit)
 
         if d2 > 0 and c2 > 0:
-            _add_audit(ws_audit, audit_row, r, raw_date_text, raw_ref,
-                       txn_type, details, raw_debit, raw_credit, 'BOTH_DEBIT_AND_CREDIT_PRESENT')
-            audit_row += 1
+            _audit('BOTH_DEBIT_AND_CREDIT_PRESENT')
             continue
 
         if d2 == 0 and c2 == 0:
-            _add_audit(ws_audit, audit_row, r, raw_date_text, raw_ref,
-                       txn_type, details, raw_debit, raw_credit, 'ZERO_OR_NON_NUMERIC_AMOUNT')
-            audit_row += 1
+            _audit('ZERO_OR_NON_NUMERIC_AMOUNT')
             continue
 
         if d2 > 0 and c2 == 0:
-            _write_payment(ws_out, out_row, ref10, dt, d2)
-            out_row += 1
+            payment_rows.append(_make_payment_row(ref10, dt, d2))
             tot_deb += d2
         elif c2 > 0 and d2 == 0:
             doc_no_rec = str(raw_ref).strip() if raw_ref else ''
             if not doc_no_rec:
                 doc_no_rec = 'BNK is Blank'
-            receipts.append((doc_no_rec, dt, c2))
+            receipt_rows.append(_make_receipt_row(doc_no_rec, dt, c2))
             tot_cred += c2
 
-    for doc_no_rec, dt, amt in receipts:
-        _write_receipt(ws_out, out_row, doc_no_rec, dt, amt)
-        out_row += 1
+    # 8) Sort combined rows by date in Python, then write to worksheet once
+    def _sort_key(row_vals: list) -> date:
+        # index 8 (col 9) = receipt value-date; index 6 (col 7) = payment date
+        v = row_vals[8] if row_vals[8] else row_vals[6]
+        if isinstance(v, str):
+            try:
+                return _parse_dmon_y(v, '-') or date.min
+            except Exception:
+                return date.min
+        if isinstance(v, (date, datetime)):
+            return v.date() if isinstance(v, datetime) else v
+        return date.min
 
-    # 8) Sort output by date (col 9 = date for receipts; col 7 for payments)
-    # Simple sort: collect all rows, sort by col 9 (or col 7 if col 9 empty), rewrite
-    if out_row > 3:
-        all_rows = []
-        for r in range(2, out_row):
-            row_vals = [ws_out.cell(row=r, column=c).value for c in range(1, OUTPUT_LAST_COL + 1)]
-            all_rows.append(row_vals)
-
-        def _sort_key(row_vals):
-            # col 9 (index 8) for receipts date, col 7 (index 6) for payments
-            v = row_vals[8] if row_vals[8] else row_vals[6]
-            if isinstance(v, str):
-                try:
-                    return _parse_dmon_y(v, '-') or date.min
-                except Exception:
-                    return date.min
-            if isinstance(v, (date, datetime)):
-                return v.date() if isinstance(v, datetime) else v
-            return date.min
-
-        all_rows.sort(key=_sort_key)
-        for i, row_vals in enumerate(all_rows):
-            for c, val in enumerate(row_vals, 1):
-                ws_out.cell(row=i + 2, column=c, value=val)
+    output_data = payment_rows + receipt_rows
+    output_data.sort(key=_sort_key)
+    _write_rows_to_sheet(ws_out, output_data)
 
     # 9) Audit summary
     closing_calc = None
@@ -516,18 +501,7 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
     _write_audit_summary(ws_audit, opening_bal, tot_cred, tot_deb,
                           closing_calc, closing_bal_stmt, variance)
 
-    # 10) Collect output_data for TNT DL grid
-    output_data = []
-    for r in range(2, out_row):
-        output_data.append([ws_out.cell(row=r, column=c).value for c in range(1, OUTPUT_LAST_COL + 1)])
-
     skipped = audit_row - AUDIT_DETAIL_FIRST_ROW
-
-    # Tally skip reasons for the summary
-    skip_tally: Dict[str, int] = {}
-    for r in range(AUDIT_DETAIL_FIRST_ROW, audit_row):
-        reason = ws_audit.cell(row=r, column=10).value or 'UNKNOWN'
-        skip_tally[reason] = skip_tally.get(reason, 0) + 1
 
     msg_parts = [
         'Conversion complete.',
@@ -561,4 +535,5 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
         closing_balance_calc=closing_calc,
         variance=variance,
         output_data=output_data,
+        audit_rows=audit_detail_rows,
     )
