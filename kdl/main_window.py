@@ -27,6 +27,7 @@ from kdl.dialogs.shortcuts_dialog import ShortcutsDialog
 from kdl.dialogs.macro_recorder_dialog import MacroRecorderDialog
 from kdl.dialogs.database_setup_dialog import DatabaseSetupDialog
 from kdl.dialogs.load_result_dialog import LoadResultDialog
+from kdl.dialogs.financial_report_dialog import FinancialReportDialog
 from kdl.engine.loader import LoaderThread
 from kdl.engine.keystroke_parser import KeystrokeParser
 from kdl.engine.validation import validate_ifmis_data
@@ -610,6 +611,10 @@ class MainWindow(QMainWindow):
         stmt_conv_action.triggered.connect(self._open_statement_converter)
         tools_menu.addAction(stmt_conv_action)
 
+        report_action = QAction("&Generate IFMIS Financial Statements...", self)
+        report_action.triggered.connect(self._open_financial_report)
+        tools_menu.addAction(report_action)
+
         tools_menu.addSeparator()
 
         start_load_action = QAction("&Start Load", self)
@@ -803,6 +808,15 @@ class MainWindow(QMainWindow):
         )
         self.statement_btn.setToolTip("Bank Statement Converter")
         toolbar.addAction(self.statement_btn)
+
+        self.report_btn = QAction(
+            self._icon("ic_report.svg"),
+            "IFMIS Report",
+            self,
+            triggered=self._open_financial_report,
+        )
+        self.report_btn.setToolTip("Generate IFMIS Financial Statements from Notes")
+        toolbar.addAction(self.report_btn)
 
         toolbar.addSeparator()
 
@@ -1644,6 +1658,10 @@ class MainWindow(QMainWindow):
         from kdl.dialogs.statement_converter_dialog import StatementConverterDialog
         dlg = StatementConverterDialog(self)
         dlg.load_into_grid.connect(self._load_statement_output_into_grid)
+        dlg.exec()
+
+    def _open_financial_report(self):
+        dlg = FinancialReportDialog(self)
         dlg.exec()
 
     @staticmethod
