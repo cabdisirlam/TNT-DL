@@ -106,6 +106,7 @@ class _IFMISEngine:
         self._na_close_prev    = 0.0
         self._na_open_cur      = 0.0
         self._na_close_cur     = 0.0
+        self._rte_cur          = 0.0   # Return to Exchequer (Note 26 current)
         # Revenue subtotals
         self._total_rev_cur  = 0.0
         self._total_rev_prev = 0.0
@@ -301,11 +302,14 @@ class _IFMISEngine:
         self._net_assets_cur  = self._total_assets_cur  - self._total_liab_cur
         self._net_assets_prev = self._total_assets_prev - self._total_liab_prev
 
+        # Return to Exchequer (Note 26, current period only)
+        self._rte_cur = self._nc("26")
+
         # Net Assets statement values
         self._na_prior_opening = self._net_assets_prev - self._surplus_prev
         self._na_close_prev    = self._net_assets_prev
         self._na_open_cur      = self._net_assets_prev   # = prior closing
-        self._na_close_cur     = self._na_open_cur + self._surplus_cur
+        self._na_close_cur     = self._na_open_cur + self._surplus_cur - self._rte_cur
 
     # ── Build workbook ─────────────────────────────────────────────────────
     def build(self) -> object:
@@ -614,6 +618,14 @@ class _IFMISEngine:
         _num(ws.cell(row=r, column=3), self._surplus_cur, color=_GREEN)
         r += 1
 
+        # Return to Exchequer (Note 26, current period — reduces net assets)
+        rte_val = -self._rte_cur
+        ws.cell(row=r, column=1,
+                value="Return to Exchequer").font = Font(name=TNR, size=11)
+        _num(ws.cell(row=r, column=2), rte_val, color=_GREEN)
+        _num(ws.cell(row=r, column=3), rte_val, color=_GREEN)
+        r += 1
+
         ws.cell(row=r, column=1,
                 value="As at June 30, 20xx").font = Font(name=TNR, size=11, bold=True)
         _num(ws.cell(row=r, column=2), self._na_close_cur, bold=True)
@@ -745,9 +757,29 @@ class _IFMISEngine:
                         inv_cur, inv_prev)
             r += 2
 
+        # ── Financing activities (Return to Exchequer — Note 26) ──
+        fin_cur = fin_prev = 0.0
+        n26 = self._find("26")
+        if n26 and n26.items and self._nc("26") != 0:
+            ws.cell(row=r, column=2,
+                    value="Cash flows from financing activities").font = Font(name=TNR, size=11, bold=True)
+            r += 1
+            ws.cell(row=r, column=2,
+                    value="Return to Exchequer").font = Font(name=TNR, size=11)
+            ws.cell(row=r, column=3,
+                    value=str(n26.seq_num) if n26.seq_num else "").font = Font(name=TNR, size=11)
+            fin_cur = -self._nc("26")
+            _num(ws.cell(row=r, column=4), fin_cur)
+            _num(ws.cell(row=r, column=5), 0.0)
+            r += 1
+            _total_line(ws, r,
+                        "Net cash flows from/(used in) financing activities",
+                        fin_cur, 0.0)
+            r += 2
+
         # Net change in cash
-        net_chg_cur  = net_ops_cur  + inv_cur
-        net_chg_prev = net_ops_prev + inv_prev
+        net_chg_cur  = net_ops_cur  + inv_cur  + fin_cur
+        net_chg_prev = net_ops_prev + inv_prev + fin_prev
         ws.cell(row=r, column=2,
                 value="Net increase/(decrease) in cash and cash equivalents"
                 ).font = Font(name=TNR, size=11, bold=True)

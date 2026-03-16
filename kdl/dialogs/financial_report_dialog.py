@@ -348,9 +348,6 @@ class FinancialReportDialog(QDialog):
             )
             event.ignore()
             return
-        if self._sheet_loader is not None and self._sheet_loader.isRunning():
-            self._sheet_loader.quit()
-            self._sheet_loader.wait()
         super().closeEvent(event)
 
     def _fit_to_screen(self):
