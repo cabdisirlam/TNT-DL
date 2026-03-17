@@ -1,10 +1,13 @@
 """
-GOK IFMIS Notes to Financial Statements Engine (v7)
+GOK IFMIS Notes to Financial Statements Engine (v8)
 Pure Python / openpyxl implementation of the VBA macro.
 
 Reads an IFMIS Notes worksheet (openpyxl Worksheet) and produces an
 openpyxl Workbook with 5 sheets:
   Notes · Performance · Position · Net Assets · Cash Flow
+
+All values in the statement sheets are cross-sheet Excel formulas that
+reference the Notes sheet totals so the workbook stays live-linked.
 """
 
 from __future__ import annotations
@@ -13,7 +16,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 try:
-    import openpyxl
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     _HAS_OPENPYXL = True
@@ -97,6 +99,7 @@ class _IFMISEngine:
         self._entity      = ""
         self._cur_period  = ""
         self._prev_period = ""
+
         # Aggregates computed in _compute_aggregates
         self._surplus_cur   = 0.0
         self._surplus_prev  = 0.0
@@ -106,8 +109,12 @@ class _IFMISEngine:
         self._na_close_prev    = 0.0
         self._na_open_cur      = 0.0
         self._na_close_cur     = 0.0
-        self._rte_cur          = 0.0   # Return to Exchequer (Note 26 current)
+        self._rte_cur          = 0.0
         # Revenue subtotals
+        self._rev_ne_cur  = 0.0
+        self._rev_ne_prev = 0.0
+        self._rev_ex_cur  = 0.0
+        self._rev_ex_prev = 0.0
         self._total_rev_cur  = 0.0
         self._total_rev_prev = 0.0
         self._total_exp_cur  = 0.0
@@ -121,9 +128,19 @@ class _IFMISEngine:
         self._total_assets_prev  = 0.0
         self._total_liab_cur  = 0.0
         self._total_liab_prev = 0.0
-        # Position sheet rows for late-binding Accumulated Surplus
-        self._pos_acc_row   = 0
-        self._pos_total_row = 0
+
+        # ── Linking maps (populated during build) ──────────────────────
+        # Notes sheet: note_key → row number of that note's TOTAL line
+        self._note_rows: dict[str, int] = {}
+
+        # Performance sheet key rows (for cross-sheet references)
+        self._perf_rows: dict[str, int] = {}
+
+        # Position sheet key rows
+        self._pos_rows: dict[str, int] = {}
+
+        # Net Assets sheet key rows
+        self._na_rows: dict[str, int] = {}
 
     # ── Parse ──────────────────────────────────────────────────────────────
     def parse(self):
@@ -315,10 +332,10 @@ class _IFMISEngine:
     def build(self) -> object:
         wb = Workbook()
         wb.remove(wb.active)
-        self._build_notes_sheet(wb)
-        self._build_perf_sheet(wb)
-        self._build_pos_sheet(wb)
-        self._build_na_sheet(wb)
+        self._build_notes_sheet(wb)    # Must be first — populates _note_rows
+        self._build_perf_sheet(wb)     # Populates _perf_rows
+        self._build_pos_sheet(wb)      # Populates _pos_rows
+        self._build_na_sheet(wb)       # Populates _na_rows; back-fills Position
         self._build_cf_sheet(wb)
         return wb
 
@@ -370,7 +387,7 @@ class _IFMISEngine:
                         ws.cell(row=r, column=c).fill = gf
                 r += 1
 
-            # Total row
+            # Total row — record this row for cross-sheet formula linking
             tc = sum(it.cur  for it in n.items)
             tp = sum(it.prev for it in n.items)
             ws.cell(row=r, column=1, value="TOTAL").font = Font(name=TNR, size=11, bold=True)
@@ -378,6 +395,7 @@ class _IFMISEngine:
             _num(ws.cell(row=r, column=4), tp, bold=True)
             for col in range(1, 5):
                 ws.cell(row=r, column=col).border = Border(bottom=Side(style="thin"))
+            self._note_rows[k] = r   # ← record for cross-sheet linking
             r += 2
 
         ws.column_dimensions["A"].width = 60
@@ -411,35 +429,54 @@ class _IFMISEngine:
             ("Reimbursements and Refunds",                     "9"),
             ("Proceeds from Sale of Assets",                   "8"),
         ]
-        s = r
+        ne_start = r
         for lbl, k in ne_items:
             if self._has(k):
                 self._line(ws, r, lbl, k)
                 r += 1
-        if s <= r - 1:
-            _total_line(ws, r, "Total non-exchange revenue",
-                        self._rev_ne_cur, self._rev_ne_prev)
+        ne_end = r - 1
+        total_ne_row = 0
+        if ne_start <= ne_end:
+            _sum_total(ws, r, "Total non-exchange revenue", ne_start, ne_end)
+            total_ne_row = r
             r += 2
 
         # Exchange revenue
         ws.cell(row=r, column=2,
                 value="Revenue from exchange transactions").font = Font(name=TNR, size=11, bold=True)
         r += 1
-        s = r
+        ex_start = r
         if self._has("11"):
             self._line(ws, r, "Other Receipts", "11")
             r += 1
-        if s <= r - 1:
-            _total_line(ws, r, "Total exchange revenue",
-                        self._rev_ex_cur, self._rev_ex_prev)
+        ex_end = r - 1
+        total_ex_row = 0
+        if ex_start <= ex_end:
+            _sum_total(ws, r, "Total exchange revenue", ex_start, ex_end)
+            total_ex_row = r
             r += 2
 
-        # Total Revenue
-        ws.cell(row=r, column=2, value="Total Revenue").font = Font(name=TNR, size=11, bold=True)
-        _num(ws.cell(row=r, column=4), self._total_rev_cur,  bold=True)
-        _num(ws.cell(row=r, column=5), self._total_rev_prev, bold=True)
+        # Total Revenue — formula linking the two subtotals
+        ws.cell(row=r, column=2,
+                value="Total Revenue").font = Font(name=TNR, size=11, bold=True)
+        if total_ne_row and total_ex_row:
+            rev_f_cur  = f"=D{total_ne_row}+D{total_ex_row}"
+            rev_f_prev = f"=E{total_ne_row}+E{total_ex_row}"
+        elif total_ne_row:
+            rev_f_cur  = f"=D{total_ne_row}"
+            rev_f_prev = f"=E{total_ne_row}"
+        elif total_ex_row:
+            rev_f_cur  = f"=D{total_ex_row}"
+            rev_f_prev = f"=E{total_ex_row}"
+        else:
+            rev_f_cur  = self._total_rev_cur
+            rev_f_prev = self._total_rev_prev
+        _fnum(ws.cell(row=r, column=4), rev_f_cur,  bold=True)
+        _fnum(ws.cell(row=r, column=5), rev_f_prev, bold=True)
         for c in range(2, 6):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="thin"))
+        total_rev_row = r
+        self._perf_rows['total_rev'] = r
         r += 2
 
         # Expenses
@@ -456,24 +493,34 @@ class _IFMISEngine:
             ("Finance Costs",                       "19"),
             ("Other Payments",                      "21"),
         ]
-        s = r
+        exp_start = r
         for lbl, k in exp_items:
             if self._has(k):
                 self._line(ws, r, lbl, k)
                 r += 1
-        if s <= r - 1:
-            _total_line(ws, r, "Total Expenses",
-                        self._total_exp_cur, self._total_exp_prev)
+        exp_end = r - 1
+        total_exp_row = 0
+        if exp_start <= exp_end:
+            _sum_total(ws, r, "Total Expenses", exp_start, exp_end)
+            total_exp_row = r
+            self._perf_rows['total_exp'] = r
             r += 2
 
-        # Surplus / Deficit
+        # Surplus / Deficit — formula linking Total Revenue - Total Expenses
         r += 1
         ws.cell(row=r, column=2,
                 value="Surplus/(Deficit) for the Period").font = Font(name=TNR, size=11, bold=True)
-        _num(ws.cell(row=r, column=4), self._surplus_cur,  bold=True)
-        _num(ws.cell(row=r, column=5), self._surplus_prev, bold=True)
+        if total_rev_row and total_exp_row:
+            sur_f_cur  = f"=D{total_rev_row}-D{total_exp_row}"
+            sur_f_prev = f"=E{total_rev_row}-E{total_exp_row}"
+        else:
+            sur_f_cur  = self._surplus_cur
+            sur_f_prev = self._surplus_prev
+        _fnum(ws.cell(row=r, column=4), sur_f_cur,  bold=True)
+        _fnum(ws.cell(row=r, column=5), sur_f_prev, bold=True)
         for c in range(2, 6):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="double"))
+        self._perf_rows['surplus'] = r
         _finalize_sheet(ws)
 
     # ── Position sheet ─────────────────────────────────────────────────────
@@ -494,35 +541,54 @@ class _IFMISEngine:
         r += 1
         ws.cell(row=r, column=2, value="Current Assets").font = Font(name=TNR, size=11, bold=True)
         r += 1
-        s = r
+        ca_start = r
         if self._has("CASH"):
             self._line(ws, r, "Cash and Cash Equivalents",        "CASH")
             r += 1
         if self._has("23"):
             self._line(ws, r, "Receivables - Imprest & Clearance", "23")
             r += 1
-        if s <= r - 1:
-            _total_line(ws, r, "Total Current Assets",
-                        self._total_ca_cur, self._total_ca_prev)
+        ca_end = r - 1
+        total_ca_row = 0
+        if ca_start <= ca_end:
+            _sum_total(ws, r, "Total Current Assets", ca_start, ca_end)
+            total_ca_row = r
             r += 2
 
         ws.cell(row=r, column=2,
                 value="Non-Current Assets").font = Font(name=TNR, size=11, bold=True)
         r += 1
-        s = r
+        nca_start = r
         if self._has("18"):
             self._line(ws, r, "Property, Plant and Equipment", "18")
             r += 1
-        if s <= r - 1:
-            _total_line(ws, r, "Total Non-Current Assets",
-                        self._total_nca_cur, self._total_nca_prev)
+        nca_end = r - 1
+        total_nca_row = 0
+        if nca_start <= nca_end:
+            _sum_total(ws, r, "Total Non-Current Assets", nca_start, nca_end)
+            total_nca_row = r
             r += 2
 
-        ws.cell(row=r, column=2, value="Total Assets (a)").font = Font(name=TNR, size=11, bold=True)
-        _num(ws.cell(row=r, column=4), self._total_assets_cur,  bold=True)
-        _num(ws.cell(row=r, column=5), self._total_assets_prev, bold=True)
+        # Total Assets — formula sum of the two asset totals
+        ws.cell(row=r, column=2,
+                value="Total Assets (a)").font = Font(name=TNR, size=11, bold=True)
+        if total_ca_row and total_nca_row:
+            ta_f_cur  = f"=D{total_ca_row}+D{total_nca_row}"
+            ta_f_prev = f"=E{total_ca_row}+E{total_nca_row}"
+        elif total_ca_row:
+            ta_f_cur  = f"=D{total_ca_row}"
+            ta_f_prev = f"=E{total_ca_row}"
+        elif total_nca_row:
+            ta_f_cur  = f"=D{total_nca_row}"
+            ta_f_prev = f"=E{total_nca_row}"
+        else:
+            ta_f_cur  = self._total_assets_cur
+            ta_f_prev = self._total_assets_prev
+        _fnum(ws.cell(row=r, column=4), ta_f_cur,  bold=True)
+        _fnum(ws.cell(row=r, column=5), ta_f_prev, bold=True)
         for c in range(2, 6):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="thin"))
+        total_assets_row = r
         r += 2
 
         # LIABILITIES
@@ -531,30 +597,43 @@ class _IFMISEngine:
         ws.cell(row=r, column=2,
                 value="Current Liabilities").font = Font(name=TNR, size=11, bold=True)
         r += 1
-        s = r
+        cl_start = r
         if self._has("24"):
             self._line(ws, r, "Accounts Payable", "24")
             r += 1
-        if s <= r - 1:
-            _total_line(ws, r, "Total Current Liabilities",
-                        self._total_liab_cur, self._total_liab_prev)
+        cl_end = r - 1
+        total_cl_row = 0
+        if cl_start <= cl_end:
+            _sum_total(ws, r, "Total Current Liabilities", cl_start, cl_end)
+            total_cl_row = r
             r += 2
 
+        # Total Liabilities
         ws.cell(row=r, column=2,
                 value="Total Liabilities (b)").font = Font(name=TNR, size=11, bold=True)
-        _num(ws.cell(row=r, column=4), self._total_liab_cur,  bold=True)
-        _num(ws.cell(row=r, column=5), self._total_liab_prev, bold=True)
+        tl_f_cur  = f"=D{total_cl_row}" if total_cl_row else self._total_liab_cur
+        tl_f_prev = f"=E{total_cl_row}" if total_cl_row else self._total_liab_prev
+        _fnum(ws.cell(row=r, column=4), tl_f_cur,  bold=True)
+        _fnum(ws.cell(row=r, column=5), tl_f_prev, bold=True)
         for c in range(2, 6):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="thin"))
+        total_liab_row = r
         r += 2
 
-        # Net Assets
+        # Net Assets — formula: Total Assets - Total Liabilities
         ws.cell(row=r, column=2,
                 value="Net Assets (a - b)").font = Font(name=TNR, size=11, bold=True)
-        _num(ws.cell(row=r, column=4), self._net_assets_cur,  bold=True)
-        _num(ws.cell(row=r, column=5), self._net_assets_prev, bold=True)
+        if total_assets_row and total_liab_row:
+            na_f_cur  = f"=D{total_assets_row}-D{total_liab_row}"
+            na_f_prev = f"=E{total_assets_row}-E{total_liab_row}"
+        else:
+            na_f_cur  = self._net_assets_cur
+            na_f_prev = self._net_assets_prev
+        _fnum(ws.cell(row=r, column=4), na_f_cur,  bold=True)
+        _fnum(ws.cell(row=r, column=5), na_f_prev, bold=True)
         for c in range(2, 6):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="double"))
+        self._pos_rows['net_assets'] = r
         r += 2
 
         # Represented by
@@ -563,13 +642,13 @@ class _IFMISEngine:
         r += 1
         ws.cell(row=r, column=2,
                 value="Accumulated Surplus/(Deficit)").font = Font(name=TNR, size=11)
-        # Filled later by _link_pos_equity
-        self._pos_acc_row = r
+        # Values filled in by _build_na_sheet once Net Assets closing rows are known
+        self._pos_rows['acc_surplus'] = r
         r += 1
 
         ws.cell(row=r, column=2,
                 value="Total Net Assets").font = Font(name=TNR, size=11, bold=True)
-        self._pos_total_row = r
+        self._pos_rows['total_na'] = r
         for c in range(2, 6):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="double"))
         _finalize_sheet(ws)
@@ -584,65 +663,114 @@ class _IFMISEngine:
         _blue_hdr(ws.cell(row=r, column=3, value="Total"))
         r += 1
 
+        surplus_row = self._perf_rows.get('surplus', 0)
+
         # ── Prior year section ──
+        prior_open_row = r
         ws.cell(row=r, column=1,
                 value="Balance as at 1st July").font = Font(name=TNR, size=11)
+        # Prior opening = prior net assets - prior surplus (computed; no direct note link)
         _num(ws.cell(row=r, column=2), self._na_prior_opening, color=_GREEN)
         _num(ws.cell(row=r, column=3), self._na_prior_opening, color=_GREEN)
         r += 1
 
+        prior_surplus_row = r
         ws.cell(row=r, column=1,
                 value="Surplus/(Deficit) for the year").font = Font(name=TNR, size=11)
-        _num(ws.cell(row=r, column=2), self._surplus_prev, color=_GREEN)
-        _num(ws.cell(row=r, column=3), self._surplus_prev, color=_GREEN)
+        # Link to Performance sheet previous-period surplus (column E)
+        if surplus_row:
+            _fnum(ws.cell(row=r, column=2),
+                  f"='{SH_PERF}'!E{surplus_row}", color=_GREEN)
+            _fnum(ws.cell(row=r, column=3),
+                  f"='{SH_PERF}'!E{surplus_row}", color=_GREEN)
+        else:
+            _num(ws.cell(row=r, column=2), self._surplus_prev, color=_GREEN)
+            _num(ws.cell(row=r, column=3), self._surplus_prev, color=_GREEN)
         r += 1
 
+        prior_close_row = r
         ws.cell(row=r, column=1,
                 value="As at June 30, 20xx").font = Font(name=TNR, size=11, bold=True)
-        _num(ws.cell(row=r, column=2), self._na_close_prev, bold=True)
-        _num(ws.cell(row=r, column=3), self._na_close_prev, bold=True)
+        # Prior closing = prior opening + prior surplus (formula)
+        _fnum(ws.cell(row=r, column=2),
+              f"=B{prior_open_row}+B{prior_surplus_row}", bold=True)
+        _fnum(ws.cell(row=r, column=3),
+              f"=C{prior_open_row}+C{prior_surplus_row}", bold=True)
         for c in range(1, 4):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="thin"))
         r += 2
 
         # ── Current year section ──
+        curr_open_row = r
         ws.cell(row=r, column=1,
                 value="As at July 1, 20xx").font = Font(name=TNR, size=11)
-        _num(ws.cell(row=r, column=2), self._na_open_cur)
-        _num(ws.cell(row=r, column=3), self._na_open_cur)
+        # Current opening = prior closing (cross-row link)
+        _fnum(ws.cell(row=r, column=2), f"=B{prior_close_row}")
+        _fnum(ws.cell(row=r, column=3), f"=C{prior_close_row}")
         r += 1
 
+        curr_surplus_row = r
         ws.cell(row=r, column=1,
                 value="Surplus/(Deficit) for the year").font = Font(name=TNR, size=11)
-        _num(ws.cell(row=r, column=2), self._surplus_cur, color=_GREEN)
-        _num(ws.cell(row=r, column=3), self._surplus_cur, color=_GREEN)
+        # Link to Performance sheet current-period surplus (column D)
+        if surplus_row:
+            _fnum(ws.cell(row=r, column=2),
+                  f"='{SH_PERF}'!D{surplus_row}", color=_GREEN)
+            _fnum(ws.cell(row=r, column=3),
+                  f"='{SH_PERF}'!D{surplus_row}", color=_GREEN)
+        else:
+            _num(ws.cell(row=r, column=2), self._surplus_cur, color=_GREEN)
+            _num(ws.cell(row=r, column=3), self._surplus_cur, color=_GREEN)
         r += 1
 
-        # Return to Exchequer (Note 26, current period — reduces net assets)
-        rte_val = -self._rte_cur
+        # Return to Exchequer — link to Notes sheet (negated)
+        rte_row = r
+        n26_note_row = self._note_rows.get('26', 0)
         ws.cell(row=r, column=1,
                 value="Return to Exchequer").font = Font(name=TNR, size=11)
-        _num(ws.cell(row=r, column=2), rte_val, color=_GREEN)
-        _num(ws.cell(row=r, column=3), rte_val, color=_GREEN)
+        if n26_note_row:
+            _fnum(ws.cell(row=r, column=2),
+                  f"=-'{SH_NOTES}'!C{n26_note_row}", color=_GREEN)
+            _fnum(ws.cell(row=r, column=3),
+                  f"=-'{SH_NOTES}'!C{n26_note_row}", color=_GREEN)
+        else:
+            _num(ws.cell(row=r, column=2), -self._rte_cur, color=_GREEN)
+            _num(ws.cell(row=r, column=3), -self._rte_cur, color=_GREEN)
         r += 1
 
+        curr_close_row = r
         ws.cell(row=r, column=1,
                 value="As at June 30, 20xx").font = Font(name=TNR, size=11, bold=True)
-        _num(ws.cell(row=r, column=2), self._na_close_cur, bold=True)
-        _num(ws.cell(row=r, column=3), self._na_close_cur, bold=True)
+        # Current closing = opening + surplus + RTE (all already signed)
+        _fnum(ws.cell(row=r, column=2),
+              f"=B{curr_open_row}+B{curr_surplus_row}+B{rte_row}", bold=True)
+        _fnum(ws.cell(row=r, column=3),
+              f"=C{curr_open_row}+C{curr_surplus_row}+C{rte_row}", bold=True)
         for c in range(1, 4):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="double"))
+
+        self._na_rows['curr_close'] = curr_close_row
+        self._na_rows['prev_close'] = prior_close_row
 
         ws.column_dimensions["A"].width = 55
         ws.column_dimensions["B"].width = 28
         ws.column_dimensions["C"].width = 22
 
-        # Link back to Position sheet
+        # ── Back-fill Position sheet "Represented by" rows ───────────────
         pos_ws = wb[SH_POS]
-        _num(pos_ws.cell(row=self._pos_acc_row,   column=4), self._na_close_cur,  color=_GREEN)
-        _num(pos_ws.cell(row=self._pos_acc_row,   column=5), self._na_close_prev, color=_GREEN)
-        _num(pos_ws.cell(row=self._pos_total_row, column=4), self._na_close_cur,  bold=True)
-        _num(pos_ws.cell(row=self._pos_total_row, column=5), self._na_close_prev, bold=True)
+        acc_r   = self._pos_rows.get('acc_surplus', 0)
+        total_r = self._pos_rows.get('total_na', 0)
+        if acc_r:
+            # Link to Net Assets sheet closing balances
+            _fnum(pos_ws.cell(row=acc_r, column=4),
+                  f"='{SH_NA}'!B{curr_close_row}", color=_GREEN)
+            _fnum(pos_ws.cell(row=acc_r, column=5),
+                  f"='{SH_NA}'!B{prior_close_row}", color=_GREEN)
+        if total_r:
+            _fnum(pos_ws.cell(row=total_r, column=4),
+                  f"='{SH_NA}'!B{curr_close_row}", bold=True)
+            _fnum(pos_ws.cell(row=total_r, column=5),
+                  f"='{SH_NA}'!B{prior_close_row}", bold=True)
 
     # ── Cash Flow sheet ────────────────────────────────────────────────────
     def _build_cf_sheet(self, wb):
@@ -674,6 +802,7 @@ class _IFMISEngine:
             ("Proceeds from Sale of Assets",                   "8"),
             ("Other Receipts",                                 "11"),
         ]
+        rec_start = r
         rec_cur = rec_prev = 0.0
         for lbl, k in rec_items:
             if self._has(k):
@@ -681,8 +810,11 @@ class _IFMISEngine:
                 rec_cur  += self._nc(k)
                 rec_prev += self._np(k)
                 r += 1
-        if rec_cur != 0 or rec_prev != 0:
-            _total_line(ws, r, "Total Receipts", rec_cur, rec_prev)
+        rec_end = r - 1
+        total_rec_row = 0
+        if rec_start <= rec_end:
+            _sum_total(ws, r, "Total Receipts", rec_start, rec_end)
+            total_rec_row = r
             r += 2
 
         ws.cell(row=r, column=2,
@@ -695,6 +827,7 @@ class _IFMISEngine:
             ("Other Grants and Transfers",          "16"),
             ("Social Security Benefits",            "17"),
         ]
+        pay_start = r
         pay_cur = pay_prev = 0.0
         for lbl, k in pay_items:
             if self._has(k):
@@ -702,14 +835,18 @@ class _IFMISEngine:
                 pay_cur  += -self._nc(k)
                 pay_prev += -self._np(k)
                 r += 1
-        if pay_cur != 0 or pay_prev != 0:
-            _total_line(ws, r, "Total Payments", pay_cur, pay_prev)
+        pay_end = r - 1
+        total_pay_row = 0
+        if pay_start <= pay_end:
+            _sum_total(ws, r, "Total Payments", pay_start, pay_end)
+            total_pay_row = r
             r += 1
 
-        # Working Capital
+        # Working Capital (synthesised — no direct Notes link)
         r += 1
         wc     = self._find("WC")
         wc_cur = wc.total_cur if wc else 0.0
+        wc_row = r
         ws.cell(row=r, column=2,
                 value="Changes in Working Capital").font = Font(name=TNR, size=11)
         if wc and wc.seq_num:
@@ -719,16 +856,23 @@ class _IFMISEngine:
         _num(ws.cell(row=r, column=5), 0.0)
         r += 2
 
-        # Net operating
+        # Net operating — formula linking Receipts + Payments + WC rows
         net_ops_cur  = rec_cur  + pay_cur  + wc_cur
         net_ops_prev = rec_prev + pay_prev
         ws.cell(row=r, column=2,
                 value="Net cash flows from/(used in) operating activities"
                 ).font = Font(name=TNR, size=11, bold=True)
-        _num(ws.cell(row=r, column=4), net_ops_cur,  bold=True)
-        _num(ws.cell(row=r, column=5), net_ops_prev, bold=True)
+        if total_rec_row and total_pay_row:
+            _fnum(ws.cell(row=r, column=4),
+                  f"=D{total_rec_row}+D{total_pay_row}+D{wc_row}", bold=True)
+            _fnum(ws.cell(row=r, column=5),
+                  f"=E{total_rec_row}+E{total_pay_row}", bold=True)
+        else:
+            _num(ws.cell(row=r, column=4), net_ops_cur,  bold=True)
+            _num(ws.cell(row=r, column=5), net_ops_prev, bold=True)
         for c in range(2, 6):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="thin"))
+        net_ops_row = r
         r += 2
 
         # ── Investing activities ──
@@ -736,9 +880,9 @@ class _IFMISEngine:
                 value="Cash flows from investing activities").font = Font(name=TNR, size=11, bold=True)
         r += 1
         inv_cur = inv_prev = 0.0
+        net_inv_row = 0
         ppe = self._find("18")
         if ppe and ppe.items:
-            # items[0] is the inserted opening balance; new purchases = total - opening
             opening_cur = ppe.items[0].cur
             acq_cur  = -(ppe.total_cur - opening_cur)
             acq_prev = -ppe.total_prev
@@ -755,11 +899,14 @@ class _IFMISEngine:
             _total_line(ws, r,
                         "Net cash flows from/(used in) investing activities",
                         inv_cur, inv_prev)
+            net_inv_row = r
             r += 2
 
-        # ── Financing activities (Return to Exchequer — Note 26) ──
+        # ── Financing activities ──
         fin_cur = fin_prev = 0.0
+        net_fin_row = 0
         n26 = self._find("26")
+        n26_note_row = self._note_rows.get('26', 0)
         if n26 and n26.items and self._nc("26") != 0:
             ws.cell(row=r, column=2,
                     value="Cash flows from financing activities").font = Font(name=TNR, size=11, bold=True)
@@ -769,33 +916,51 @@ class _IFMISEngine:
             ws.cell(row=r, column=3,
                     value=str(n26.seq_num) if n26.seq_num else "").font = Font(name=TNR, size=11)
             fin_cur = -self._nc("26")
-            _num(ws.cell(row=r, column=4), fin_cur)
-            _num(ws.cell(row=r, column=5), 0.0)
+            if n26_note_row:
+                _fnum(ws.cell(row=r, column=4), f"=-'{SH_NOTES}'!C{n26_note_row}")
+                _fnum(ws.cell(row=r, column=5), f"=-'{SH_NOTES}'!D{n26_note_row}")
+            else:
+                _num(ws.cell(row=r, column=4), fin_cur)
+                _num(ws.cell(row=r, column=5), 0.0)
             r += 1
             _total_line(ws, r,
                         "Net cash flows from/(used in) financing activities",
                         fin_cur, 0.0)
+            net_fin_row = r
             r += 2
 
-        # Net change in cash
+        # Net change in cash — formula linking net ops + net inv + net fin
         net_chg_cur  = net_ops_cur  + inv_cur  + fin_cur
         net_chg_prev = net_ops_prev + inv_prev + fin_prev
         ws.cell(row=r, column=2,
                 value="Net increase/(decrease) in cash and cash equivalents"
                 ).font = Font(name=TNR, size=11, bold=True)
-        _num(ws.cell(row=r, column=4), net_chg_cur,  bold=True)
-        _num(ws.cell(row=r, column=5), net_chg_prev, bold=True)
+        parts_cur  = [f"D{net_ops_row}"]
+        parts_prev = [f"E{net_ops_row}"]
+        if net_inv_row:
+            parts_cur.append(f"D{net_inv_row}")
+            parts_prev.append(f"E{net_inv_row}")
+        if net_fin_row:
+            parts_cur.append(f"D{net_fin_row}")
+            parts_prev.append(f"E{net_fin_row}")
+        _fnum(ws.cell(row=r, column=4),
+              "=" + "+".join(parts_cur)  if net_ops_row else net_chg_cur,  bold=True)
+        _fnum(ws.cell(row=r, column=5),
+              "=" + "+".join(parts_prev) if net_ops_row else net_chg_prev, bold=True)
         for c in range(2, 6):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="thin"))
+        net_chg_row = r
         r += 2
 
         # Opening / Closing cash
         cash_sn    = str(self._find("CASH").seq_num) if self._find("CASH") else ""
+        cash_note_row = self._note_rows.get('CASH', 0)
         cash_prev  = self._np("CASH")
         cash_cur   = self._nc("CASH")
         cash_start_cur  = cash_prev
         cash_start_prev = cash_prev - net_chg_prev
 
+        cash_open_row = r
         ws.cell(row=r, column=2,
                 value="Cash and cash equivalents at start of period").font = Font(name=TNR, size=11)
         ws.cell(row=r, column=3, value=cash_sn).font = Font(name=TNR, size=11)
@@ -803,14 +968,16 @@ class _IFMISEngine:
         _num(ws.cell(row=r, column=5), cash_start_prev)
         r += 1
 
-        cash_end_cur  = cash_start_cur  + net_chg_cur
-        cash_end_prev = cash_start_prev + net_chg_prev
+        cash_close_row = r
         ws.cell(row=r, column=2,
                 value="Cash and cash equivalents at end of period"
                 ).font = Font(name=TNR, size=11, bold=True)
         ws.cell(row=r, column=3, value=cash_sn).font = Font(name=TNR, size=11)
-        _num(ws.cell(row=r, column=4), cash_end_cur,  bold=True)
-        _num(ws.cell(row=r, column=5), cash_end_prev, bold=True)
+        # Closing = opening + net change (formula)
+        _fnum(ws.cell(row=r, column=4),
+              f"=D{cash_open_row}+D{net_chg_row}", bold=True)
+        _fnum(ws.cell(row=r, column=5),
+              f"=E{cash_open_row}+E{net_chg_row}", bold=True)
         for c in range(2, 6):
             ws.cell(row=r, column=c).border = Border(bottom=Side(style="double"))
         r += 2
@@ -819,19 +986,40 @@ class _IFMISEngine:
         def _red_ctrl(row, label, cur_v, prev_v):
             ws.cell(row=row, column=2,
                     value=label).font = Font(name=TNR, size=11, bold=True, color=_RED_C)
-            _num(ws.cell(row=row, column=4), cur_v,  color=_RED_C)
-            _num(ws.cell(row=row, column=5), prev_v, color=_RED_C)
+            _fnum(ws.cell(row=row, column=4), cur_v,  color=_RED_C)
+            _fnum(ws.cell(row=row, column=5), prev_v, color=_RED_C)
 
-        _red_ctrl(r, "CONTROL: Cash per Note", cash_cur, cash_prev)
+        # Control: CF closing vs Note total for Cash
+        if cash_note_row:
+            ctrl_cur  = f"=D{cash_close_row}-'{SH_NOTES}'!C{cash_note_row}"
+            ctrl_prev = f"=E{cash_close_row}-'{SH_NOTES}'!D{cash_note_row}"
+            note_cur  = f"='{SH_NOTES}'!C{cash_note_row}"
+            note_prev = f"='{SH_NOTES}'!D{cash_note_row}"
+        else:
+            cash_end_cur  = cash_start_cur  + net_chg_cur
+            cash_end_prev = cash_start_prev + net_chg_prev
+            ctrl_cur  = cash_end_cur  - cash_cur
+            ctrl_prev = cash_end_prev - cash_prev
+            note_cur  = cash_cur
+            note_prev = cash_prev
+
+        _red_ctrl(r, "CONTROL: Cash per Note", note_cur, note_prev)
         ws.cell(row=r, column=3, value=cash_sn).font = Font(name=TNR, size=11, color=_RED_C)
         r += 1
-        _red_ctrl(r, "CONTROL: Difference (CF vs Note)",
-                  cash_end_cur - cash_cur,
-                  cash_end_prev - cash_prev)
+        _red_ctrl(r, "CONTROL: Difference (CF vs Note)", ctrl_cur, ctrl_prev)
         r += 2
-        _red_ctrl(r, "CONTROL: Position Balance Check",
-                  self._net_assets_cur  - self._na_close_cur,
-                  self._net_assets_prev - self._na_close_prev)
+
+        # Control: Position balance check (Net Assets vs Net Assets closing)
+        pos_na_row = self._pos_rows.get('net_assets', 0)
+        na_close   = self._na_rows.get('curr_close', 0)
+        na_prev_cl = self._na_rows.get('prev_close', 0)
+        if pos_na_row and na_close:
+            bal_cur  = f"='{SH_POS}'!D{pos_na_row}-'{SH_NA}'!B{na_close}"
+            bal_prev = f"='{SH_POS}'!E{pos_na_row}-'{SH_NA}'!B{na_prev_cl}" if na_prev_cl else 0.0
+        else:
+            bal_cur  = self._net_assets_cur  - self._na_close_cur
+            bal_prev = self._net_assets_prev - self._na_close_prev
+        _red_ctrl(r, "CONTROL: Position Balance Check", bal_cur, bal_prev)
 
         _finalize_sheet(ws)
 
@@ -855,7 +1043,7 @@ class _IFMISEngine:
         return n is not None and (n.total_cur != 0 or n.total_prev != 0)
 
     def _line(self, ws, r: int, label: str, key: str, negate: bool = False):
-        """Write one line row in Performance / Position / CF sheets."""
+        """Write one line row; values are cross-sheet formulas when available."""
         n    = self._find(key)
         sign = -1 if negate else 1
         cv   = (n.total_cur  if n else 0.0) * sign
@@ -863,8 +1051,15 @@ class _IFMISEngine:
         seq  = str(n.seq_num) if n and n.seq_num else ""
         ws.cell(row=r, column=2, value=label).font = Font(name=TNR, size=11)
         ws.cell(row=r, column=3, value=seq).font   = Font(name=TNR, size=11)
-        _num(ws.cell(row=r, column=4), cv)
-        _num(ws.cell(row=r, column=5), pv)
+
+        note_row = self._note_rows.get(key)
+        if note_row:
+            pfx = "-" if negate else ""
+            _fnum(ws.cell(row=r, column=4), f"={pfx}'{SH_NOTES}'!C{note_row}")
+            _fnum(ws.cell(row=r, column=5), f"={pfx}'{SH_NOTES}'!D{note_row}")
+        else:
+            _num(ws.cell(row=r, column=4), cv)
+            _num(ws.cell(row=r, column=5), pv)
 
 
 # ── Module-level formatting helpers ───────────────────────────────────────
@@ -888,6 +1083,7 @@ def _blue_hdr(cell):
 
 
 def _num(cell, value: float, bold: bool = False, color: str = None):
+    """Write a hard-coded numeric value."""
     cell.value         = value
     cell.number_format = NUM_FMT
     kwargs = {"name": TNR, "size": 11, "bold": bold}
@@ -897,7 +1093,32 @@ def _num(cell, value: float, bold: bool = False, color: str = None):
     cell.alignment = Alignment(horizontal="right")
 
 
+def _fnum(cell, value, bold: bool = False, color: str = None):
+    """Write a formula string or numeric value with number formatting."""
+    cell.value         = value
+    cell.number_format = NUM_FMT
+    kwargs = {"name": TNR, "size": 11, "bold": bold}
+    if color:
+        kwargs["color"] = color
+    cell.font      = Font(**kwargs)
+    cell.alignment = Alignment(horizontal="right")
+
+
+def _sum_total(ws, r: int, label: str, start_r: int, end_r: int):
+    """Write a subtotal row using SUM formulas over the data rows above."""
+    ws.cell(row=r, column=2, value=label).font = Font(name=TNR, size=11, bold=True)
+    for col, src in [(4, "D"), (5, "E")]:
+        c = ws.cell(row=r, column=col)
+        c.value         = f"=SUM({src}{start_r}:{src}{end_r})"
+        c.number_format = NUM_FMT
+        c.font          = Font(name=TNR, size=11, bold=True)
+        c.alignment     = Alignment(horizontal="right")
+    for col in range(2, 6):
+        ws.cell(row=r, column=col).border = Border(bottom=Side(style="thin"))
+
+
 def _total_line(ws, r: int, label: str, cur_val: float, prev_val: float):
+    """Write a total row with hard-coded values (fallback for derived totals)."""
     ws.cell(row=r, column=2, value=label).font = Font(name=TNR, size=11, bold=True)
     _num(ws.cell(row=r, column=4), cur_val,  bold=True)
     _num(ws.cell(row=r, column=5), prev_val, bold=True)
