@@ -28,6 +28,7 @@ from kdl.dialogs.macro_recorder_dialog import MacroRecorderDialog
 from kdl.dialogs.database_setup_dialog import DatabaseSetupDialog
 from kdl.dialogs.load_result_dialog import LoadResultDialog
 from kdl.dialogs.financial_report_dialog import FinancialReportDialog
+from kdl.dialogs.budget_dialog import BudgetDialog
 from kdl.engine.loader import LoaderThread
 from kdl.engine.keystroke_parser import KeystrokeParser
 from kdl.engine.validation import validate_ifmis_data
@@ -615,6 +616,10 @@ class MainWindow(QMainWindow):
         report_action.triggered.connect(self._open_financial_report)
         tools_menu.addAction(report_action)
 
+        budget_action = QAction("&Budget...", self)
+        budget_action.triggered.connect(self._open_budget)
+        tools_menu.addAction(budget_action)
+
         tools_menu.addSeparator()
 
         start_load_action = QAction("&Start Load", self)
@@ -817,6 +822,15 @@ class MainWindow(QMainWindow):
         )
         self.report_btn.setToolTip("Generate IFMIS Financial Statements from Notes")
         toolbar.addAction(self.report_btn)
+
+        self.budget_btn = QAction(
+            self._icon("ic_budget.svg"),
+            "Budget",
+            self,
+            triggered=self._open_budget,
+        )
+        self.budget_btn.setToolTip("GOK IFMIS Budget Processor")
+        toolbar.addAction(self.budget_btn)
 
         toolbar.addSeparator()
 
@@ -1662,6 +1676,10 @@ class MainWindow(QMainWindow):
 
     def _open_financial_report(self):
         dlg = FinancialReportDialog(self)
+        dlg.exec()
+
+    def _open_budget(self):
+        dlg = BudgetDialog(self)
         dlg.exec()
 
     @staticmethod
