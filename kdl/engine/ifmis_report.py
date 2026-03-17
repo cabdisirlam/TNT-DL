@@ -376,6 +376,7 @@ class _IFMISEngine:
             r += 1
 
             # Items
+            items_start = r
             for i, item in enumerate(n.items):
                 ws.cell(row=r, column=1, value=item.desc).font = Font(name=TNR, size=11)
                 ws.cell(row=r, column=2, value=item.code).font = Font(name=TNR, size=11)
@@ -386,13 +387,12 @@ class _IFMISEngine:
                     for c in range(1, 5):
                         ws.cell(row=r, column=c).fill = gf
                 r += 1
+            items_end = r - 1
 
-            # Total row — record this row for cross-sheet formula linking
-            tc = sum(it.cur  for it in n.items)
-            tp = sum(it.prev for it in n.items)
+            # Total row — SUM formula over the items above + record row for cross-sheet linking
             ws.cell(row=r, column=1, value="TOTAL").font = Font(name=TNR, size=11, bold=True)
-            _num(ws.cell(row=r, column=3), tc, bold=True)
-            _num(ws.cell(row=r, column=4), tp, bold=True)
+            _fnum(ws.cell(row=r, column=3), f"=SUM(C{items_start}:C{items_end})", bold=True)
+            _fnum(ws.cell(row=r, column=4), f"=SUM(D{items_start}:D{items_end})", bold=True)
             for col in range(1, 5):
                 ws.cell(row=r, column=col).border = Border(bottom=Side(style="thin"))
             self._note_rows[k] = r   # ← record for cross-sheet linking
