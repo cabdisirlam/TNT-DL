@@ -48,6 +48,7 @@ class LoaderThread(QThread):
     loading_complete = Signal(bool, str)       # success, message
     row_started = Signal(int)                  # row_number
     step_waiting = Signal(int, int)            # row, col - waiting for user in step mode
+    popup_paused = Signal(str)                  # popup_title - emitted when loader pauses on popup
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -869,7 +870,8 @@ class LoaderThread(QThread):
 
     def _check_blocking_popup(self, rows_processed: int, total_rows: int) -> bool:
         """
-        Detect IFMIS/Oracle popup dialogs.
+        Detect IFMIS/Oracle popup dialogs (LOVs, error dialogs, date pickers, etc.).
+        Pauses the loader so the user can dismiss the popup and resume.
         Returns True if popup handling was triggered.
         """
         if not self._popup_auto_pause_enabled:
@@ -888,18 +890,18 @@ class LoaderThread(QThread):
             self._last_popup_title = ""
             return False
 
-        # Always stop on blocking popup. Continuing key playback can interact with
-        # the popup itself and cause unintended toggles/actions in Oracle forms.
-        self._stop_requested = True
-        if not self._stop_reason:
-            self._stop_reason = f"Blocking popup detected: {popup_title}"
+        # Pause instead of stop so the user can dismiss the popup and resume.
+        self._pause_requested = True
         if popup_title != self._last_popup_title:
             self._last_popup_title = popup_title
+            self.popup_paused.emit(popup_title)
             self.progress_updated.emit(
                 rows_processed,
                 total_rows,
-                f"Stopped: detected popup '{popup_title}'. Resolve popup and restart load."
+                f"Paused: detected popup '{popup_title}'. Dismiss the popup and click Resume."
             )
+        # Wait until user resumes (or stops).
+        self._check_pause()
         return True
 
     def _wait_for_step(self):

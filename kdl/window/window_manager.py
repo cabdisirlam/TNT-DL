@@ -334,7 +334,6 @@ class WindowManager:
             target_pid = WindowManager.get_window_process_id(target_hwnd)
             if not target_pid:
                 return ""
-            target_root = user32.GetAncestor(target_hwnd, GA_ROOTOWNER)
 
             fg_hwnd = WindowManager.get_foreground_window_handle()
             if fg_hwnd and fg_hwnd != target_hwnd and user32.IsWindowVisible(fg_hwnd):
@@ -342,21 +341,16 @@ class WindowManager:
                 if fg_pid == target_pid:
                     title = WindowManager.get_window_title(fg_hwnd).strip()
                     lowered = title.lower()
-                    owner = user32.GetWindow(fg_hwnd, GW_OWNER)
-                    root_owner = user32.GetAncestor(fg_hwnd, GA_ROOTOWNER)
                     class_name = WindowManager.get_window_class_name(fg_hwnd)
-                    class_lower = class_name.lower()
-                    is_dialog_class = class_name == "#32770" or "dialog" in class_lower
-                    is_owned_popup = bool(owner) or (
-                        root_owner and target_root and root_owner == target_root and fg_hwnd != target_root
-                    )
-                    keyword_hit = any(k in lowered for k in POPUP_KEYWORDS)
 
-                    # Treat as blocking when it's a dialog/keyword match, or an owned popup with visible title.
-                    if is_dialog_class or keyword_hit or (is_owned_popup and bool(title)):
-                        # Avoid reporting the exact same target title as popup.
-                        if target_title and title and target_title.strip().lower() == lowered:
-                            return ""
+                    # Any same-process window that isn't the target taking foreground
+                    # is treated as a blocking popup. This catches Oracle LOV popups
+                    # (Currencies, Suppliers, etc.), date pickers, error dialogs,
+                    # and any other child window that steals focus.
+                    # Avoid reporting the exact same target title as popup.
+                    if target_title and title and target_title.strip().lower() == lowered:
+                        pass  # Same title as target — not a popup
+                    else:
                         return title or f"(popup: {class_name or 'unknown class'})"
 
             # Fallback: scan all visible top-level windows in same process for modal/popups.
@@ -376,18 +370,10 @@ class WindowManager:
                 title = WindowManager.get_window_title(hwnd).strip()
                 lowered = title.lower()
                 class_name = WindowManager.get_window_class_name(hwnd)
-                class_lower = class_name.lower()
-                owner = user32.GetWindow(hwnd, GW_OWNER)
-                root_owner = user32.GetAncestor(hwnd, GA_ROOTOWNER)
-
-                is_dialog_class = class_name == "#32770" or "dialog" in class_lower
-                is_owned_popup = bool(owner) or (
-                    root_owner and target_root and root_owner == target_root and hwnd != target_root
-                )
-                keyword_hit = any(k in lowered for k in POPUP_KEYWORDS)
                 same_title = bool(target_title and title and target_title.strip().lower() == lowered)
 
-                if (is_dialog_class or keyword_hit or (is_owned_popup and bool(title))) and not same_title:
+                # Any visible same-process window that isn't the target is a popup.
+                if not same_title:
                     found_popup = title or f"(popup: {class_name or 'unknown class'})"
                     return False
                 return True

@@ -2155,6 +2155,7 @@ class MainWindow(QMainWindow):
         self.loader_thread.finished.connect(self._on_loader_thread_finished)
         self.loader_thread.row_started.connect(self._on_row_started)
         self.loader_thread.step_waiting.connect(self._on_step_waiting)
+        self.loader_thread.popup_paused.connect(self._on_popup_paused)
 
         # UI state
         self.start_btn.setEnabled(False)
@@ -2223,6 +2224,135 @@ class MainWindow(QMainWindow):
                 self.pause_btn.setText("Pause")
                 self.status_label.setText("Resumed...")
                 self._is_paused = False
+
+    def _on_popup_paused(self, popup_title: str):
+        """Handle automatic pause triggered by a detected popup/LOV.
+
+        Shows a dialog letting the user dismiss the popup in IFMIS,
+        then choose to resume from the current row, a different row, or stop.
+        """
+        self._is_paused = True
+        self.pause_btn.setText("Resume")
+        self.status_label.setText(f"Paused — popup: {popup_title}")
+
+        # Bring KDL to front so the user sees the dialog
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+        grid_data = self.spreadsheet.get_grid_data()
+        total_rows = len(grid_data)
+        paused_row = max(0, self._last_started_row)
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Popup Detected — Load Paused")
+        dlg.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        dlg.setMinimumWidth(440)
+
+        from kdl.styles import dialog_qss
+        from kdl.config_store import get_dark_mode
+        dlg.setStyleSheet(dialog_qss(dark=get_dark_mode()))
+
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        lbl_status = QLabel(
+            f"<b>Popup detected:</b> {popup_title}<br>"
+            f"Load paused at <b>Row {paused_row + 1}</b>."
+        )
+        lbl_status.setWordWrap(True)
+        layout.addWidget(lbl_status)
+
+        # Step-by-step guidance
+        from PySide6.QtWidgets import QGroupBox as _GB
+        guide_box = _GB("Steps:")
+        guide_layout = QVBoxLayout(guide_box)
+        guide_layout.setSpacing(4)
+        steps = [
+            "1.  Minimise this dialog  (click the  ─  button above)",
+            "2.  In IFMIS, dismiss the popup (Cancel / Escape / OK)",
+            "3.  Clear any partial data if needed",
+            "4.  Click the <b>first field</b> of the row you want to continue from",
+            "5.  Return here and choose how to continue",
+        ]
+        for step in steps:
+            lbl = QLabel(step)
+            lbl.setWordWrap(True)
+            guide_layout.addWidget(lbl)
+        layout.addWidget(guide_box)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(sep)
+
+        resume_lbl = QLabel("Continue from:")
+        layout.addWidget(resume_lbl)
+
+        btn_group = QButtonGroup(dlg)
+
+        rb_current = QRadioButton(f"Current row  (Row {paused_row + 1} — retry)")
+        rb_current.setChecked(True)
+        btn_group.addButton(rb_current, 0)
+        layout.addWidget(rb_current)
+
+        next_row = min(paused_row + 1, max(0, total_rows - 1))
+        rb_next = QRadioButton(f"Next row  (Row {next_row + 1} — skip current)")
+        btn_group.addButton(rb_next, 1)
+        layout.addWidget(rb_next)
+
+        rb_custom = QRadioButton("Custom row:")
+        btn_group.addButton(rb_custom, 2)
+        custom_row = QHBoxLayout()
+        custom_row.addWidget(rb_custom)
+        spin = QSpinBox()
+        spin.setMinimum(1)
+        spin.setMaximum(max(1, total_rows))
+        spin.setValue(paused_row + 1)
+        spin.setEnabled(False)
+        custom_row.addWidget(spin)
+        custom_row.addStretch()
+        layout.addLayout(custom_row)
+
+        rb_custom.toggled.connect(spin.setEnabled)
+
+        btns = QDialogButtonBox()
+        btns.addButton("Resume", QDialogButtonBox.AcceptRole)
+        btns.addButton("Stop Load", QDialogButtonBox.RejectRole)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        result = dlg.exec()
+
+        if result == QDialog.Accepted and self.loader_thread:
+            chosen_id = btn_group.checkedId()
+            if chosen_id == 0:
+                resume_row = paused_row
+            elif chosen_id == 1:
+                resume_row = next_row
+            else:
+                resume_row = spin.value() - 1
+
+            if resume_row != paused_row:
+                # User chose a different row — stop current load and relaunch
+                self.loader_thread.stop()
+                self.loader_thread.wait(2000)
+                settings = dict(self._last_load_settings)
+                settings["from_row"] = resume_row
+                settings["range_mode"] = "custom"
+                QTimer.singleShot(200, lambda: self._execute_load(settings))
+            else:
+                # Resume from exactly where we paused
+                self.loader_thread.resume()
+                self.pause_btn.setText("Pause")
+                self.status_label.setText("Resumed...")
+                self._is_paused = False
+        else:
+            # User chose Stop
+            if self.loader_thread:
+                self.loader_thread.stop()
 
     def _next_step(self):
         if self.loader_thread:
