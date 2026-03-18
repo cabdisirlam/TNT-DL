@@ -82,7 +82,10 @@ class LoaderThread(QThread):
         self._esc_guard_until = 0.0
         self._esc_hook = None
         self._esc_hook_backend = ""
-        self._cell_send_retries = 2
+        self._cell_send_retries = 0  # Blind retries are unsafe: a failed send may have
+                                     # already typed/pasted into IFMIS, so retrying
+                                     # duplicates data. Keep at 0; raise only for
+                                     # pre-send activation failures, not mid-send ones.
         self._form_type_col = None
         self._form_no_col = None
         self._form_first_data_row = 0
@@ -337,33 +340,14 @@ class LoaderThread(QThread):
         """Deprecated path: Oracle direct mode is intentionally disabled."""
         self.loading_complete.emit(False, "Oracle Direct mode is disabled in this build.")
 
-    def _send_cell_with_retry(
-        self, row_idx: int, col_idx: int, parsed: ParsedCell, rows_processed: int, total_rows: int
-    ) -> bool:
-        attempts = max(1, int(self._cell_send_retries) + 1)
-        for attempt in range(1, attempts + 1):
-            if self._is_stop_requested():
-                return False
-
-            success = self.sender.send_cell(parsed)
-            if success:
-                return True
-
-            if self._is_stop_requested():
-                return False
-
-            if attempt < attempts:
-                reason = (self.sender.last_error or "send failed").strip()
-                self.progress_updated.emit(
-                    rows_processed,
-                    total_rows,
-                    f"Retrying R{row_idx + 1} C{col_idx + 1} ({attempt}/{attempts - 1}) - {reason}"
-                )
-                self.sender.activate_target()
-                if not self._interruptible_delay(max(0.05, self.sender.speed_delay)):
-                    return False
-
-        return False
+    def _send_cell_with_retry(self, parsed: ParsedCell) -> bool:
+        # Retries are intentionally disabled.
+        # A send failure may have already typed/pasted into IFMIS; retrying
+        # blindly would duplicate or corrupt the field.  The popup-pause
+        # mechanism handles the real recovery path.
+        if self._is_stop_requested():
+            return False
+        return self.sender.send_cell(parsed)
 
     def _parse_cell_for_column(self, col_idx: int, cell_value, is_delay: bool = False) -> ParsedCell:
         """
@@ -457,22 +441,15 @@ class LoaderThread(QThread):
                 )
             return parsed
 
-        # Fallback: if type-column detection misses, still honor IFMIS type tokens
-        # in early row columns where type is normally placed.
-        if col_idx <= 2 and lowered in {"receipt", "r"}:
-            return ParsedCell(
-                cell_type=CellType.KEYSTROKE,
-                raw_value=parsed.raw_value,
-                key_actions=[
-                    {"type": "type", "text": "r"},
-                ],
-            )
-        if col_idx <= 2 and lowered in {"payment", "p"}:
-            return ParsedCell(
-                cell_type=CellType.KEYSTROKE,
-                raw_value=parsed.raw_value,
-                key_actions=[{"type": "key", "key": "tab"}],
-            )
+        # Fallback: only reinterpret p/r/payment/receipt as IFMIS type tokens when
+        # header-based detection actually ran and confirmed a type column exists
+        # (self._form_type_col is not None means detection succeeded but col_idx
+        # just didn't match — so skip the fallback).
+        # When detection found nothing (_form_type_col is None AND _form_no_col is
+        # None), it means the sheet layout is unknown; applying the fallback silently
+        # to any sheet with "r"/"p" in an early column is dangerous for non-IFMIS
+        # layouts and is therefore disabled.
+        # Users who need this behaviour should add a "Type" header to their sheet.
 
         if (
             self._form_no_col is not None
@@ -684,9 +661,7 @@ class LoaderThread(QThread):
                             raw_value=paste_payload,
                             data_text=paste_payload,
                         )
-                        success = self._send_cell_with_retry(
-                            row_idx, paste_col_idx, paste_cell, rows_processed, total_rows
-                        )
+                        success = self._send_cell_with_retry(paste_cell)
                         self.cell_processed.emit(row_idx, paste_col_idx, success)
                         if not success:
                             if self._is_stop_requested():
@@ -738,9 +713,7 @@ class LoaderThread(QThread):
                                 break
                             pending_tab_after_receipt = False
 
-                        success = self._send_cell_with_retry(
-                            row_idx, col_idx, parsed, rows_processed, total_rows
-                        )
+                        success = self._send_cell_with_retry(parsed)
                         self.cell_processed.emit(row_idx, col_idx, success)
                         if not success:
                             if self._is_stop_requested():
@@ -809,9 +782,7 @@ class LoaderThread(QThread):
 
                     row_had_activity = True
 
-                    success = self._send_cell_with_retry(
-                        row_idx, col_idx, parsed, rows_processed, total_rows
-                    )
+                    success = self._send_cell_with_retry(parsed)
                     self.cell_processed.emit(row_idx, col_idx, success)
 
                     if not success:

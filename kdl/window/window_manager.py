@@ -55,6 +55,21 @@ POPUP_KEYWORDS = [
     "required", "mandatory", "exception", "message", "alert", "not allowed",
 ]
 
+# Oracle/Java same-process windows that are normal background windows,
+# NOT LOV or error popups.  Partial, case-insensitive substring matches.
+# Any foreground window whose title contains one of these is ignored.
+ORACLE_BACKGROUND_WINDOWS = [
+    "navigator",        # Oracle Apps Navigator
+    "oracle applications",
+    "oracle e-business",
+    "e-business suite",
+    "responsibility",
+    "toolbar",
+    "toolbox",
+    "java",             # Bare Java splash/frame
+    "jinitiator",
+]
+
 
 class WindowManager:
     """
@@ -344,13 +359,12 @@ class WindowManager:
                     class_name = WindowManager.get_window_class_name(fg_hwnd)
 
                     # Any same-process window that isn't the target taking foreground
-                    # is treated as a blocking popup. This catches Oracle LOV popups
-                    # (Currencies, Suppliers, etc.), date pickers, error dialogs,
-                    # and any other child window that steals focus.
-                    # Avoid reporting the exact same target title as popup.
-                    if target_title and title and target_title.strip().lower() == lowered:
-                        pass  # Same title as target — not a popup
-                    else:
+                    # is treated as a blocking popup — UNLESS it is a known Oracle
+                    # background window (Navigator, Toolbar, etc.) which are normal
+                    # companion windows that should never trigger a pause.
+                    same_as_target = bool(target_title and title and target_title.strip().lower() == lowered)
+                    is_background = any(kw in lowered for kw in ORACLE_BACKGROUND_WINDOWS)
+                    if not same_as_target and not is_background:
                         return title or f"(popup: {class_name or 'unknown class'})"
 
             # Fallback: scan all visible top-level windows in same process for modal/popups.
@@ -371,9 +385,11 @@ class WindowManager:
                 lowered = title.lower()
                 class_name = WindowManager.get_window_class_name(hwnd)
                 same_title = bool(target_title and title and target_title.strip().lower() == lowered)
+                is_background = any(kw in lowered for kw in ORACLE_BACKGROUND_WINDOWS)
 
-                # Any visible same-process window that isn't the target is a popup.
-                if not same_title:
+                # Any visible same-process window that isn't the target and isn't a
+                # known Oracle background window is treated as a blocking popup.
+                if not same_title and not is_background:
                     found_popup = title or f"(popup: {class_name or 'unknown class'})"
                     return False
                 return True
