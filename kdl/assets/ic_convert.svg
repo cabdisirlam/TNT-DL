@@ -1,6 +1,6 @@
-﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <path d="M7 8a7 7 0 0 1 11-1" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <path d="m17 4 1 4-4-1" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M17 16A7 7 0 0 1 6 17" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <path d="m7 20-1-4 4 1" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="1,4 1,10 7,10"/>
+  <polyline points="23,20 23,14 17,14"/>
+  <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/>
+  <path d="M3.51 15a9 9 0 0 0 14.85 3.36L23 14"/>
 </svg>
