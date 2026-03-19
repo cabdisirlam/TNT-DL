@@ -1,7 +1,7 @@
 """
 NT_DL Load Settings Dialog
 Professional loading dialog inspired by DataLoad Classic and FDL.
-Includes Form Mode for IFMIS â€” load rows 1 to N with auto-Tab.
+Includes Form Mode for IFMIS â€" load rows 1 to N with auto-Tab.
 Default delays are tuned for IFMIS stability: 0.1s cell, 0.1s window.
 """
 
@@ -101,8 +101,8 @@ class LoadSettingsDialog(QDialog):
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
 
-        # â”€â”€â”€ Target Window â”€â”€â”€
-        target_group = QGroupBox(“Target Application”)
+        # â"€â"€â"€ Target Window â"€â"€â"€
+        target_group = QGroupBox("Target Application")
         tg = QVBoxLayout(target_group)
         tg.setSpacing(4)
 
@@ -133,7 +133,7 @@ class LoadSettingsDialog(QDialog):
 
         layout.addWidget(target_group)
 
-        # â”€â”€â”€ Loading Mode â”€â”€â”€
+        # â"€â"€â"€ Loading Mode â"€â"€â"€
         mode_group = QGroupBox("Loading Mode")
         mg = QVBoxLayout(mode_group)
         mg.setSpacing(3)
@@ -190,7 +190,7 @@ class LoadSettingsDialog(QDialog):
 
         layout.addWidget(mode_group)
 
-        # â”€â”€â”€ Row Range â”€â”€â”€
+        # â"€â"€â"€ Row Range â"€â"€â"€
         range_group = QGroupBox("Rows to Load")
         rg = QVBoxLayout(range_group)
         rg.setSpacing(3)
@@ -202,7 +202,7 @@ class LoadSettingsDialog(QDialog):
         self.radio_selected = QRadioButton("Selected Rows and Columns")
         rg.addWidget(self.radio_selected)
 
-        # Range row  â€” From [ _ ] To [ _ ]
+        # Range row  â€" From [ _ ] To [ _ ]
         range_row = QHBoxLayout()
         self.radio_range = QRadioButton("From Row")
 
@@ -227,7 +227,7 @@ class LoadSettingsDialog(QDialog):
 
         layout.addWidget(range_group)
 
-        # â”€â”€â”€ Delays & Options â”€â”€â”€
+        # â"€â"€â"€ Delays & Options â"€â"€â"€
         delay_group = QGroupBox("Delays && Options")
         dg = QGridLayout(delay_group)
         dg.setSpacing(4)
@@ -275,7 +275,7 @@ class LoadSettingsDialog(QDialog):
 
         layout.addWidget(popup_group)
 
-        # â”€â”€â”€ Buttons â”€â”€â”€
+        # â"€â"€â"€ Buttons â"€â"€â"€
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
@@ -318,9 +318,9 @@ class LoadSettingsDialog(QDialog):
         target_h = min(hint.height(), max_h)   # use full hint if it fits
         self.resize(target_w, target_h)
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     # Actions
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     def _selected_load_mode(self) -> str:
         if self.radio_imprest.isChecked():
             return "imprest_surrender"
