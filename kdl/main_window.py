@@ -51,7 +51,7 @@ COMMAND_GROUPS = [
 ]
 
 LOAD_DEFAULTS_VERSION = 6
-VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send"}
+VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send", "imprest_surrender"}
 TABLE_FORMAT_HEADERS = [
     "Line",
     "Type",
@@ -433,7 +433,7 @@ class MainWindow(QMainWindow):
             self._default_load_mode = saved_mode
         else:
             self._default_load_mode = "per_cell"
-        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send")
+        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender")
 
         self._default_validate_before_load = bool(
             load_defaults.get("validate_before_load", self._default_validate_before_load)
@@ -619,6 +619,10 @@ class MainWindow(QMainWindow):
         budget_action = QAction("&Budget...", self)
         budget_action.triggered.connect(self._open_budget)
         tools_menu.addAction(budget_action)
+
+        imprest_action = QAction("&Imprest Surrender AP Loader...", self)
+        imprest_action.triggered.connect(self._open_imprest_surrender)
+        tools_menu.addAction(imprest_action)
 
         tools_menu.addSeparator()
 
@@ -831,6 +835,15 @@ class MainWindow(QMainWindow):
         )
         self.budget_btn.setToolTip("GOK IFMIS Budget Processor")
         toolbar.addAction(self.budget_btn)
+
+        self.imprest_btn = QAction(
+            self._icon("ic_imprest.svg"),
+            "Imprest Surrender",
+            self,
+            triggered=self._open_imprest_surrender,
+        )
+        self.imprest_btn.setToolTip("Imprest Surrender AP Invoice Loader")
+        toolbar.addAction(self.imprest_btn)
 
         toolbar.addSeparator()
 
@@ -1487,7 +1500,7 @@ class MainWindow(QMainWindow):
         chosen_mode = mode_combo.currentData() or "per_cell"
         self._default_wait_hourglass = wait_check.isChecked()
         self._default_load_mode = chosen_mode if chosen_mode in VALID_LOAD_MODES else "per_cell"
-        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send")
+        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender")
         self._default_validate_before_load = validate_check.isChecked()
         self._compact_mode_enabled = compact_check.isChecked()
         self._default_end_of_row_action = eor_combo.currentData()
@@ -1682,6 +1695,28 @@ class MainWindow(QMainWindow):
         dlg = BudgetDialog(self)
         dlg.exec()
 
+    def _open_imprest_surrender(self):
+        from kdl.dialogs.imprest_surrender_dialog import ImprestSurrenderDialog
+        dlg = ImprestSurrenderDialog(self)
+        dlg.load_into_grid.connect(self._load_imprest_output_into_grid)
+        dlg.exec()
+
+    def _load_imprest_output_into_grid(self, rows: list):
+        if not rows:
+            return
+        try:
+            self.spreadsheet.load_from_rows(rows)
+            self.status_label.setText(
+                f"Imprest Surrender loaded: {len(rows)} invoice(s). "
+                "Press F5, select 'Imprest Surrender' mode, then Load.")
+        except Exception as exc:
+            self.status_label.setText("Imprest Surrender load failed.")
+            QMessageBox.critical(
+                self,
+                "Imprest Surrender Error",
+                f"Failed to load invoices into the grid:\n{exc}",
+            )
+
     @staticmethod
     def _default_file_dialog_dir() -> str:
         downloads = os.path.join(os.path.expanduser("~"), "Downloads")
@@ -1863,7 +1898,9 @@ class MainWindow(QMainWindow):
         dialog.cell_delay_input.setText(f"{self._default_speed_delay:g}")
         dialog.window_delay_input.setText(f"{self._default_window_delay:g}")
         dialog.hourglass_check.setChecked(self._default_wait_hourglass)
-        if self._default_load_mode == "per_row":
+        if self._default_load_mode == "imprest_surrender":
+            dialog.radio_imprest.setChecked(True)
+        elif self._default_load_mode == "per_row":
             dialog.radio_per_row.setChecked(True)
         elif self._default_load_mode == "fast_send":
             dialog.radio_fast_send.setChecked(True)
@@ -2017,7 +2054,7 @@ class MainWindow(QMainWindow):
         if chosen_mode not in VALID_LOAD_MODES:
             chosen_mode = "per_cell"
         self._default_load_mode = chosen_mode
-        self._default_form_mode = chosen_mode in ("per_row", "fast_send")
+        self._default_form_mode = chosen_mode in ("per_row", "fast_send", "imprest_surrender")
         self._default_validate_before_load = settings.get(
             "validate_before_load", self._default_validate_before_load
         )
@@ -2142,12 +2179,12 @@ class MainWindow(QMainWindow):
             key_columns=list(self.spreadsheet.key_columns),
             selected_columns=list(selected_cols) if selected_cols else None,
             delay_columns=list(delay_cols),
-            form_mode=load_mode in ("per_row", "fast_send"),
+            form_mode=load_mode in ("per_row", "fast_send", "imprest_surrender"),
             load_mode=load_mode,
             end_of_row_action=settings.get("end_of_row_action", "none"),
             save_interval=settings.get("save_interval", 50),
             db_settings=self._db_settings,
-            use_fast_send=load_mode == "fast_send",
+            use_fast_send=load_mode in ("fast_send", "imprest_surrender"),
             popup_stop_on_error=settings.get("popup_behavior", "pause") == "stop",
         )
         self.loader_thread.parser.shortcuts = self.parser.shortcuts

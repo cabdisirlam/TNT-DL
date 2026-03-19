@@ -229,7 +229,6 @@ class FinancialReportDialog(QDialog):
         loader = _SheetLoaderWorker(filepath)
         loader.sheets_ready.connect(self._on_sheets_ready)
         loader.load_error.connect(self._on_sheets_error)
-        loader.finished.connect(loader.deleteLater)
         self._sheet_loader = loader
         loader.start()
 

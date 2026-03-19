@@ -431,7 +431,8 @@ class DataSender:
             mod_vks = [_SI_VK_MAP[m.lower()] for m in modifiers if m.lower() in _SI_VK_MAP]
             key_vk = _SI_VK_MAP.get(key, 0)
             if not key_vk and len(key) == 1:
-                vks_result = ctypes.windll.user32.VkKeyScanW(ord(key))
+                ctypes.windll.user32.VkKeyScanW.argtypes = [ctypes.c_wchar]
+                vks_result = ctypes.windll.user32.VkKeyScanW(key)
                 if vks_result != -1:
                     key_vk = vks_result & 0xFF
                     if (vks_result >> 8) & 0x01 and 0x10 not in mod_vks:

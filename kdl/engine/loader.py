@@ -645,7 +645,23 @@ class LoaderThread(QThread):
                     self.loading_complete.emit(False, "Lost focus on target window - stopped.")
                     return
 
-                if self.load_mode == "per_row_paste":
+                if self.load_mode == "imprest_surrender":
+                    from kdl.engine.imprest_surrender_engine import COLUMNS, execute_row_for_loader
+                    row_dict = {
+                        col: (str(row_data[i]).strip()
+                              if i < len(row_data) and row_data[i] is not None else "")
+                        for i, col in enumerate(COLUMNS)
+                    }
+                    ok = execute_row_for_loader(
+                        self.sender, row_dict, self._is_stop_requested)
+                    row_had_activity = True
+                    if not ok:
+                        if not self._is_stop_requested():
+                            self._handle_send_failure(
+                                row_idx, 0, rows_processed, total_rows)
+                        break
+
+                elif self.load_mode == "per_row_paste":
                     self._check_pause()
                     paste_payload, ok = self._build_row_paste_payload(row_idx, row_data)
                     if not ok:

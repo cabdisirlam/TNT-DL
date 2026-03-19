@@ -40,6 +40,7 @@ LOAD_MODES = [
     ("Per Cell - one cell at a time", "per_cell"),
     ("Per Row - auto-Tab, end-of-row action", "per_row"),
     ("Per Row (Fast Send) - SendInput, no clipboard", "fast_send"),
+    ("Imprest Surrender - AP Invoice template, columns A-K", "imprest_surrender"),
 ]
 
 
@@ -126,16 +127,21 @@ class LoadSettingsDialog(QDialog):
         mg.setSpacing(3)
 
         self.radio_per_cell = QRadioButton(LOAD_MODES[0][0])
-        self.radio_per_cell.setChecked(True)
         mg.addWidget(self.radio_per_cell)
 
         self.radio_per_row = QRadioButton(LOAD_MODES[1][0])
+        self.radio_per_row.setChecked(True)
         mg.addWidget(self.radio_per_row)
 
         self.radio_fast_send = QRadioButton(
             "Per Row (Fast Send)  — SendInput, no clipboard, auto-save/50  ✦ Recommended for IFMIS"
         )
         mg.addWidget(self.radio_fast_send)
+
+        self.radio_imprest = QRadioButton(
+            "Imprest Surrender — AP Invoice template, columns A–K mapped to IFMIS AP form"
+        )
+        mg.addWidget(self.radio_imprest)
 
         # End of row action (indent under Per Row)
         eor_row = QHBoxLayout()
@@ -167,6 +173,7 @@ class LoadSettingsDialog(QDialog):
         self.radio_per_cell.toggled.connect(self._update_mode_controls)
         self.radio_per_row.toggled.connect(self._update_mode_controls)
         self.radio_fast_send.toggled.connect(self._update_mode_controls)
+        self.radio_imprest.toggled.connect(self._update_mode_controls)
         self.eor_combo.currentIndexChanged.connect(self._update_save_interval_visibility)
 
         layout.addWidget(mode_group)
@@ -303,6 +310,8 @@ class LoadSettingsDialog(QDialog):
     # Actions
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _selected_load_mode(self) -> str:
+        if self.radio_imprest.isChecked():
+            return "imprest_surrender"
         if self.radio_fast_send.isChecked():
             return "fast_send"
         if self.radio_per_row.isChecked():
@@ -312,18 +321,27 @@ class LoadSettingsDialog(QDialog):
     def _update_mode_controls(self):
         is_form_mode = self.radio_per_row.isChecked() or self.radio_fast_send.isChecked()
 
-        # End-of-row action only matters in form modes (Per Row / Fast Send)
+        # End-of-row action only matters in Per Row / Fast Send (not imprest, not per cell)
         self.eor_combo.setEnabled(is_form_mode)
 
-        if self.radio_fast_send.isChecked():
-            # Fast Send standard: Next Row + Auto Save every 50 rows always
+        if self.radio_imprest.isChecked():
+            # Imprest Surrender: template handles its own save (Ctrl+S per row)
+            self.eor_combo.setCurrentIndex(0)
+            self.cell_delay_input.setText("0.05")
+        elif self.radio_fast_send.isChecked():
+            # Fast Send: 0.05s cell delay — fast, SendInput
             self.eor_combo.setCurrentIndex(2)
             self.save_interval_input.setText("50")
-        elif is_form_mode:
+            self.cell_delay_input.setText("0.05")
+        elif self.radio_per_row.isChecked():
+            # Per Row: 0.12s cell delay — safer for slower computers
             if self.eor_combo.currentIndex() == 0:  # "None" selected
                 self.eor_combo.setCurrentIndex(2)    # auto-select "Auto Save every N"
+            self.cell_delay_input.setText("0.12")
         else:
+            # Per Cell: 0.12s cell delay
             self.eor_combo.setCurrentIndex(0)        # reset to "None" for Per Cell
+            self.cell_delay_input.setText("0.12")
         self._update_save_interval_visibility()
 
     def _update_save_interval_visibility(self):
@@ -385,7 +403,8 @@ class LoadSettingsDialog(QDialog):
             "  Stop: load stops automatically — use for unsupervised runs\n\n"
             "STOP: Press ESC once or click Stop button.\n\n"
             "Default delays in this build:\n"
-            "  Cell processed: 0.12s\n"
+            "  Cell processed (Fast Send): 0.05s\n"
+            "  Cell processed (Per Row / Per Cell): 0.12s\n"
             "  Window activated: 0.05s\n"
         )
 
