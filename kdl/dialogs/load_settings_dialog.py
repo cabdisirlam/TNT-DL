@@ -8,7 +8,7 @@ Default delays are tuned for IFMIS stability: 0.1s cell, 0.1s window.
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QRadioButton,
     QCheckBox, QLabel, QPushButton, QComboBox,
-    QLineEdit, QMessageBox, QGridLayout
+    QLineEdit, QMessageBox, QGridLayout, QScrollArea, QWidget
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QGuiApplication
@@ -85,12 +85,24 @@ class LoadSettingsDialog(QDialog):
                 self.app_combo.setCurrentText("Oracle EBS R12")
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setSpacing(4)
+        outer.setContentsMargins(8, 8, 8, 8)
+
+        # ── Scrollable content area ──
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setSpacing(4)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(0, 0, 4, 0)
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
 
         # â”€â”€â”€ Target Window â”€â”€â”€
-        target_group = QGroupBox("Target Application")
+        target_group = QGroupBox(“Target Application”)
         tg = QVBoxLayout(target_group)
         tg.setSpacing(4)
 
@@ -285,12 +297,12 @@ class LoadSettingsDialog(QDialog):
         start_btn.clicked.connect(self._start_loading)
         btn_row.addWidget(start_btn)
 
-        layout.addLayout(btn_row)
+        # Buttons and tip live OUTSIDE the scroll area (always visible)
+        outer.addLayout(btn_row)
 
-        # ESC tip
         tip = QLabel("Tip: Press ESC once during loading to stop immediately")
         tip.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; margin-top: 2px;")
-        layout.addWidget(tip)
+        outer.addWidget(tip)
         self._update_mode_controls()
 
     def _fit_to_screen(self):
@@ -299,11 +311,11 @@ class LoadSettingsDialog(QDialog):
             return
         geo = screen.availableGeometry()
         max_w = max(360, geo.width() - 24)
-        max_h = max(320, geo.height() - 24)
+        max_h = geo.height() - 48          # leave a small margin top+bottom
         self.setMaximumSize(max_w, max_h)
         hint = self.sizeHint()
         target_w = min(max(self.minimumWidth(), hint.width()), max_w)
-        target_h = min(max(260, hint.height()), max_h)
+        target_h = min(hint.height(), max_h)   # use full hint if it fits
         self.resize(target_w, target_h)
 
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

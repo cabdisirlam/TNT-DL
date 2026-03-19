@@ -65,11 +65,31 @@ class _SheetLoaderWorker(QThread):
     def run(self):
         try:
             ext = os.path.splitext(self.filepath)[1].lower()
+
+            # ── Fast path: xlsx/xlsm via zipfile ──
             if ext in (".xlsx", ".xlsm"):
                 names = _fast_xlsx_sheet_names(self.filepath)
                 if names:
                     self.sheets_ready.emit(names)
                     return
+
+            # ── .xls: try xlrd first ──
+            if ext == ".xls":
+                try:
+                    import xlrd
+                    wb = xlrd.open_workbook(self.filepath, on_demand=True)
+                    try:
+                        names = wb.sheet_names()
+                    finally:
+                        release = getattr(wb, "release_resources", None)
+                        if callable(release):
+                            release()
+                    self.sheets_ready.emit(list(names))
+                    return
+                except Exception:
+                    pass
+
+            # ── Fallback: openpyxl ──
             import openpyxl
             wb = openpyxl.load_workbook(
                 self.filepath, read_only=True, data_only=True, keep_links=False
@@ -94,11 +114,62 @@ class _ReportWorker(QThread):
         self.success    = False
 
     def run(self):
+        tmp_path = None
+        excel_app = None
+        excel_wb = None
         try:
             import openpyxl
-            wb = openpyxl.load_workbook(
-                self.filepath, data_only=True, keep_links=False
-            )
+            import traceback
+
+            source_ext = os.path.splitext(self.filepath)[1].lower()
+            load_path = self.filepath
+
+            # ── Convert legacy .xls to temp .xlsx via win32com ──
+            if source_ext == ".xls":
+                try:
+                    import tempfile
+                    import pythoncom
+                    import win32com.client
+                    pythoncom.CoInitialize()
+                    excel_app = win32com.client.DispatchEx("Excel.Application")
+                    excel_app.Visible = False
+                    excel_app.DisplayAlerts = False
+                    excel_wb = excel_app.Workbooks.Open(
+                        os.path.abspath(self.filepath),
+                        UpdateLinks=0,
+                        ReadOnly=True,
+                    )
+                    fd, tmp_path = tempfile.mkstemp(suffix=".xlsx")
+                    os.close(fd)
+                    os.unlink(tmp_path)
+                    excel_wb.SaveAs(tmp_path, 51)
+                    load_path = tmp_path
+                except Exception as exc:
+                    self.success = False
+                    self.message = (
+                        "Could not convert this legacy .xls workbook. "
+                        "Open it in Excel and save as .xlsx, or make sure "
+                        "Excel is installed.\n\n" + str(exc)
+                    )
+                    return
+                finally:
+                    if excel_wb is not None:
+                        try:
+                            excel_wb.Close(False)
+                        except Exception:
+                            pass
+                    if excel_app is not None:
+                        try:
+                            excel_app.Quit()
+                        except Exception:
+                            pass
+                    try:
+                        import pythoncom
+                        pythoncom.CoUninitialize()
+                    except Exception:
+                        pass
+
+            wb = openpyxl.load_workbook(load_path, data_only=True, keep_links=False)
             ws = wb[self.sheet_name]
             from kdl.engine.ifmis_report import generate_ifmis_report
             result = generate_ifmis_report(ws)
@@ -110,6 +181,12 @@ class _ReportWorker(QThread):
             import traceback
             self.success = False
             self.message = f"{exc}\n\n{traceback.format_exc()}"
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
 
 
 # ---------------------------------------------------------------------------
