@@ -668,10 +668,7 @@ class LoaderThread(QThread):
                         success = self._send_cell_with_retry(paste_cell)
                         self.cell_processed.emit(row_idx, paste_col_idx, success)
                         if not success:
-                            if self._is_stop_requested():
-                                break
-                            detail = (self.sender.last_error or "send failed").strip()
-                            self._request_stop(f"row paste error at R{row_idx + 1}: {detail}")
+                            self._handle_send_failure(row_idx, paste_col_idx, rows_processed, total_rows)
                             break
                 else:
                     row_cells = []
@@ -716,10 +713,7 @@ class LoaderThread(QThread):
                         success = self._send_cell_with_retry(parsed)
                         self.cell_processed.emit(row_idx, col_idx, success)
                         if not success:
-                            if self._is_stop_requested():
-                                break
-                            detail = (self.sender.last_error or "send failed").strip()
-                            self._request_stop(f"cell error at R{row_idx + 1} C{col_idx + 1}: {detail}")
+                            self._handle_send_failure(row_idx, col_idx, rows_processed, total_rows)
                             break
 
                         raw_norm = str(parsed.raw_value or "").strip().lower()
@@ -782,10 +776,7 @@ class LoaderThread(QThread):
                     self.cell_processed.emit(row_idx, col_idx, success)
 
                     if not success:
-                        if self._is_stop_requested():
-                            break
-                        detail = (self.sender.last_error or "send failed").strip()
-                        self._request_stop(f"cell error at R{row_idx + 1} C{col_idx + 1}: {detail}")
+                        self._handle_send_failure(row_idx, col_idx, rows_processed, total_rows)
                         break
 
             if self._is_stop_requested():
@@ -823,6 +814,31 @@ class LoaderThread(QThread):
                 f"Rows: {rows_processed}\n"
                 f"Time: {elapsed}"
             )
+
+    def _handle_send_failure(self, row_idx: int, col_idx: int, rows_processed: int, total_rows: int) -> None:
+        """
+        Called immediately after send_cell() returns False.
+        Checks whether an IFMIS/Oracle popup caused the failure before
+        labelling it a generic cell error.  Popup → pause/stop per setting.
+        Cell error (no popup) → always stop.
+        """
+        if self._is_stop_requested():
+            return
+        # Bypass the 0.15 s throttle so the check runs right now.
+        self._last_popup_check_at = 0.0
+        if self._check_blocking_popup(rows_processed, total_rows):
+            # Popup was the root cause.  Even if the user dismissed it
+            # (pause mode), we cannot safely retry the failed cell — its
+            # data is in an unknown state — so stop with a clear message.
+            if not self._is_stop_requested():
+                self._request_stop(
+                    f"popup during send at R{row_idx + 1} C{col_idx + 1} "
+                    f"— verify data and restart from that row"
+                )
+            return
+        # No popup — genuine send failure.
+        detail = (self.sender.last_error or "send failed").strip()
+        self._request_stop(f"cell error at R{row_idx + 1} C{col_idx + 1}: {detail}")
 
     def _check_pause(self):
         """Check if paused and wait."""
