@@ -133,7 +133,7 @@ class LoadSettingsDialog(QDialog):
         mg.addWidget(self.radio_per_row)
 
         self.radio_fast_send = QRadioButton(
-            "Per Row (Fast Send)  — SendInput, no clipboard  ✦ Recommended for IFMIS"
+            "Per Row (Fast Send)  — SendInput, no clipboard, auto-save/50  ✦ Recommended for IFMIS"
         )
         mg.addWidget(self.radio_fast_send)
 
@@ -315,7 +315,11 @@ class LoadSettingsDialog(QDialog):
         # End-of-row action only matters in form modes (Per Row / Fast Send)
         self.eor_combo.setEnabled(is_form_mode)
 
-        if is_form_mode:
+        if self.radio_fast_send.isChecked():
+            # Fast Send standard: Next Row + Auto Save every 50 rows always
+            self.eor_combo.setCurrentIndex(2)
+            self.save_interval_input.setText("50")
+        elif is_form_mode:
             if self.eor_combo.currentIndex() == 0:  # "None" selected
                 self.eor_combo.setCurrentIndex(2)    # auto-select "Auto Save every N"
         else:
