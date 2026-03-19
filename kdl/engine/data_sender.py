@@ -4,6 +4,8 @@ Sends data and keystrokes to the target application window.
 Uses pyautogui for keystroke simulation and pyperclip for clipboard-based data pasting.
 """
 
+import ctypes
+import ctypes.wintypes
 import time
 import pyautogui
 import pyperclip
@@ -16,6 +18,91 @@ from kdl.window.window_manager import WindowManager
 # Safety: keep pyautogui fail-safe enabled (mouse to corner aborts)
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0  # Disable built-in pause; loader uses its own speed_delay
+
+# ─── SendInput (Fast Send) Win32 structures ───────────────────────────────────
+_INPUT_KEYBOARD   = 1
+_KEYEVENTF_KEYUP  = 0x0002
+_KEYEVENTF_UNICODE = 0x0004
+_KEYEVENTF_EXTENDEDKEY = 0x0001
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk",         ctypes.wintypes.WORD),
+        ("wScan",       ctypes.wintypes.WORD),
+        ("dwFlags",     ctypes.wintypes.DWORD),
+        ("time",        ctypes.wintypes.DWORD),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx",          ctypes.c_long),
+        ("dy",          ctypes.c_long),
+        ("mouseData",   ctypes.wintypes.DWORD),
+        ("dwFlags",     ctypes.wintypes.DWORD),
+        ("time",        ctypes.wintypes.DWORD),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+
+class _HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [
+        ("uMsg",    ctypes.wintypes.DWORD),
+        ("wParamL", ctypes.wintypes.WORD),
+        ("wParamH", ctypes.wintypes.WORD),
+    ]
+
+
+class _INPUT_UNION(ctypes.Union):
+    _fields_ = [
+        ("mi", _MOUSEINPUT),
+        ("ki", _KEYBDINPUT),
+        ("hi", _HARDWAREINPUT),
+    ]
+
+
+class _INPUT(ctypes.Structure):
+    _fields_ = [
+        ("type",   ctypes.wintypes.DWORD),
+        ("_input", _INPUT_UNION),
+    ]
+
+
+# pyautogui key name → Win32 Virtual Key code
+_SI_VK_MAP: dict = {
+    "tab": 0x09, "enter": 0x0D, "return": 0x0D, "escape": 0x1B, "esc": 0x1B,
+    "backspace": 0x08, "delete": 0x2E, "insert": 0x2D,
+    "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22,
+    "left": 0x25, "up": 0x26, "right": 0x27, "down": 0x28,
+    "f1": 0x70, "f2": 0x71, "f3": 0x72,  "f4": 0x73,
+    "f5": 0x74, "f6": 0x75, "f7": 0x76,  "f8": 0x77,
+    "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
+    "shift": 0x10, "ctrl": 0x11, "alt": 0x12,
+    "space": 0x20, "capslock": 0x14,
+}
+
+# VK codes that need KEYEVENTF_EXTENDEDKEY (arrow keys, nav cluster)
+_SI_EXTENDED_KEYS: set = {
+    0x21, 0x22, 0x23, 0x24,   # pageup, pagedown, end, home
+    0x25, 0x26, 0x27, 0x28,   # left, up, right, down
+    0x2D, 0x2E,               # insert, delete
+}
+
+
+def _si_make_ki(vk: int = 0, scan: int = 0, flags: int = 0) -> _INPUT:
+    """Build a keyboard INPUT struct for SendInput."""
+    inp = _INPUT()
+    inp.type = _INPUT_KEYBOARD
+    inp._input.ki.wVk = vk
+    inp._input.ki.wScan = scan
+    inp._input.ki.dwFlags = flags
+    inp._input.ki.time = 0
+    inp._input.ki.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+    return inp
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 class DataSender:
@@ -30,6 +117,7 @@ class DataSender:
         self.hourglass_timeout: float = 30.0  # Max wait time for hourglass
         self.stop_requested_cb: Optional[Callable[[], bool]] = None
         self.last_error: str = ""
+        self.use_fast_send: bool = False
         self._clipboard_session_active = False
         self._clipboard_session_value: Optional[str] = None
         self._clipboard_session_had_value = False
@@ -189,9 +277,13 @@ class DataSender:
                 return True
 
             if parsed.cell_type == CellType.DATA:
+                if self.use_fast_send:
+                    return self._send_data_fast(parsed.data_text)
                 return self._send_data(parsed.data_text)
 
             if parsed.cell_type == CellType.KEYSTROKE:
+                if self.use_fast_send:
+                    return self._send_keystroke_fast(parsed)
                 return self._send_keystrokes(parsed)
 
             if parsed.cell_type == CellType.MOUSE_LEFT:
@@ -297,3 +389,114 @@ class DataSender:
             self.last_error = f"send_mouse_click: {e}"
             print(f"Error sending mouse click: {e}")
             return False
+
+    # ─── Fast Send (SendInput) methods ────────────────────────────────────────
+
+    def _si_send_unicode(self, text: str) -> bool:
+        """Inject unicode text via SendInput KEYEVENTF_UNICODE (no clipboard)."""
+        if not text:
+            return True
+        try:
+            events = []
+            for ch in text:
+                scan = ord(ch)
+                events.append(_si_make_ki(0, scan, _KEYEVENTF_UNICODE))
+                events.append(_si_make_ki(0, scan, _KEYEVENTF_UNICODE | _KEYEVENTF_KEYUP))
+            arr = (_INPUT * len(events))(*events)
+            sent = ctypes.windll.user32.SendInput(len(events), arr, ctypes.sizeof(_INPUT))
+            return sent == len(events)
+        except Exception as e:
+            self.last_error = f"_si_send_unicode: {e}"
+            return False
+
+    def _si_send_vk(self, vk: int) -> bool:
+        """Send a virtual key down+up pair via SendInput."""
+        try:
+            ext = _KEYEVENTF_EXTENDEDKEY if vk in _SI_EXTENDED_KEYS else 0
+            events = [
+                _si_make_ki(vk, 0, ext),
+                _si_make_ki(vk, 0, ext | _KEYEVENTF_KEYUP),
+            ]
+            arr = (_INPUT * 2)(*events)
+            sent = ctypes.windll.user32.SendInput(2, arr, ctypes.sizeof(_INPUT))
+            return sent == 2
+        except Exception as e:
+            self.last_error = f"_si_send_vk: {e}"
+            return False
+
+    def _si_send_hotkey(self, modifiers: list, key: str) -> bool:
+        """Send a modifier+key combo (e.g. Ctrl+S) via SendInput."""
+        try:
+            events = []
+            mod_vks = [_SI_VK_MAP[m.lower()] for m in modifiers if m.lower() in _SI_VK_MAP]
+            key_vk = _SI_VK_MAP.get(key, 0)
+            if not key_vk and len(key) == 1:
+                vks_result = ctypes.windll.user32.VkKeyScanW(ord(key))
+                if vks_result != -1:
+                    key_vk = vks_result & 0xFF
+                    if (vks_result >> 8) & 0x01 and 0x10 not in mod_vks:
+                        mod_vks.append(0x10)  # shift required for this char
+            for vk in mod_vks:
+                events.append(_si_make_ki(vk, 0, 0))
+            if key_vk:
+                ext = _KEYEVENTF_EXTENDEDKEY if key_vk in _SI_EXTENDED_KEYS else 0
+                events.append(_si_make_ki(key_vk, 0, ext))
+                events.append(_si_make_ki(key_vk, 0, ext | _KEYEVENTF_KEYUP))
+            for vk in reversed(mod_vks):
+                events.append(_si_make_ki(vk, 0, _KEYEVENTF_KEYUP))
+            if not events:
+                return True
+            arr = (_INPUT * len(events))(*events)
+            sent = ctypes.windll.user32.SendInput(len(events), arr, ctypes.sizeof(_INPUT))
+            return sent == len(events)
+        except Exception as e:
+            self.last_error = f"_si_send_hotkey: {e}"
+            return False
+
+    def _send_data_fast(self, text: str) -> bool:
+        """Send plain text via SendInput unicode injection instead of clipboard."""
+        try:
+            safe = (text or "").replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+            if not safe:
+                return True
+            if not self._si_send_unicode(safe):
+                # Fallback to clipboard if SendInput fails
+                return self._send_data(text)
+            if not self._sleep_interruptible(self.speed_delay):
+                self.last_error = "send_data_fast interrupted"
+                return False
+            return self._wait_if_hourglass()
+        except Exception as e:
+            self.last_error = f"send_data_fast: {e}"
+            return self._send_data(text)  # fallback
+
+    def _send_keystroke_fast(self, parsed: ParsedCell) -> bool:
+        """Send keystroke actions via SendInput instead of pyautogui."""
+        try:
+            for action in parsed.key_actions:
+                action_type = action.get("type", "")
+                if action_type == "key":
+                    key = str(action.get("key", "")).lower()
+                    vk = _SI_VK_MAP.get(key, 0)
+                    ok = self._si_send_vk(vk) if vk else self._si_send_unicode(key)
+                    if not ok:
+                        return False
+                elif action_type == "hotkey":
+                    ok = self._si_send_hotkey(
+                        action.get("modifiers", []),
+                        str(action.get("key", "")).lower(),
+                    )
+                    if not ok:
+                        return False
+                elif action_type == "type":
+                    if not self._si_send_unicode(action.get("text", "")):
+                        return False
+                if not self._sleep_interruptible(self.speed_delay):
+                    self.last_error = "send_keystroke_fast interrupted"
+                    return False
+                if not self._wait_if_hourglass():
+                    return False
+            return True
+        except Exception as e:
+            self.last_error = f"send_keystroke_fast: {e}"
+            return self._send_keystrokes(parsed)  # fallback

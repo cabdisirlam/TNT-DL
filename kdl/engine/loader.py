@@ -76,6 +76,7 @@ class LoaderThread(QThread):
         self._wait_condition = QWaitCondition()
         self.db_settings = {}
         self._popup_auto_pause_enabled = True
+        self._popup_stop_on_error = False  # True = stop on popup, False = pause
         self._last_popup_check_at = 0.0
         self._last_popup_title = ""
         self._esc_was_down = False
@@ -94,7 +95,8 @@ class LoaderThread(QThread):
                   speed_delay=0.1, wait_hourglass=False,
                   key_columns=None, selected_columns=None, delay_columns=None,
                   form_mode=False, load_mode="per_cell", end_of_row_action="none",
-                  window_delay=0.1, save_interval=50, db_settings=None):
+                  window_delay=0.1, save_interval=50, db_settings=None,
+                  popup_stop_on_error=False, use_fast_send=False):
         """Configure the loader before starting."""
         self.grid_data = grid_data
         self.start_row = start_row
@@ -118,6 +120,8 @@ class LoaderThread(QThread):
         self.end_of_row_action = end_of_row_action
         self.save_interval = max(1, int(save_interval or 50))
         self.db_settings = db_settings or {}
+        self._popup_stop_on_error = bool(popup_stop_on_error)
+        self.sender.use_fast_send = bool(use_fast_send)
 
         self._stop_requested = False
         self._pause_requested = False
@@ -666,13 +670,9 @@ class LoaderThread(QThread):
                         if not success:
                             if self._is_stop_requested():
                                 break
-                            errors += 1
                             detail = (self.sender.last_error or "send failed").strip()
-                            self.progress_updated.emit(
-                                rows_processed,
-                                total_rows,
-                                f"Row paste error at R{row_idx + 1}: {detail}"
-                            )
+                            self._request_stop(f"row paste error at R{row_idx + 1}: {detail}")
+                            break
                 else:
                     row_cells = []
                     for col_idx, cell_value in enumerate(row_data):
@@ -718,13 +718,9 @@ class LoaderThread(QThread):
                         if not success:
                             if self._is_stop_requested():
                                 break
-                            errors += 1
                             detail = (self.sender.last_error or "send failed").strip()
-                            self.progress_updated.emit(
-                                rows_processed,
-                                total_rows,
-                                f"Cell error at R{row_idx + 1} C{col_idx + 1}: {detail}"
-                            )
+                            self._request_stop(f"cell error at R{row_idx + 1} C{col_idx + 1}: {detail}")
+                            break
 
                         raw_norm = str(parsed.raw_value or "").strip().lower()
                         receipt_token = False
@@ -788,13 +784,9 @@ class LoaderThread(QThread):
                     if not success:
                         if self._is_stop_requested():
                             break
-                        errors += 1
                         detail = (self.sender.last_error or "send failed").strip()
-                        self.progress_updated.emit(
-                            rows_processed,
-                            total_rows,
-                            f"Cell error at R{row_idx + 1} C{col_idx + 1}: {detail}"
-                        )
+                        self._request_stop(f"cell error at R{row_idx + 1} C{col_idx + 1}: {detail}")
+                        break
 
             if self._is_stop_requested():
                 if row_had_activity:
@@ -861,7 +853,19 @@ class LoaderThread(QThread):
             self._last_popup_title = ""
             return False
 
-        # Pause instead of stop so the user can dismiss the popup and resume.
+        if self._popup_stop_on_error:
+            # Stop mode — for unsupervised runs.
+            if popup_title != self._last_popup_title:
+                self._last_popup_title = popup_title
+                self._request_stop(f"popup detected: {popup_title}")
+                self.progress_updated.emit(
+                    rows_processed,
+                    total_rows,
+                    f"Stopped: popup '{popup_title}' detected."
+                )
+            return True
+
+        # Pause mode — user dismisses popup and resumes manually.
         self._pause_requested = True
         if popup_title != self._last_popup_title:
             self._last_popup_title = popup_title

@@ -39,6 +39,7 @@ END_OF_ROW_ACTIONS = [
 LOAD_MODES = [
     ("Per Cell - one cell at a time", "per_cell"),
     ("Per Row - auto-Tab, end-of-row action", "per_row"),
+    ("Per Row (Fast Send) - SendInput, no clipboard", "fast_send"),
 ]
 
 
@@ -131,6 +132,11 @@ class LoadSettingsDialog(QDialog):
         self.radio_per_row = QRadioButton(LOAD_MODES[1][0])
         mg.addWidget(self.radio_per_row)
 
+        self.radio_fast_send = QRadioButton(
+            "Per Row (Fast Send)  — SendInput, no clipboard  ✦ Recommended for IFMIS"
+        )
+        mg.addWidget(self.radio_fast_send)
+
         # End of row action (indent under Per Row)
         eor_row = QHBoxLayout()
         eor_row.addSpacing(22)
@@ -160,6 +166,7 @@ class LoadSettingsDialog(QDialog):
 
         self.radio_per_cell.toggled.connect(self._update_mode_controls)
         self.radio_per_row.toggled.connect(self._update_mode_controls)
+        self.radio_fast_send.toggled.connect(self._update_mode_controls)
         self.eor_combo.currentIndexChanged.connect(self._update_save_interval_visibility)
 
         layout.addWidget(mode_group)
@@ -233,6 +240,22 @@ class LoadSettingsDialog(QDialog):
 
         layout.addWidget(delay_group)
 
+        # ─── Error / Popup Behaviour ───
+        popup_group = QGroupBox("On Error / Popup")
+        pg = QHBoxLayout(popup_group)
+        pg.setSpacing(16)
+        pg.setContentsMargins(8, 4, 8, 4)
+
+        self.radio_popup_pause = QRadioButton("Pause  (dismiss popup, then resume)")
+        self.radio_popup_pause.setChecked(True)
+        pg.addWidget(self.radio_popup_pause)
+
+        self.radio_popup_stop = QRadioButton("Stop  (unsupervised / auto runs)")
+        pg.addWidget(self.radio_popup_stop)
+        pg.addStretch()
+
+        layout.addWidget(popup_group)
+
         # â”€â”€â”€ Buttons â”€â”€â”€
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -280,23 +303,23 @@ class LoadSettingsDialog(QDialog):
     # Actions
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _selected_load_mode(self) -> str:
+        if self.radio_fast_send.isChecked():
+            return "fast_send"
         if self.radio_per_row.isChecked():
             return "per_row"
         return "per_cell"
 
     def _update_mode_controls(self):
-        is_per_row = self.radio_per_row.isChecked()
+        is_form_mode = self.radio_per_row.isChecked() or self.radio_fast_send.isChecked()
 
-        # End-of-row action only matters in Per Row mode
-        self.eor_combo.setEnabled(is_per_row)
+        # End-of-row action only matters in form modes (Per Row / Fast Send)
+        self.eor_combo.setEnabled(is_form_mode)
 
-        if is_per_row:
-            # Per Row default end-of-row = Auto Save every 50
+        if is_form_mode:
             if self.eor_combo.currentIndex() == 0:  # "None" selected
                 self.eor_combo.setCurrentIndex(2)    # auto-select "Auto Save every N"
         else:
-            # Per Cell defaults: end-of-row disabled
-            self.eor_combo.setCurrentIndex(0)  # reset to "None"
+            self.eor_combo.setCurrentIndex(0)        # reset to "None" for Per Cell
         self._update_save_interval_visibility()
 
     def _update_save_interval_visibility(self):
@@ -349,7 +372,13 @@ class LoadSettingsDialog(QDialog):
             "  Validate before start: catches data issues early\n\n"
             "LOAD MODES\n"
             "  Per Cell: sends one cell at a time (you control Tab/Enter)\n"
-            "  Per Row: auto-Tabs between fields, runs end-of-row action\n\n"
+            "  Per Row: auto-Tabs between fields, runs end-of-row action\n"
+            "  Fast Send: same as Per Row but uses SendInput instead of\n"
+            "    clipboard — faster, recommended for Oracle EBS 12.1.3\n\n"
+            "ON ERROR / POPUP\n"
+            "  Pause: load pauses when a popup is detected; you dismiss\n"
+            "    it and resume manually\n"
+            "  Stop: load stops automatically — use for unsupervised runs\n\n"
             "STOP: Press ESC once or click Stop button.\n\n"
             "Default delays in this build:\n"
             "  Cell processed: 0.12s\n"
@@ -415,11 +444,12 @@ class LoadSettingsDialog(QDialog):
             "speed_delay": cell_delay,
             "window_delay": window_delay,
             "load_mode": load_mode,
-            "form_mode": load_mode == "per_row",
+            "form_mode": load_mode in ("per_row", "fast_send"),
             "end_of_row_action": end_of_row_action,
             "save_interval": save_interval,
             "validate_before_load": self.validate_check.isChecked(),
             "app_type": self.app_combo.currentText(),
+            "popup_behavior": "stop" if self.radio_popup_stop.isChecked() else "pause",
         }
 
         self.load_requested.emit(settings)
