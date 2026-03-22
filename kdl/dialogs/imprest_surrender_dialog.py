@@ -182,7 +182,7 @@ class ImprestSurrenderDialog(QDialog):
 
         if not rows:
             self._upload_status.setText(
-                "No invoice rows found. Make sure data starts at row 4.")
+                "No invoice rows found. Make sure data starts at row 5.")
             self._upload_status.setStyleSheet("color: #e8a900; font-size: 12px;")
             return
 
@@ -201,13 +201,12 @@ class ImprestSurrenderDialog(QDialog):
             QMessageBox.warning(self, "No Data", "Upload a filled template first.")
             return
 
-        from kdl.engine.imprest_surrender_engine import COLUMNS
+        from kdl.engine.imprest_surrender_engine import build_keystroke_row
 
-        # Convert list-of-dicts to list-of-lists (column order matches COLUMNS)
-        grid_rows = [
-            [row.get(col, "") for col in COLUMNS]
-            for row in self._rows
-        ]
+        # Rows 1–4 in the grid must be empty; invoice data starts at row 5.
+        # Prepend 4 empty rows, then one 68-cell keystroke row per invoice.
+        grid_rows = [[] for _ in range(4)]
+        grid_rows += [build_keystroke_row(row) for row in self._rows]
 
         self.load_into_grid.emit(grid_rows)
         self.accept()

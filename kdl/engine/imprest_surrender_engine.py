@@ -6,7 +6,8 @@ Excel format (Data_Entry sheet):
   Row 1: Title
   Row 2: Column headers
   Row 3: Format hints
-  Row 4+: Data rows (one row = one AP invoice)
+  Row 4: Sample row (do not edit)
+  Row 5+: Data rows (one row = one AP invoice)
 
 Columns (A–K):
   Supplier_Num, Invoice_Date, Invoice_Num, Invoice_Amount, Description,
@@ -71,6 +72,102 @@ COLUMN_SAMPLE = {
     "Administrative_Code": "5322000201",
     "Distribution_Account":"0-5322-0000000000-00001001-0000000000-6580101-53100001-000",
 }
+
+# ── Keystroke grid row builder ────────────────────────────────────────────────
+
+_T = "{Tab}"
+
+# Column-index → value mapping for a 68-cell DataLoad grid row.
+# Matches DL_Keystroke_Cells.xlsx exactly (C1–C68, 0-indexed here).
+def build_keystroke_row(row: dict) -> list:
+    """
+    Convert one invoice row-dict (11 fields) into a 68-element list
+    ready to be written into a DataLoad-style grid row.
+    Fixed cells contain keystroke strings; data cells contain field values.
+    """
+    sup   = row.get("Supplier_Num", "")
+    idate = row.get("Invoice_Date", "")
+    inum  = row.get("Invoice_Num", "")
+    amt   = row.get("Invoice_Amount", "")
+    desc  = row.get("Description", "")
+    pmeth = row.get("Payment_Method", "")
+    tdate = row.get("Terms_Date", "")
+    gldt  = row.get("GL_Date", "")
+    auth  = row.get("Auth_Ref_No", "")
+    admc  = row.get("Administrative_Code", "")
+    dist  = row.get("Distribution_Account", "")
+
+    return [
+        _T,                   # C1
+        _T,                   # C2
+        sup,                  # C3  Supplier_Num
+        _T,                   # C4
+        idate,                # C5  Invoice_Date
+        _T,                   # C6
+        _T,                   # C7
+        inum,                 # C8  Invoice_Num
+        _T,                   # C9
+        _T,                   # C10
+        amt,                  # C11 Invoice_Amount
+        _T,                   # C12
+        _T,                   # C13
+        _T,                   # C14
+        _T,                   # C15
+        _T,                   # C16
+        _T,                   # C17
+        desc,                 # C18 Description
+        _T,                   # C19
+        _T,                   # C20
+        _T,                   # C21
+        _T,                   # C22
+        pmeth,                # C23 Payment_Method
+        _T,                   # C24
+        _T,                   # C25
+        tdate,                # C26 Terms_Date
+        _T,                   # C27
+        _T,                   # C28
+        gldt,                 # C29 GL_Date
+        _T,                   # C30
+        _T,                   # C31
+        _T,                   # C32
+        _T,                   # C33
+        _T,                   # C34
+        _T,                   # C35
+        _T,                   # C36
+        _T,                   # C37
+        _T,                   # C38
+        _T,                   # C39
+        _T,                   # C40
+        _T,                   # C41
+        _T,                   # C42
+        _T,                   # C43
+        _T,                   # C44
+        _T,                   # C45
+        _T,                   # C46
+        auth,                 # C47 Auth_Ref_No
+        _T,                   # C48
+        admc,                 # C49 Administrative_Code
+        _T,                   # C50
+        "{ENTER}",            # C51
+        "{Shift+PageDown}",   # C52
+        _T,                   # C53
+        _T,                   # C54
+        amt,                  # C55 Line_Amount (= Invoice_Amount)
+        _T,                   # C56
+        "{Shift+PageDown}",   # C57
+        _T,                   # C58
+        _T,                   # C59
+        amt,                  # C60 Dist_Amount (= Invoice_Amount)
+        _T,                   # C61
+        gldt,                 # C62 Dist_GL_Date (= GL_Date)
+        _T,                   # C63
+        dist,                 # C64 Distribution_Account
+        _T,                   # C65
+        "\\*s",               # C66
+        "*dn",                # C67
+        "",                   # C68
+    ]
+
 
 # ── Template action sequence ──────────────────────────────────────────────────
 # Action tuples:
@@ -157,7 +254,7 @@ def read_invoice_rows(filepath: str) -> tuple:
 
     ws = wb[sheet_name]
     rows = []
-    for row_values in ws.iter_rows(min_row=4, values_only=True):
+    for row_values in ws.iter_rows(min_row=5, values_only=True):
         if all(v is None or str(v).strip() == "" for v in row_values):
             continue
         if len(row_values) < len(COLUMNS):
@@ -166,8 +263,8 @@ def read_invoice_rows(filepath: str) -> tuple:
             col: (str(row_values[i]).strip() if row_values[i] is not None else "")
             for i, col in enumerate(COLUMNS)
         }
-        # Skip rows where both Supplier_Num and Invoice_Num are blank
-        if not row_dict["Supplier_Num"] and not row_dict["Invoice_Num"]:
+        # Skip rows where Supplier_Num is empty
+        if not row_dict["Supplier_Num"]:
             continue
         rows.append(row_dict)
 
@@ -212,9 +309,17 @@ def export_template(filepath: str) -> str:
             cell = ws.cell(row=3, column=ci, value=COLUMN_HINTS.get(col, ""))
             cell.font = hint_font
 
-        # Rows 4–103: blank data rows with yellow fill (user fills from row 4)
+        # Row 4: sample data row (read-only reference — grey fill)
+        sample_fill = PatternFill(fill_type="solid", fgColor="D9D9D9")
+        sample_font = Font(italic=True, color="595959")
+        for ci, col in enumerate(COLUMNS, start=1):
+            cell = ws.cell(row=4, column=ci, value=COLUMN_SAMPLE.get(col, ""))
+            cell.fill = sample_fill
+            cell.font = sample_font
+
+        # Rows 5–104: blank data rows with yellow fill (user fills from row 5)
         yellow = PatternFill(fill_type="solid", fgColor="FFFF00")
-        for ri in range(4, 104):
+        for ri in range(5, 105):
             for ci in range(1, len(COLUMNS) + 1):
                 ws.cell(row=ri, column=ci).fill = yellow
 
