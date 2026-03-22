@@ -278,7 +278,7 @@ def export_template(filepath: str) -> str:
     """
     try:
         import openpyxl
-        from openpyxl.styles import PatternFill, Font, Alignment
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
     except ImportError:
         return "openpyxl is not installed."
@@ -288,69 +288,86 @@ def export_template(filepath: str) -> str:
         ws = wb.active
         ws.title = "Data_Entry"
 
-        # Row 1: title
+        ncols = len(COLUMNS)
+
+        # ── Shared style helpers ──────────────────────────────────────────────
+        def _side(style="thin", color="BFBFBF"):
+            return Side(style=style, color=color)
+
+        def _border():
+            s = _side()
+            return Border(left=s, right=s, top=s, bottom=s)
+
+        def _fill(color):
+            return PatternFill(fill_type="solid", fgColor=color)
+
+        BLUE      = "0070C0"   # header bg
+        WHITE_TXT = "FFFFFF"
+        HINT_BG   = "D6E4F0"   # light blue — hint row
+        SAMPLE_BG = "EAF4FB"   # very light blue — sample row
+        ROW_ODD   = "F2F2F2"   # alternating grey
+        ROW_EVEN  = "FFFFFF"   # alternating white
+
+        # ── Row 1: title bar ─────────────────────────────────────────────────
+        ws.merge_cells(start_row=1, start_column=1,
+                       end_row=1,   end_column=ncols)
         title = ws.cell(row=1, column=1,
-                        value="IFMIS AP Invoice Loader — Fill yellow cells only. "
-                              "One row = one invoice.")
-        title.font = Font(bold=True)
+                        value="IFMIS AP Invoice Loader  —  NT_DL  |  "
+                              "Fill from row 5 only. One row = one invoice.")
+        title.font      = Font(bold=True, size=11, color=WHITE_TXT)
+        title.fill      = _fill(BLUE)
+        title.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 18
 
-        # Row 2: headers
-        hdr_fill = PatternFill(fill_type="solid", fgColor="4472C4")
-        hdr_font = Font(bold=True, color="FFFFFF")
+        # ── Row 2: column headers ─────────────────────────────────────────────
+        hdr_border_s = _side("medium", "FFFFFF")
+        hdr_border   = Border(left=hdr_border_s, right=hdr_border_s,
+                              top=hdr_border_s, bottom=hdr_border_s)
         for ci, col in enumerate(COLUMNS, start=1):
-            cell = ws.cell(row=2, column=ci, value=col)
-            cell.fill = hdr_fill
-            cell.font = hdr_font
-            cell.alignment = Alignment(horizontal="center")
+            cell = ws.cell(row=2, column=ci, value=col.replace("_", " "))
+            cell.fill      = _fill(BLUE)
+            cell.font      = Font(bold=True, color=WHITE_TXT, size=10)
+            cell.alignment = Alignment(horizontal="center", vertical="center",
+                                       wrap_text=True)
+            cell.border    = hdr_border
+        ws.row_dimensions[2].height = 28
 
-        # Row 3: format hints
-        hint_font = Font(italic=True, color="595959")
+        # ── Row 3: format hints ───────────────────────────────────────────────
         for ci, col in enumerate(COLUMNS, start=1):
             cell = ws.cell(row=3, column=ci, value=COLUMN_HINTS.get(col, ""))
-            cell.font = hint_font
+            cell.fill      = _fill(HINT_BG)
+            cell.font      = Font(italic=True, color="1F5C8B", size=9)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border    = _border()
+        ws.row_dimensions[3].height = 15
 
-        # Row 4: sample data row (read-only reference — grey fill)
-        sample_fill = PatternFill(fill_type="solid", fgColor="D9D9D9")
-        sample_font = Font(italic=True, color="595959")
+        # ── Row 4: sample data row ────────────────────────────────────────────
         for ci, col in enumerate(COLUMNS, start=1):
             cell = ws.cell(row=4, column=ci, value=COLUMN_SAMPLE.get(col, ""))
-            cell.fill = sample_fill
-            cell.font = sample_font
+            cell.fill      = _fill(SAMPLE_BG)
+            cell.font      = Font(italic=True, color="1F5C8B", size=9)
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            cell.border    = _border()
+        ws.row_dimensions[4].height = 15
 
-        # Rows 5–104: blank data rows with yellow fill (user fills from row 5)
-        yellow = PatternFill(fill_type="solid", fgColor="FFFF00")
+        # ── Rows 5–104: data entry rows (alternating, no colour fill) ─────────
         for ri in range(5, 105):
-            for ci in range(1, len(COLUMNS) + 1):
-                ws.cell(row=ri, column=ci).fill = yellow
+            bg = ROW_ODD if ri % 2 == 1 else ROW_EVEN
+            for ci in range(1, ncols + 1):
+                cell = ws.cell(row=ri, column=ci)
+                cell.fill      = _fill(bg)
+                cell.font      = Font(size=10)
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+                cell.border    = _border()
+            ws.row_dimensions[ri].height = 15
 
-        # Column widths
+        # ── Column widths ─────────────────────────────────────────────────────
         col_widths = [14, 14, 14, 14, 30, 16, 14, 14, 12, 18, 68]
         for ci, w in enumerate(col_widths, start=1):
             ws.column_dimensions[get_column_letter(ci)].width = w
 
-        # Second sheet: Stroke_Output_Example
-        ws2 = wb.create_sheet("Stroke_Output_Example")
-        ws2.cell(row=1, column=1,
-                 value="Stroke Output Example — one row from the sample data above")
-        ws2.cell(row=3, column=1, value="INPUT (from Data_Entry row 4)")
-        ws2.cell(row=3, column=2,
-                 value=("Supplier=117711 | Date=30-JUN-2020 | InvNum=SURR0001 | "
-                        "Amount=42,000.00 | Desc=SURRENDER OF IMPREST | "
-                        "PayMethod=CHECK | TermsDate=30-JUN-2020 | GL=30-JUN-2020 | "
-                        "AuthRef=CFO | AdminCode=5322000201 | "
-                        "SCOA=0-5322-0000000000-00001001-0000000000-6580101-53100001-000"))
-        ws2.cell(row=4, column=1, value="TEMPLATE")
-        ws2.cell(row=4, column=2,
-                 value=("{TAB 2}{BACKSPACE}{TAB 2}{Supplier_Num}{TAB}%O{DELAY 500}"
-                        "Home{TAB}{Invoice_Date}{TAB}%O{DELAY 500}{Invoice_Num}"
-                        "{TAB 2}{Invoice_Amount}{TAB}{TAB 6}{Description}{TAB 4}"
-                        "{Payment_Method}{TAB 2}{Terms_Date}{TAB 2}{GL_Date}"
-                        "{TAB 17}{Auth_Ref_No}{TAB}{Administrative_Code}"
-                        "{TAB}%O{DELAY 700}{TAB 2}{Invoice_Amount}{TAB}%D{DELAY 700}"
-                        "{TAB 2}{Invoice_Amount}{TAB}{GL_Date}{TAB}"
-                        "{Distribution_Account}{TAB}^s{DELAY 1000}"))
-        ws2.column_dimensions["A"].width = 30
-        ws2.column_dimensions["B"].width = 120
+        # ── Freeze panes below header rows ────────────────────────────────────
+        ws.freeze_panes = "A5"
 
         wb.save(filepath)
         return ""

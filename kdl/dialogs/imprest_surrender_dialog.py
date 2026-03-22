@@ -109,8 +109,8 @@ class ImprestSurrenderDialog(QDialog):
 
         # ── Info hint ──
         hint = QLabel(
-            "After loading into the grid, press F5 (Load) and select "
-            "\"Imprest Surrender\" mode to send the invoices to IFMIS.")
+            "After loading into the grid, press F5 → select Per Cell mode → "
+            "After each row: None (the \\*dn keystroke advances DataLoad automatically).")
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; margin-top: 2px;")
         layout.addWidget(hint)
@@ -203,10 +203,8 @@ class ImprestSurrenderDialog(QDialog):
 
         from kdl.engine.imprest_surrender_engine import build_keystroke_row
 
-        # Rows 1–4 in the grid must be empty; invoice data starts at row 5.
-        # Prepend 4 empty rows, then one 68-cell keystroke row per invoice.
-        grid_rows = [[] for _ in range(4)]
-        grid_rows += [build_keystroke_row(row) for row in self._rows]
+        # One 68-cell keystroke row per invoice, starting at grid row 1.
+        grid_rows = [build_keystroke_row(row) for row in self._rows]
 
         self.load_into_grid.emit(grid_rows)
         self.accept()
