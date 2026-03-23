@@ -37,10 +37,10 @@ END_OF_ROW_ACTIONS = [
 ]
 
 LOAD_MODES = [
-    ("Per Cell - one cell at a time", "per_cell"),
-    ("Per Row - auto-Tab, end-of-row action", "per_row"),
-    ("Per Row (Fast Send) - SendInput, no clipboard", "fast_send"),
-    ("Imprest Surrender - AP Invoice template, columns A-K", "imprest_surrender"),
+    ("Per Cell", "per_cell"),
+    ("Per Row", "per_row"),
+    ("Per Row (Fast Send)", "fast_send"),
+    ("Imprest", "imprest_surrender"),
 ]
 
 
@@ -145,14 +145,10 @@ class LoadSettingsDialog(QDialog):
         self.radio_per_row.setChecked(True)
         mg.addWidget(self.radio_per_row)
 
-        self.radio_fast_send = QRadioButton(
-            "Per Row (Fast Send)  — SendInput, no clipboard, auto-save/50  ✦ Recommended for IFMIS"
-        )
+        self.radio_fast_send = QRadioButton(LOAD_MODES[2][0])
         mg.addWidget(self.radio_fast_send)
 
-        self.radio_imprest = QRadioButton(
-            "Imprest Surrender — AP Invoice template, columns A–K mapped to IFMIS AP form"
-        )
+        self.radio_imprest = QRadioButton(LOAD_MODES[3][0])
         mg.addWidget(self.radio_imprest)
 
         # End of row action (indent under Per Row)
@@ -345,23 +341,23 @@ class LoadSettingsDialog(QDialog):
         self.eor_combo.setEnabled(is_form_mode)
 
         if self.radio_imprest.isChecked():
-            # Imprest Surrender: template handles its own save (Ctrl+S per row)
+            # Imprest: template handles its own save (Ctrl+S per row)
             self.eor_combo.setCurrentIndex(0)
-            self.cell_delay_input.setText("0.05")
+            self.cell_delay_input.setText("0.20")
         elif self.radio_fast_send.isChecked():
-            # Fast Send: 0.05s cell delay — fast, SendInput
+            # Fast Send: 0.05s cell delay — SendInput, fast
             self.eor_combo.setCurrentIndex(2)
             self.save_interval_input.setText("50")
             self.cell_delay_input.setText("0.05")
         elif self.radio_per_row.isChecked():
-            # Per Row: 0.12s cell delay — safer for slower computers
+            # Per Row: 0.20s cell delay
             if self.eor_combo.currentIndex() == 0:  # "None" selected
                 self.eor_combo.setCurrentIndex(2)    # auto-select "Auto Save every N"
-            self.cell_delay_input.setText("0.12")
+            self.cell_delay_input.setText("0.20")
         else:
-            # Per Cell: 0.12s cell delay
+            # Per Cell: 0.20s cell delay
             self.eor_combo.setCurrentIndex(0)        # reset to "None" for Per Cell
-            self.cell_delay_input.setText("0.12")
+            self.cell_delay_input.setText("0.20")
         self._update_save_interval_visibility()
 
     def _update_save_interval_visibility(self):
@@ -424,7 +420,7 @@ class LoadSettingsDialog(QDialog):
             "STOP: Press ESC once or click Stop button.\n\n"
             "Default delays in this build:\n"
             "  Cell processed (Fast Send): 0.05s\n"
-            "  Cell processed (Per Row / Per Cell): 0.12s\n"
+            "  Cell processed (Per Row / Per Cell / Imprest): 0.20s\n"
             "  Window activated: 0.05s\n"
         )
 
