@@ -96,7 +96,6 @@ def build_keystroke_row(row: dict) -> list:
     amt   = row.get("Invoice_Amount", "")
     desc  = row.get("Description", "")
     pmeth = row.get("Payment_Method", "")
-    tdate = row.get("Terms_Date", "")
     gldt  = row.get("GL_Date", "")
     auth  = row.get("Auth_Ref_No", "")
     admc  = row.get("Administrative_Code", "")
@@ -134,7 +133,7 @@ def build_keystroke_row(row: dict) -> list:
         _T,          # C29
         _T,          # C30
         _T,          # C31
-        tdate,       # C32 Payment_Terms (Terms_Date field, e.g. IMMEDIATE)
+        "IMMEDIATE", # C32 Pay Terms (fixed)
         _T,          # C33
         pmeth,       # C34 Payment_Method
         _T,          # C35
