@@ -118,6 +118,7 @@ class DataSender:
         self.stop_requested_cb: Optional[Callable[[], bool]] = None
         self.last_error: str = ""
         self.use_fast_send: bool = False
+        self.load_control: bool = False   # Adaptive: skip fixed delay, wait for app readiness
         self._clipboard_session_active = False
         self._clipboard_session_value: Optional[str] = None
         self._clipboard_session_had_value = False
@@ -266,6 +267,14 @@ class DataSender:
                 return False
         return True
 
+    def _wait_for_ready(self) -> bool:
+        """Load Control: short settle then wait until the app is no longer busy."""
+        if not self.load_control:
+            return True
+        if not self._sleep_interruptible(0.008):   # 8 ms settle before polling
+            return False
+        return self._wait_if_hourglass()
+
     def send_cell(self, parsed: ParsedCell) -> bool:
         """
         Send a single parsed cell to the target application.
@@ -317,12 +326,13 @@ class DataSender:
             # Excel is sensitive to clipboard state while rapidly automating.
             # For ASCII-only text, typewrite avoids "cannot paste" popups.
             # For Unicode text, fall through to clipboard paste.
+            _delay = 0.008 if self.load_control else self.speed_delay
             if self._is_excel_target() and safe_text.isascii():
                 pyautogui.typewrite(safe_text, interval=0.01)
-                if not self._sleep_interruptible(self.speed_delay):
+                if not self._sleep_interruptible(_delay):
                     self.last_error = "send_data interrupted"
                     return False
-                return self._wait_if_hourglass()
+                return self._wait_for_ready() if self.load_control else self._wait_if_hourglass()
 
             # Copy data to clipboard
             pyperclip.copy(safe_text)
@@ -332,11 +342,11 @@ class DataSender:
 
             # Paste into target using Ctrl+V
             pyautogui.hotkey('ctrl', 'v')
-            if not self._sleep_interruptible(self.speed_delay):
+            if not self._sleep_interruptible(_delay):
                 self.last_error = "send_data interrupted"
                 return False
 
-            return self._wait_if_hourglass()
+            return self._wait_for_ready() if self.load_control else self._wait_if_hourglass()
         except Exception as e:
             self.last_error = f"send_data: {e}"
             print(f"Error sending data: {e}")
@@ -365,10 +375,12 @@ class DataSender:
                     text = action.get("text", "")
                     pyautogui.typewrite(text, interval=0.02)
 
-                if not self._sleep_interruptible(self.speed_delay):
+                _delay = 0.008 if self.load_control else self.speed_delay
+                if not self._sleep_interruptible(_delay):
                     self.last_error = "send_keystrokes interrupted"
                     return False
-                if not self._wait_if_hourglass():
+                ready = self._wait_for_ready() if self.load_control else self._wait_if_hourglass()
+                if not ready:
                     return False
 
             return True
@@ -463,10 +475,11 @@ class DataSender:
             if not self._si_send_unicode(safe):
                 # Fallback to clipboard if SendInput fails
                 return self._send_data(text)
-            if not self._sleep_interruptible(self.speed_delay):
+            _delay = 0.008 if self.load_control else self.speed_delay
+            if not self._sleep_interruptible(_delay):
                 self.last_error = "send_data_fast interrupted"
                 return False
-            return self._wait_if_hourglass()
+            return self._wait_for_ready() if self.load_control else self._wait_if_hourglass()
         except Exception as e:
             self.last_error = f"send_data_fast: {e}"
             return self._send_data(text)  # fallback
@@ -492,10 +505,12 @@ class DataSender:
                 elif action_type == "type":
                     if not self._si_send_unicode(action.get("text", "")):
                         return False
-                if not self._sleep_interruptible(self.speed_delay):
+                _delay = 0.008 if self.load_control else self.speed_delay
+                if not self._sleep_interruptible(_delay):
                     self.last_error = "send_keystroke_fast interrupted"
                     return False
-                if not self._wait_if_hourglass():
+                ready = self._wait_for_ready() if self.load_control else self._wait_if_hourglass()
+                if not ready:
                     return False
             return True
         except Exception as e:

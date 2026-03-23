@@ -157,6 +157,9 @@ class SpreadsheetWidget(QTableWidget):
         self.setHorizontalHeader(_HighlightHeaderView(Qt.Horizontal, self))
         self.setVerticalHeader(_HighlightHeaderView(Qt.Vertical, self))
 
+        # Clicking a row-number header selects the whole row
+        self.verticalHeader().sectionClicked.connect(self._on_row_header_clicked)
+
         # Headers
         self._update_headers()
 
@@ -807,9 +810,17 @@ class SpreadsheetWidget(QTableWidget):
 
         menu.addSeparator()
 
+        insert_row_above_action = QAction("Insert Row Above", self)
+        insert_row_above_action.triggered.connect(self._insert_row_above)
+        menu.addAction(insert_row_above_action)
+
         insert_row_action = QAction("Insert Row Below", self)
         insert_row_action.triggered.connect(self._insert_row)
         menu.addAction(insert_row_action)
+
+        insert_col_left_action = QAction("Insert Column Left", self)
+        insert_col_left_action.triggered.connect(self._insert_column_left)
+        menu.addAction(insert_col_left_action)
 
         insert_col_action = QAction("Insert Column Right", self)
         insert_col_action.triggered.connect(self._insert_column_right)
@@ -939,12 +950,35 @@ class SpreadsheetWidget(QTableWidget):
         self.data_changed.emit()
         self.paste_completed.emit(paste_rows, paste_cols)
 
+    def _on_row_header_clicked(self, row: int):
+        """Select the entire row when its header number is clicked."""
+        self.selectRow(row)
+
     def _insert_row(self):
         row = self.currentRow()
         self._begin_history_action()
         self.insertRow(row + 1)
         self._end_history_action()
         self.data_changed.emit()
+
+    def _insert_row_above(self):
+        row = self.currentRow()
+        self._begin_history_action()
+        self.insertRow(row)
+        self._end_history_action()
+        self.data_changed.emit()
+
+    def _insert_column_left(self):
+        col = self.currentColumn()
+        if col < 0:
+            col = 0
+        self._begin_history_action()
+        self.insertColumn(col)
+        if self.key_columns:
+            self.key_columns = {kc + 1 if kc >= col else kc for kc in self.key_columns}
+        self._update_headers()
+        self._end_history_action()
+        self._refresh_highlighting()
 
     def _insert_column_right(self):
         col = self.currentColumn()
@@ -1207,6 +1241,13 @@ class SpreadsheetWidget(QTableWidget):
             return
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_Down:
             self._jump_to_data_row(1)
+            return
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_Left:
+            self.setCurrentCell(self.currentRow(), 0)
+            return
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_Right:
+            last_col = max((c for (_r, c) in self._cell_cache), default=0)
+            self.setCurrentCell(self.currentRow(), last_col)
             return
 
         if event.matches(QKeySequence.Copy):

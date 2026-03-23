@@ -1024,13 +1024,33 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.top_rows_container, 0, Qt.AlignLeft)
 
         # â”€â”€ Spreadsheet Grid â”€â”€
+        # Formula Bar
+        _fb_row = QHBoxLayout()
+        _fb_row.setContentsMargins(6, 2, 6, 2)
+        self._cell_ref_label = QLabel("R1 C1")
+        self._cell_ref_label.setFixedWidth(62)
+        self._cell_ref_label.setAlignment(Qt.AlignCenter)
+        self._cell_ref_label.setStyleSheet(
+            "font-family: Consolas; font-size: 11px; "
+            "background: #EAF4FB; border: 1px solid #C5DCF0; border-radius: 3px; padding: 1px 4px;")
+        self._formula_bar = QLineEdit()
+        self._formula_bar.setPlaceholderText("Cell value")
+        self._formula_bar.setStyleSheet(
+            "font-family: Consolas; font-size: 12px; "
+            "border: 1px solid #C5DCF0; border-radius: 3px; padding: 1px 4px;")
+        _fb_row.addWidget(self._cell_ref_label)
+        _fb_row.addWidget(self._formula_bar, 1)
+        main_layout.addLayout(_fb_row, 0)
+
         self.spreadsheet = SpreadsheetWidget()
         main_layout.addWidget(self.spreadsheet, 1)
 
         self.setCentralWidget(central)
 
-        # Connect cell selection to position display
+        # Connect cell selection to position display and formula bar
         self.spreadsheet.currentCellChanged.connect(self._on_cell_selected)
+        self.spreadsheet.currentCellChanged.connect(self._update_formula_bar)
+        self._formula_bar.returnPressed.connect(self._apply_formula_bar)
         self.spreadsheet.data_changed.connect(self._update_row_count)
         self.spreadsheet.paste_completed.connect(self._on_paste_completed)
 
@@ -1080,6 +1100,22 @@ class MainWindow(QMainWindow):
                 self.notes_display.setText(val)
         else:
             self.notes_display.setText("")
+
+    def _update_formula_bar(self, row, col, *_):
+        self._cell_ref_label.setText(f"R{row + 1} C{col + 1}")
+        item = self.spreadsheet.item(row, col)
+        self._formula_bar.blockSignals(True)
+        self._formula_bar.setText(item.text() if item else "")
+        self._formula_bar.blockSignals(False)
+
+    def _apply_formula_bar(self):
+        row = self.spreadsheet.currentRow()
+        col = self.spreadsheet.currentColumn()
+        if row < 0 or col < 0:
+            return
+        item = self.spreadsheet._ensure_item(row, col)
+        item.setText(self._formula_bar.text())
+        self.spreadsheet.setFocus()
 
     def _update_row_count(self):
         count = self.spreadsheet.get_row_count_with_data()
@@ -2186,6 +2222,7 @@ class MainWindow(QMainWindow):
             db_settings=self._db_settings,
             use_fast_send=load_mode in ("fast_send", "imprest_surrender"),
             popup_stop_on_error=settings.get("popup_behavior", "pause") == "stop",
+            load_control=settings.get("load_control", False),
         )
         self.loader_thread.parser.shortcuts = self.parser.shortcuts
 

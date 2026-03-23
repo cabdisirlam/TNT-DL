@@ -96,7 +96,8 @@ class LoaderThread(QThread):
                   key_columns=None, selected_columns=None, delay_columns=None,
                   form_mode=False, load_mode="per_cell", end_of_row_action="none",
                   window_delay=0.1, save_interval=50, db_settings=None,
-                  popup_stop_on_error=False, use_fast_send=False):
+                  popup_stop_on_error=False, use_fast_send=False,
+                  load_control=False):
         """Configure the loader before starting."""
         self.grid_data = grid_data
         self.start_row = start_row
@@ -107,7 +108,8 @@ class LoaderThread(QThread):
         self.sender.set_target(target_hwnd, target_title)
         self.sender.set_speed(speed_delay)
         self.sender.set_window_delay(window_delay)
-        self.sender.wait_for_hourglass = wait_hourglass
+        self.sender.load_control = bool(load_control)
+        self.sender.wait_for_hourglass = wait_hourglass or bool(load_control)
         self.sender.set_stop_checker(self._is_stop_requested)
 
         self.key_columns = set(key_columns) if key_columns else set()

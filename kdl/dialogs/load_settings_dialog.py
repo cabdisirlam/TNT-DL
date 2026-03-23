@@ -257,6 +257,14 @@ class LoadSettingsDialog(QDialog):
         self.validate_check.setChecked(True)
         dg.addWidget(self.validate_check, 3, 0, 1, 3)
 
+        self.load_control_check = QCheckBox("Use Load Control  (send when app is ready — removes fixed delays)")
+        self.load_control_check.setChecked(False)
+        self.load_control_check.setToolTip(
+            "Monitors the target application and sends each cell only when it is ready.\n"
+            "Removes fixed delays — loads run as fast as the application allows.\n"
+            "Automatically enables 'Wait if Cursor is Hour Glass'.")
+        dg.addWidget(self.load_control_check, 4, 0, 1, 3)
+
         layout.addWidget(delay_group)
 
         # ─── Error / Popup Behaviour ───
@@ -475,7 +483,8 @@ class LoadSettingsDialog(QDialog):
             "to_row": to_row,
             "target_hwnd": target_hwnd,
             "target_title": target_title,
-            "wait_hourglass": self.hourglass_check.isChecked(),
+            "load_control": self.load_control_check.isChecked(),
+            "wait_hourglass": self.hourglass_check.isChecked() or self.load_control_check.isChecked(),
             "speed_delay": cell_delay,
             "window_delay": window_delay,
             "load_mode": load_mode,

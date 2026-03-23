@@ -203,7 +203,7 @@ class ImprestSurrenderDialog(QDialog):
 
         from kdl.engine.imprest_surrender_engine import build_keystroke_row
 
-        # One 72-cell keystroke row per invoice, starting at grid row 1.
+        # One 74-cell keystroke row per invoice, starting at grid row 1.
         grid_rows = [build_keystroke_row(row) for row in self._rows]
 
         self.load_into_grid.emit(grid_rows)

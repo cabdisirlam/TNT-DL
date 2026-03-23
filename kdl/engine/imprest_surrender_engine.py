@@ -14,14 +14,15 @@ Columns (A–K):
   Payment_Method, Terms_Date, GL_Date, Auth_Ref_No, Administrative_Code,
   Distribution_Account
 
-Keystroke template (per row) — 72-cell DL grid (C1–C72):
+Keystroke template (per row) — 74-cell DL grid (C1–C74):
   Requires "Use Alternate Method for processing Macros" in DL Load Settings.
   \\+{PGDN} = Shift+PageDown = Next Block (General→Lines, Lines→Distributions).
+  \\d500    = 500 ms delay (DL built-in) — inserted after each \\+{PGDN} for stability.
   \\{ENTER} = close modal / confirm.
   \\{BACKSPACE} = clear pre-filled field.
   Macro flow:
-    General fields → \\{ENTER} (close modal) → \\+{PGDN} (→Lines block)
-    → Tab to Amount → enter amount → \\+{PGDN} (→Distributions block)
+    General fields → \\{ENTER} (close modal) → \\+{PGDN} (→Lines block) → \\d500
+    → Tab to Amount → enter amount → \\+{PGDN} (→Distributions block) → \\d500
     → Tab to Amount → enter amount → GL Date → Dist Account → Save → Down
 """
 
@@ -81,14 +82,15 @@ _BS   = "\\{BACKSPACE}"
 _ENTER = "\\{ENTER}"
 _PGDN  = "\\+{PGDN}"
 
-# Column-index → value mapping for a 72-cell DataLoad grid row.
-# Matches Keystroke_Updated.xlsx "Updated" sheet exactly (C1–C72, 0-indexed).
+# Column-index → value mapping for a 74-cell DataLoad grid row.
+# Based on Keystroke_Updated.xlsx "Updated" sheet (C1–C72) + 2 x \\d500 delay cells.
 # REQUIRES: "Use Alternate Method for processing Macros" ticked in DL settings.
 def build_keystroke_row(row: dict) -> list:
     """
-    Convert one invoice row-dict (11 fields) into a 72-element list
+    Convert one invoice row-dict (11 fields) into a 74-element list
     ready to be written into a DataLoad-style grid row.
     Fixed cells contain keystroke strings; data cells contain field values.
+    Two \\d500 delay cells (C58, C64) follow each \\+{PGDN} for stability.
     """
     sup   = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
@@ -159,21 +161,23 @@ def build_keystroke_row(row: dict) -> list:
         _T,          # C55
         _ENTER,      # C56 \{ENTER} — close modal / confirm
         _PGDN,       # C57 \+{PGDN} — Next Block: General → Lines
-        _T,          # C58
+        "\\d500",    # C58 500 ms delay — let Lines block settle
         _T,          # C59
-        amt,         # C60 Line_Amount (= Invoice_Amount)
-        _T,          # C61
-        _PGDN,       # C62 \+{PGDN} — Next Block: Lines → Distributions
-        _T,          # C63
-        _T,          # C64
-        amt,         # C65 Dist_Amount (= Invoice_Amount)
+        _T,          # C60
+        amt,         # C61 Line_Amount (= Invoice_Amount)
+        _T,          # C62
+        _PGDN,       # C63 \+{PGDN} — Next Block: Lines → Distributions
+        "\\d500",    # C64 500 ms delay — let Distributions block settle
+        _T,          # C65
         _T,          # C66
-        gldt,        # C67 GL_Date (distribution)
+        amt,         # C67 Dist_Amount (= Invoice_Amount)
         _T,          # C68
-        dist,        # C69 Distribution_Account
+        gldt,        # C69 GL_Date (distribution)
         _T,          # C70
-        "\\*s",      # C71 \*s — Ctrl+S save
-        "*dn",       # C72 *dn — move down to next row
+        dist,        # C71 Distribution_Account
+        _T,          # C72
+        "\\*s",      # C73 \*s — Ctrl+S save
+        "*dn",       # C74 *dn — move down to next row
     ]
 
 
