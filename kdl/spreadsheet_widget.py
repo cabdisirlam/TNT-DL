@@ -158,6 +158,7 @@ class SpreadsheetWidget(QTableWidget):
         self.setVerticalHeader(_HighlightHeaderView(Qt.Vertical, self))
 
         # Clicking a row-number header selects the whole row
+        self.verticalHeader().setSectionsClickable(True)
         self.verticalHeader().sectionClicked.connect(self._on_row_header_clicked)
 
         # Headers
@@ -810,33 +811,47 @@ class SpreadsheetWidget(QTableWidget):
 
         menu.addSeparator()
 
+        # ── Rows submenu ──────────────────────────────────────────────────────
+        rows_menu = QMenu("Rows", self)
+
         insert_row_above_action = QAction("Insert Row Above", self)
         insert_row_above_action.triggered.connect(self._insert_row_above)
-        menu.addAction(insert_row_above_action)
+        rows_menu.addAction(insert_row_above_action)
 
         insert_row_action = QAction("Insert Row Below", self)
         insert_row_action.triggered.connect(self._insert_row)
-        menu.addAction(insert_row_action)
+        rows_menu.addAction(insert_row_action)
 
-        insert_col_left_action = QAction("Insert Column Left", self)
-        insert_col_left_action.triggered.connect(self._insert_column_left)
-        menu.addAction(insert_col_left_action)
-
-        insert_col_action = QAction("Insert Column Right", self)
-        insert_col_action.triggered.connect(self._insert_column_right)
-        menu.addAction(insert_col_action)
+        rows_menu.addSeparator()
 
         delete_row_action = QAction("Delete Selected Row(s)", self)
         delete_row_action.triggered.connect(self._delete_selected_rows)
-        menu.addAction(delete_row_action)
+        rows_menu.addAction(delete_row_action)
 
         delete_row_range_action = QAction("Delete Row Range...", self)
         delete_row_range_action.triggered.connect(self._delete_row_range)
-        menu.addAction(delete_row_range_action)
+        rows_menu.addAction(delete_row_range_action)
+
+        menu.addMenu(rows_menu)
+
+        # ── Columns submenu ───────────────────────────────────────────────────
+        cols_menu = QMenu("Columns", self)
+
+        insert_col_left_action = QAction("Insert Column Left", self)
+        insert_col_left_action.triggered.connect(self._insert_column_left)
+        cols_menu.addAction(insert_col_left_action)
+
+        insert_col_action = QAction("Insert Column Right", self)
+        insert_col_action.triggered.connect(self._insert_column_right)
+        cols_menu.addAction(insert_col_action)
+
+        cols_menu.addSeparator()
 
         delete_col_action = QAction("Delete Selected Column(s)", self)
         delete_col_action.triggered.connect(self._delete_selected_columns)
-        menu.addAction(delete_col_action)
+        cols_menu.addAction(delete_col_action)
+
+        menu.addMenu(cols_menu)
 
         menu.addSeparator()
 
