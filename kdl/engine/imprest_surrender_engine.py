@@ -14,14 +14,15 @@ Columns (A–K):
   Payment_Method, Terms_Date, GL_Date, Auth_Ref_No, Administrative_Code,
   Distribution_Account
 
-Keystroke template (per row):
-  {TAB 2}{BACKSPACE}{TAB 2}{Supplier_Num}{TAB}%O{DELAY 500}Home{TAB}
-  {Invoice_Date}{TAB}%O{DELAY 500}{Invoice_Num}{TAB 2}{Invoice_Amount}
-  {TAB}{TAB 6}{Description}{TAB 4}{Payment_Method}{TAB 2}{Terms_Date}
-  {TAB 2}{GL_Date}{TAB 17}{Auth_Ref_No}{TAB}{Administrative_Code}
-  {TAB}%O{DELAY 700}{TAB 2}{Invoice_Amount}{TAB}%D{DELAY 700}
-  {TAB 2}{Invoice_Amount}{TAB}{GL_Date}{TAB}{Distribution_Account}
-  {TAB}^s{DELAY 1000}
+Keystroke template (per row) — 72-cell DL grid (C1–C72):
+  Requires "Use Alternate Method for processing Macros" in DL Load Settings.
+  \\+{PGDN} = Shift+PageDown = Next Block (General→Lines, Lines→Distributions).
+  \\{ENTER} = close modal / confirm.
+  \\{BACKSPACE} = clear pre-filled field.
+  Macro flow:
+    General fields → \\{ENTER} (close modal) → \\+{PGDN} (→Lines block)
+    → Tab to Amount → enter amount → \\+{PGDN} (→Distributions block)
+    → Tab to Amount → enter amount → GL Date → Dist Account → Save → Down
 """
 
 import time
@@ -75,13 +76,17 @@ COLUMN_SAMPLE = {
 
 # ── Keystroke grid row builder ────────────────────────────────────────────────
 
-_T = "{Tab}"
+_T    = "{Tab}"
+_BS   = "\\{BACKSPACE}"
+_ENTER = "\\{ENTER}"
+_PGDN  = "\\+{PGDN}"
 
-# Column-index → value mapping for a 68-cell DataLoad grid row.
-# Matches DL_Keystroke_Cells.xlsx exactly (C1–C68, 0-indexed here).
+# Column-index → value mapping for a 72-cell DataLoad grid row.
+# Matches Keystroke_Updated.xlsx "Updated" sheet exactly (C1–C72, 0-indexed).
+# REQUIRES: "Use Alternate Method for processing Macros" ticked in DL settings.
 def build_keystroke_row(row: dict) -> list:
     """
-    Convert one invoice row-dict (11 fields) into a 68-element list
+    Convert one invoice row-dict (11 fields) into a 72-element list
     ready to be written into a DataLoad-style grid row.
     Fixed cells contain keystroke strings; data cells contain field values.
     """
@@ -98,74 +103,78 @@ def build_keystroke_row(row: dict) -> list:
     dist  = row.get("Distribution_Account", "")
 
     return [
-        _T,                   # C1
-        _T,                   # C2
-        sup,                  # C3  Supplier_Num
-        _T,                   # C4
-        idate,                # C5  Invoice_Date
-        _T,                   # C6
-        _T,                   # C7
-        inum,                 # C8  Invoice_Num
-        _T,                   # C9
-        _T,                   # C10
-        amt,                  # C11 Invoice_Amount
-        _T,                   # C12
-        _T,                   # C13
-        _T,                   # C14
-        _T,                   # C15
-        _T,                   # C16
-        _T,                   # C17
-        desc,                 # C18 Description
-        _T,                   # C19
-        _T,                   # C20
-        _T,                   # C21
-        _T,                   # C22
-        pmeth,                # C23 Payment_Method
-        _T,                   # C24
-        _T,                   # C25
-        tdate,                # C26 Terms_Date
-        _T,                   # C27
-        _T,                   # C28
-        gldt,                 # C29 GL_Date
-        _T,                   # C30
-        _T,                   # C31
-        _T,                   # C32
-        _T,                   # C33
-        _T,                   # C34
-        _T,                   # C35
-        _T,                   # C36
-        _T,                   # C37
-        _T,                   # C38
-        _T,                   # C39
-        _T,                   # C40
-        _T,                   # C41
-        _T,                   # C42
-        _T,                   # C43
-        _T,                   # C44
-        _T,                   # C45
-        _T,                   # C46
-        auth,                 # C47 Auth_Ref_No
-        _T,                   # C48
-        admc,                 # C49 Administrative_Code
-        _T,                   # C50
-        "{ENTER}",            # C51
-        "{Shift+PageDown}",   # C52
-        _T,                   # C53
-        _T,                   # C54
-        amt,                  # C55 Line_Amount (= Invoice_Amount)
-        _T,                   # C56
-        "{Shift+PageDown}",   # C57
-        _T,                   # C58
-        _T,                   # C59
-        amt,                  # C60 Dist_Amount (= Invoice_Amount)
-        _T,                   # C61
-        gldt,                 # C62 Dist_GL_Date (= GL_Date)
-        _T,                   # C63
-        dist,                 # C64 Distribution_Account
-        _T,                   # C65
-        "\\*s",               # C66
-        "*dn",                # C67
-        "",                   # C68
+        _T,          # C1
+        _T,          # C2
+        _BS,         # C3  \{BACKSPACE} — clear pre-filled field
+        _T,          # C4
+        "Standard",  # C5  Invoice Type (fixed)
+        _T,          # C6
+        _BS,         # C7  \{BACKSPACE} — clear pre-filled field
+        _T,          # C8
+        _BS,         # C9  \{BACKSPACE} — clear pre-filled field
+        _T,          # C10
+        sup,         # C11 Supplier_Num
+        _T,          # C12
+        "Provisional", # C13 Inv Type (fixed)
+        _T,          # C14
+        idate,       # C15 Invoice_Date
+        _T,          # C16
+        inum,        # C17 Invoice_Num
+        _T,          # C18
+        _T,          # C19
+        amt,         # C20 Invoice_Amount
+        _T,          # C21
+        _T,          # C22
+        _T,          # C23
+        _T,          # C24
+        _T,          # C25
+        _T,          # C26
+        _T,          # C27
+        desc,        # C28 Description
+        _T,          # C29
+        _T,          # C30
+        _T,          # C31
+        tdate,       # C32 Payment_Terms (Terms_Date field, e.g. IMMEDIATE)
+        _T,          # C33
+        pmeth,       # C34 Payment_Method
+        _T,          # C35
+        _T,          # C36
+        _T,          # C37
+        _T,          # C38
+        _T,          # C39
+        _T,          # C40
+        _T,          # C41
+        _T,          # C42
+        _T,          # C43
+        _T,          # C44
+        _T,          # C45
+        _T,          # C46
+        _T,          # C47
+        _T,          # C48
+        _T,          # C49
+        _T,          # C50
+        _T,          # C51
+        auth,        # C52 Auth_Ref_No
+        _T,          # C53
+        admc,        # C54 Administrative_Code
+        _T,          # C55
+        _ENTER,      # C56 \{ENTER} — close modal / confirm
+        _PGDN,       # C57 \+{PGDN} — Next Block: General → Lines
+        _T,          # C58
+        _T,          # C59
+        amt,         # C60 Line_Amount (= Invoice_Amount)
+        _T,          # C61
+        _PGDN,       # C62 \+{PGDN} — Next Block: Lines → Distributions
+        _T,          # C63
+        _T,          # C64
+        amt,         # C65 Dist_Amount (= Invoice_Amount)
+        _T,          # C66
+        gldt,        # C67 GL_Date (distribution)
+        _T,          # C68
+        dist,        # C69 Distribution_Account
+        _T,          # C70
+        "\\*s",      # C71 \*s — Ctrl+S save
+        "*dn",       # C72 *dn — move down to next row
     ]
 
 
