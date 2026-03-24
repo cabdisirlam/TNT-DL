@@ -667,7 +667,7 @@ class LoaderThread(QThread):
 
                 if self.load_mode == "imprest_surrender":
                     from kdl.engine.imprest_surrender_engine import (
-                        COLUMNS, execute_row_for_loader, TEMPLATE_ACTIONS,
+                        COLUMNS, execute_row_for_loader,
                     )
                     row_dict = {
                         col: (str(row_data[i]).strip()
@@ -717,8 +717,20 @@ class LoaderThread(QThread):
                             f"[Imprest] Row {row_idx + 1} | Target: {self.sender.target_title!r}"
                             f" | Supplier: {sup or '(empty)'}"
                         )
+                    def _imprest_popup_fn(popup_title):
+                        """Pause on mid-row LOV/popup; return True to continue."""
+                        self._pause_requested = True
+                        self.popup_paused.emit(popup_title)
+                        self.progress_updated.emit(
+                            rows_processed, total_rows,
+                            f"Paused: popup '{popup_title}' during imprest entry. "
+                            f"Dismiss it then click Resume.")
+                        self._check_pause()
+                        return not self._is_stop_requested()
+
                     ok = execute_row_for_loader(
-                        self.sender, row_dict, self._is_stop_requested)
+                        self.sender, row_dict, self._is_stop_requested,
+                        popup_fn=_imprest_popup_fn)
                     row_had_activity = True
                     if not ok:
                         if not self._is_stop_requested():

@@ -232,9 +232,9 @@ TEMPLATE_ACTIONS = (
     ("tab",    7),                           # C21–C27
     ("field",  "Description"),               # C28
     ("tab",    3),                           # C29–C31
-    ("text",   "IMMEDIATE"),                 # C32  Pay Terms
+    ("text",   "IMMEDIATE"),                 # C32  Pay Terms (fixed)
     ("tab",    1),                           # C33
-    ("field",  "Payment_Method"),            # C34
+    ("text",   "CHECK"),                     # C34  Payment Method (fixed)
     ("tab",    17),                          # C35–C51
     ("field",  "Auth_Ref_No"),               # C52
     ("tab",    1),                           # C53
@@ -806,11 +806,26 @@ def build_row_summary(row: dict) -> str:
             f"Amt {row.get('Invoice_Amount', '?')} | {desc}")
 
 
-_INTER_ACTION_DELAY = 0.2   # 200 ms between actions — matches DataLoad's per-cell timing
+_INTER_ACTION_DELAY = 0.1   # 100 ms between actions — matches DataLoad's default cell timing
+
+
+def _mid_row_popup_check(sender, popup_fn) -> bool:
+    """
+    Quick popup check for use inside execute_row_for_loader.
+    Returns True to continue, False to abort the row.
+    """
+    if popup_fn is None:
+        return True
+    from kdl.window.window_manager import WindowManager
+    popup = WindowManager.detect_blocking_popup(
+        sender.target_hwnd, sender.target_title)
+    if popup:
+        return popup_fn(popup)
+    return True
 
 
 def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
-                           actions=None) -> bool:
+                           actions=None, popup_fn=None) -> bool:
     """
     Execute the AP invoice template for one row using an existing DataSender.
     Used by the main LoaderThread when load_mode is 'imprest_surrender'.
@@ -818,6 +833,10 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
       row_dict          – {col_name: value} for the 11 AP invoice columns
       is_stop_requested – callable() -> bool
       actions           – action tuple sequence (default: TEMPLATE_ACTIONS)
+      popup_fn          – optional callable(popup_title: str) -> bool
+                          called when a blocking popup (e.g. Supplier Site LOV)
+                          is detected mid-row; return True to continue after
+                          the user dismisses it, False to abort the row.
     """
     if actions is None:
         actions = TEMPLATE_ACTIONS
@@ -860,11 +879,15 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
             if value and not sender._si_send_unicode(value):
                 return False
             time.sleep(_INTER_ACTION_DELAY)
+            if not _mid_row_popup_check(sender, popup_fn):
+                return False
 
         elif kind == "text":
             if action[1] and not sender._si_send_unicode(action[1]):
                 return False
             time.sleep(_INTER_ACTION_DELAY)
+            if not _mid_row_popup_check(sender, popup_fn):
+                return False
 
     return True
 
