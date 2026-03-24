@@ -81,6 +81,7 @@ class LoaderThread(QThread):
         self._last_popup_title = ""
         self._esc_was_down = False
         self._esc_guard_until = 0.0
+        self._esc_first_time = 0.0       # timestamp of first ESC press (double-press gate)
         self._esc_hook = None
         self._esc_hook_backend = ""
         self._cell_send_retries = 0  # Blind retries are unsafe: a failed send may have
@@ -133,6 +134,7 @@ class LoaderThread(QThread):
         self._last_popup_title = ""
         self._esc_was_down = False
         self._esc_guard_until = 0.0
+        self._esc_first_time = 0.0
         self._esc_hook = None
         self._esc_hook_backend = ""
         self._detect_form_business_columns()
@@ -160,34 +162,50 @@ class LoaderThread(QThread):
         self._wait_condition.wakeAll()
         self._mutex.unlock()
 
+    _ESC_DOUBLE_WINDOW = 0.5   # seconds: two ESC presses within this window = stop
+
     def _check_esc_stop(self) -> bool:
-        """Check if user pressed ESC (single press) to stop loading."""
+        """Check if user pressed ESC twice quickly to stop loading."""
         try:
             if time.time() < self._esc_guard_until:
                 return False
             # VK_ESCAPE = 0x1B
             is_down = bool(ctypes.windll.user32.GetAsyncKeyState(0x1B) & 0x8000)
             if is_down and not self._esc_was_down:
-                self._stop_requested = True
-                if not self._stop_reason:
-                    self._stop_reason = "ESC key"
-                self._esc_was_down = True
-                return True
+                now = time.time()
+                if self._esc_first_time and (now - self._esc_first_time) <= self._ESC_DOUBLE_WINDOW:
+                    # Second press within window → stop
+                    self._esc_first_time = 0.0
+                    self._stop_requested = True
+                    if not self._stop_reason:
+                        self._stop_reason = "ESC key"
+                    self._esc_was_down = True
+                    return True
+                else:
+                    # First press — record time, wait for second
+                    self._esc_first_time = now
             self._esc_was_down = is_down
         except Exception:
             pass
         return False
 
     def _request_esc_stop(self):
-        """Stop the load from a global ESC hook callback."""
+        """Stop the load from a global ESC hook callback (requires 2 quick presses)."""
         if time.time() < self._esc_guard_until or self._stop_requested:
             return
-        self._request_stop("ESC key")
-        self._pause_requested = False
-        self._mutex.lock()
-        self._step_advance_requested = True
-        self._wait_condition.wakeAll()
-        self._mutex.unlock()
+        now = time.time()
+        if self._esc_first_time and (now - self._esc_first_time) <= self._ESC_DOUBLE_WINDOW:
+            # Second press → stop
+            self._esc_first_time = 0.0
+            self._request_stop("ESC key")
+            self._pause_requested = False
+            self._mutex.lock()
+            self._step_advance_requested = True
+            self._wait_condition.wakeAll()
+            self._mutex.unlock()
+        else:
+            # First press — wait for second
+            self._esc_first_time = now
 
     def _on_keyboard_event(self, event):
         name = str(getattr(event, "name", "") or "").lower().strip()
@@ -660,6 +678,13 @@ class LoaderThread(QThread):
                               if i < len(row_data) and row_data[i] is not None else "")
                         for i, col in enumerate(COLUMNS)
                     }
+                    # Debug: show target title and first field so user can verify
+                    sup = row_dict.get("Supplier_Num", "")
+                    self.progress_updated.emit(
+                        rows_processed, total_rows,
+                        f"[Imprest] Row {row_idx + 1} | Target: {self.sender._target_title!r}"
+                        f" | Supplier: {sup or '(empty)'}"
+                    )
                     ok = execute_row_for_loader(
                         self.sender, row_dict, self._is_stop_requested,
                         actions=actions)

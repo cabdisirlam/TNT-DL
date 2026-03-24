@@ -1,3 +1,3 @@
 """NT_DL - IFMIS Data Loader"""
-__version__ = "1.1.35"
+__version__ = "1.1.36"
 __app_name__ = "NT_DL"

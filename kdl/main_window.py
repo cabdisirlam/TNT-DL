@@ -155,7 +155,7 @@ class LoadProgressOverlay(QWidget):
 
     def _refresh_title(self):
         mode = (self._mode_label or "").strip() or "Per Cell"
-        self.title_label.setText(f"NT_DL: Esc to stop load | Mode: {mode}")
+        self.title_label.setText(f"NT_DL: 2× Esc to stop | Mode: {mode}")
 
     def _position_top_right(self):
         screen = QGuiApplication.primaryScreen()
