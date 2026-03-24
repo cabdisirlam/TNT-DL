@@ -77,13 +77,16 @@ COLUMN_SAMPLE = {
 
 # ── Keystroke grid row builder ────────────────────────────────────────────────
 
-_T    = "{Tab}"
-_BS   = "\\{BACKSPACE}"
-_ENTER = "\\{ENTER}"
-_PGDN  = "\\+{PGDN}"
+_T       = "{Tab}"
+_BS      = "\\{BACKSPACE}"
+_ENTER   = "\\{ENTER}"
+_PGDN    = "\\+{PGDN}"
+_ALT2ESC = "\\%2\\{ESC}"   # Imprest 2: Alt+2 + Esc  (Lines navigation)
+_ALTD    = "\\%d"           # Imprest 2: Alt+D        (Distributions navigation)
 
-# Column-index → value mapping for a 74-cell DataLoad grid row.
-# Based on Keystroke_Updated.xlsx "Updated" sheet (C1–C72) + 2 x \\d500 delay cells.
+# ── Imprest 1: 74-cell DataLoad grid row ──────────────────────────────────────
+# Navigation: \+{PGDN} (Shift+PageDown) for both Lines and Distributions blocks.
+# Delays: \d500 after each \+{PGDN} (2 delays = 1000 ms total per invoice).
 # REQUIRES: "Use Alternate Method for processing Macros" ticked in DL settings.
 def build_keystroke_row(row: dict) -> list:
     """
@@ -181,61 +184,206 @@ def build_keystroke_row(row: dict) -> list:
     ]
 
 
+# ── Imprest 2: 73-cell DataLoad grid row ──────────────────────────────────────
+# Navigation: \%2\{ESC} (Alt+2+Esc) → Lines,  \%d (Alt+D) → Distributions.
+# Delay: \d500 after Lines only — Distributions needs no delay (saves 500 ms).
+# REQUIRES: "Use Alternate Method for processing Macros" ticked in DL settings.
+def build_keystroke_row_2(row: dict) -> list:
+    sup   = row.get("Supplier_Num", "")
+    idate = row.get("Invoice_Date", "")
+    inum  = row.get("Invoice_Num", "")
+    amt   = row.get("Invoice_Amount", "")
+    desc  = row.get("Description", "")
+    pmeth = row.get("Payment_Method", "")
+    gldt  = row.get("GL_Date", "")
+    auth  = row.get("Auth_Ref_No", "")
+    admc  = row.get("Administrative_Code", "")
+    dist  = row.get("Distribution_Account", "")
+
+    return [
+        _T,           # C1
+        _T,           # C2
+        _BS,          # C3  clear pre-filled field
+        _T,           # C4
+        "Standard",   # C5  Invoice Type
+        _T,           # C6
+        _BS,          # C7  clear pre-filled field
+        _T,           # C8
+        _BS,          # C9  clear pre-filled field
+        _T,           # C10
+        sup,          # C11 Supplier_Num
+        _T,           # C12
+        "Provisional",# C13 Inv Type
+        _T,           # C14
+        idate,        # C15 Invoice_Date
+        _T,           # C16
+        inum,         # C17 Invoice_Num
+        _T,           # C18
+        _T,           # C19
+        amt,          # C20 Invoice_Amount
+        _T,           # C21
+        _T,           # C22
+        _T,           # C23
+        _T,           # C24
+        _T,           # C25
+        _T,           # C26
+        _T,           # C27
+        desc,         # C28 Description
+        _T,           # C29
+        _T,           # C30
+        _T,           # C31
+        "IMMEDIATE",  # C32 Pay Terms
+        _T,           # C33
+        pmeth,        # C34 Payment_Method
+        _T,           # C35
+        _T,           # C36
+        _T,           # C37
+        _T,           # C38
+        _T,           # C39
+        _T,           # C40
+        _T,           # C41
+        _T,           # C42
+        _T,           # C43
+        _T,           # C44
+        _T,           # C45
+        _T,           # C46
+        _T,           # C47
+        _T,           # C48
+        _T,           # C49
+        _T,           # C50
+        _T,           # C51
+        auth,         # C52 Auth_Ref_No
+        _T,           # C53
+        admc,         # C54 Administrative_Code
+        _T,           # C55
+        _ENTER,       # C56 \{ENTER} — close modal / confirm
+        _ALT2ESC,     # C57 \%2\{ESC} — Alt+2+Esc → Lines block
+        "\\d500",     # C58 500 ms delay — let Lines block settle
+        _T,           # C59
+        _T,           # C60
+        amt,          # C61 Line_Amount
+        _T,           # C62
+        _ALTD,        # C63 \%d — Alt+D → Distributions block (no delay needed)
+        _T,           # C64
+        _T,           # C65
+        amt,          # C66 Dist_Amount
+        _T,           # C67
+        gldt,         # C68 GL_Date
+        _T,           # C69
+        dist,         # C70 Distribution_Account
+        _T,           # C71
+        "\\*s",       # C72 \*s — Ctrl+S save
+        "*dn",        # C73 *dn — move down to next row
+    ]
+
+
 # ── Template action sequence ──────────────────────────────────────────────────
 # Action tuples:
-#   ("tab", n)              press Tab n times via SendInput
-#   ("key", name)           press a named key (must be in _SI_VK_MAP)
-#   ("hotkey", mods, key)   modifier+key  e.g. (["alt"], "o")
-#   ("delay", ms)           sleep ms milliseconds (interruptible)
-#   ("field", col_name)     inject field value via SendInput unicode
+#   ("tab",    n)            press Tab n times via SendInput
+#   ("key",    name)         press a named key (must be in _SI_VK_MAP)
+#   ("hotkey", mods, key)    modifier+key  e.g. (["shift"], "pagedown")
+#   ("delay",  ms)           sleep ms milliseconds (interruptible)
+#   ("field",  col_name)     inject field value via SendInput unicode
+#   ("text",   value)        type a fixed literal string via SendInput unicode
 
+# Imprest 1 — mirrors build_keystroke_row exactly (Shift+PageDown navigation).
+# Delays: 500 ms after each Shift+PageDown = 1000 ms total per invoice.
 TEMPLATE_ACTIONS = (
-    ("tab",    2),
-    ("key",    "backspace"),
-    ("tab",    2),
-    ("field",  "Supplier_Num"),
-    ("tab",    1),
-    ("hotkey", ["alt"], "o"),
-    ("delay",  500),
-    ("key",    "home"),
-    ("tab",    1),
-    ("field",  "Invoice_Date"),
-    ("tab",    1),
-    ("hotkey", ["alt"], "o"),
-    ("delay",  500),
-    ("field",  "Invoice_Num"),
-    ("tab",    2),
-    ("field",  "Invoice_Amount"),
-    ("tab",    1),
-    ("tab",    6),
-    ("field",  "Description"),
-    ("tab",    4),
-    ("field",  "Payment_Method"),
-    ("tab",    2),
-    ("field",  "Terms_Date"),
-    ("tab",    2),
-    ("field",  "GL_Date"),
-    ("tab",    17),
-    ("field",  "Auth_Ref_No"),
-    ("tab",    1),
-    ("field",  "Administrative_Code"),
-    ("tab",    1),
-    ("hotkey", ["alt"], "o"),
-    ("delay",  700),
-    ("tab",    2),
-    ("field",  "Invoice_Amount"),          # line amount
-    ("tab",    1),
-    ("hotkey", ["alt"], "d"),
-    ("delay",  700),
-    ("tab",    2),
-    ("field",  "Invoice_Amount"),          # distribution amount
-    ("tab",    1),
-    ("field",  "GL_Date"),                 # distribution date
-    ("tab",    1),
-    ("field",  "Distribution_Account"),
-    ("tab",    1),
-    ("hotkey", ["ctrl"], "s"),
-    ("delay",  1000),
+    ("tab",    2),                           # C1–C2
+    ("key",    "backspace"),                 # C3
+    ("tab",    1),                           # C4
+    ("text",   "Standard"),                  # C5  Invoice Type
+    ("tab",    1),                           # C6
+    ("key",    "backspace"),                 # C7
+    ("tab",    1),                           # C8
+    ("key",    "backspace"),                 # C9
+    ("tab",    1),                           # C10
+    ("field",  "Supplier_Num"),              # C11
+    ("tab",    1),                           # C12
+    ("text",   "Provisional"),               # C13 Inv Type
+    ("tab",    1),                           # C14
+    ("field",  "Invoice_Date"),              # C15
+    ("tab",    1),                           # C16
+    ("field",  "Invoice_Num"),               # C17
+    ("tab",    2),                           # C18–C19
+    ("field",  "Invoice_Amount"),            # C20
+    ("tab",    7),                           # C21–C27
+    ("field",  "Description"),               # C28
+    ("tab",    3),                           # C29–C31
+    ("text",   "IMMEDIATE"),                 # C32 Pay Terms
+    ("tab",    1),                           # C33
+    ("field",  "Payment_Method"),            # C34
+    ("tab",    17),                          # C35–C51
+    ("field",  "Auth_Ref_No"),               # C52
+    ("tab",    1),                           # C53
+    ("field",  "Administrative_Code"),       # C54
+    ("tab",    1),                           # C55
+    ("key",    "enter"),                     # C56 close modal
+    ("hotkey", ["shift"], "pagedown"),       # C57 General → Lines
+    ("delay",  500),                         # C58
+    ("tab",    2),                           # C59–C60
+    ("field",  "Invoice_Amount"),            # C61 line amount
+    ("tab",    1),                           # C62
+    ("hotkey", ["shift"], "pagedown"),       # C63 Lines → Distributions
+    ("delay",  500),                         # C64
+    ("tab",    2),                           # C65–C66
+    ("field",  "Invoice_Amount"),            # C67 dist amount
+    ("tab",    1),                           # C68
+    ("field",  "GL_Date"),                   # C69
+    ("tab",    1),                           # C70
+    ("field",  "Distribution_Account"),      # C71
+    ("tab",    1),                           # C72
+    ("hotkey", ["ctrl"], "s"),               # C73
+)
+
+# Imprest 2 — mirrors build_keystroke_row_2 (Alt+2+Esc / Alt+D navigation).
+# Delay: 500 ms after Lines only — Distributions needs no delay (500 ms saved).
+TEMPLATE_ACTIONS_2 = (
+    ("tab",    2),                           # C1–C2
+    ("key",    "backspace"),                 # C3
+    ("tab",    1),                           # C4
+    ("text",   "Standard"),                  # C5  Invoice Type
+    ("tab",    1),                           # C6
+    ("key",    "backspace"),                 # C7
+    ("tab",    1),                           # C8
+    ("key",    "backspace"),                 # C9
+    ("tab",    1),                           # C10
+    ("field",  "Supplier_Num"),              # C11
+    ("tab",    1),                           # C12
+    ("text",   "Provisional"),               # C13 Inv Type
+    ("tab",    1),                           # C14
+    ("field",  "Invoice_Date"),              # C15
+    ("tab",    1),                           # C16
+    ("field",  "Invoice_Num"),               # C17
+    ("tab",    2),                           # C18–C19
+    ("field",  "Invoice_Amount"),            # C20
+    ("tab",    7),                           # C21–C27
+    ("field",  "Description"),               # C28
+    ("tab",    3),                           # C29–C31
+    ("text",   "IMMEDIATE"),                 # C32 Pay Terms
+    ("tab",    1),                           # C33
+    ("field",  "Payment_Method"),            # C34
+    ("tab",    17),                          # C35–C51
+    ("field",  "Auth_Ref_No"),               # C52
+    ("tab",    1),                           # C53
+    ("field",  "Administrative_Code"),       # C54
+    ("tab",    1),                           # C55
+    ("key",    "enter"),                     # C56 close modal
+    ("hotkey", ["alt"], "2"),                # C57a Alt+2  → Lines block
+    ("key",    "escape"),                    # C57b Esc
+    ("delay",  500),                         # C58
+    ("tab",    2),                           # C59–C60
+    ("field",  "Invoice_Amount"),            # C61 line amount
+    ("tab",    1),                           # C62
+    ("hotkey", ["alt"], "d"),                # C63 Alt+D → Distributions (no delay)
+    ("tab",    2),                           # C64–C65
+    ("field",  "Invoice_Amount"),            # C66 dist amount
+    ("tab",    1),                           # C67
+    ("field",  "GL_Date"),                   # C68
+    ("tab",    1),                           # C69
+    ("field",  "Distribution_Account"),      # C70
+    ("tab",    1),                           # C71
+    ("hotkey", ["ctrl"], "s"),               # C72
 )
 
 
@@ -397,18 +545,24 @@ def build_row_summary(row: dict) -> str:
             f"Amt {row.get('Invoice_Amount', '?')} | {desc}")
 
 
-def execute_row_for_loader(sender, row_dict: dict, is_stop_requested) -> bool:
+def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
+                           actions=None) -> bool:
     """
     Execute the AP invoice template for one row using an existing DataSender.
-    Used by the main LoaderThread when load_mode == 'imprest_surrender'.
+    Used by the main LoaderThread when load_mode is 'imprest_surrender' or
+    'imprest_surrender_2'.
       sender            – a configured DataSender instance (use_fast_send=True)
       row_dict          – {col_name: value} for the 11 AP invoice columns
       is_stop_requested – callable() -> bool
+      actions           – TEMPLATE_ACTIONS or TEMPLATE_ACTIONS_2 (default: TEMPLATE_ACTIONS)
     """
+    if actions is None:
+        actions = TEMPLATE_ACTIONS
+
     from kdl.engine.data_sender import _SI_VK_MAP
     vk_tab = _SI_VK_MAP.get("tab", 0x09)
 
-    for action in TEMPLATE_ACTIONS:
+    for action in actions:
         if is_stop_requested():
             return False
 
@@ -438,6 +592,10 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested) -> bool:
         elif kind == "field":
             value = (row_dict.get(action[1]) or "").strip()
             if value and not sender._si_send_unicode(value):
+                return False
+
+        elif kind == "text":
+            if action[1] and not sender._si_send_unicode(action[1]):
                 return False
 
     return True
@@ -541,6 +699,10 @@ class ImprestSurrenderThread(QThread):
             elif kind == "field":
                 value = (row.get(action[1]) or "").strip()
                 if value and not sender._si_send_unicode(value):
+                    return False
+
+            elif kind == "text":
+                if action[1] and not sender._si_send_unicode(action[1]):
                     return False
 
         return True

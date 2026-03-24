@@ -647,15 +647,22 @@ class LoaderThread(QThread):
                     self.loading_complete.emit(False, "Lost focus on target window - stopped.")
                     return
 
-                if self.load_mode == "imprest_surrender":
-                    from kdl.engine.imprest_surrender_engine import COLUMNS, execute_row_for_loader
+                if self.load_mode in ("imprest_surrender", "imprest_surrender_2"):
+                    from kdl.engine.imprest_surrender_engine import (
+                        COLUMNS, execute_row_for_loader,
+                        TEMPLATE_ACTIONS, TEMPLATE_ACTIONS_2,
+                    )
+                    actions = (TEMPLATE_ACTIONS_2
+                               if self.load_mode == "imprest_surrender_2"
+                               else TEMPLATE_ACTIONS)
                     row_dict = {
                         col: (str(row_data[i]).strip()
                               if i < len(row_data) and row_data[i] is not None else "")
                         for i, col in enumerate(COLUMNS)
                     }
                     ok = execute_row_for_loader(
-                        self.sender, row_dict, self._is_stop_requested)
+                        self.sender, row_dict, self._is_stop_requested,
+                        actions=actions)
                     row_had_activity = True
                     if not ok:
                         if not self._is_stop_requested():
