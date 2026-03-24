@@ -806,7 +806,7 @@ def build_row_summary(row: dict) -> str:
             f"Amt {row.get('Invoice_Amount', '?')} | {desc}")
 
 
-_INTER_ACTION_DELAY = 0.1   # 100 ms between actions — matches DataLoad's default cell timing
+_INTER_ACTION_DELAY = 0.2   # 200 ms between actions — matches DataLoad's default cell timing
 
 
 def _mid_row_popup_check(sender, popup_fn) -> bool:
