@@ -250,6 +250,7 @@ TEMPLATE_ACTIONS = (
     ("tab",    1),                           # C61
     # ── Distributions block (Alt+D) ────────────────────────────────────────
     ("hotkey", ["alt"], "d"),                # C62  Alt+D → Distributions
+    ("delay",  500),                         # wait for Distributions block to open
     ("tab",    2),                           # C63–C64
     ("field",  "Invoice_Amount"),            # C65  Dist Amount
     ("tab",    1),                           # C66
@@ -259,16 +260,20 @@ TEMPLATE_ACTIONS = (
     ("tab",    1),                           # C70
     # ── Save and advance to next invoice ──────────────────────────────────
     ("hotkey", ["ctrl"], "s"),               # C71  Ctrl+S save
+    ("delay",  800),                         # wait for save to complete
     ("hotkey", ["ctrl"], "f4"),              # C72  Ctrl+F4 clear record
+    ("delay",  400),                         # wait for form to clear
     ("key",    "alt"),                       # C73  Alt → activate menu
     ("key",    "down"),                      # C74  ↓
     ("key",    "down"),                      # C75  ↓
     ("key",    "down"),                      # C76  ↓
     ("key",    "down"),                      # C77  ↓ (4th menu item)
     ("key",    "enter"),                     # C78  select menu item
+    ("delay",  300),                         # wait for navigation to settle
     ("hotkey", ["shift"], "tab"),            # C79  ⇧Tab
     ("hotkey", ["shift"], "tab"),            # C80  ⇧Tab
     ("hotkey", ["shift"], "tab"),            # C81  ⇧Tab → ready for next invoice
+    ("delay",  200),                         # stabilise before next row
 )
 
 
@@ -676,6 +681,126 @@ def export_prefilled_template(filepath: str, rows: list) -> str:
         return f"Export failed: {exc}"
 
 
+# ── DL keystroke export ───────────────────────────────────────────────────────
+
+def _build_dl_keystroke_row(row: dict) -> list:
+    """
+    Build an 81-cell DataLoad-format (backslash-macro) row for direct use in DataLoad.
+    Mirrors build_keystroke_row but uses \\{TAB} instead of {Tab} for DL compatibility.
+    """
+    _DT  = "\\{TAB}"
+    _BS  = "\\{BACKSPACE}"
+    _ENT = "\\{ENTER}"
+    _A2E = "\\%2\\{ESC}"
+    _AD  = "\\%d"
+    _CS  = "\\^s"
+    _CF4 = "\\^{F4}"
+    _ALT = "\\%"
+    _DN  = "\\{DOWN}"
+    _SHT = "\\+{TAB}"
+
+    sup   = row.get("Supplier_Num", "")
+    idate = row.get("Invoice_Date", "")
+    inum  = row.get("Invoice_Num", "")
+    amt   = row.get("Invoice_Amount", "")
+    desc  = row.get("Description", "")
+    pmeth = row.get("Payment_Method", "")
+    gldt  = row.get("GL_Date", "")
+    auth  = row.get("Auth_Ref_No", "")
+    admc  = row.get("Administrative_Code", "")
+    dist  = row.get("Distribution_Account", "")
+
+    return [
+        # C1–C10
+        _DT, _DT, _BS, _DT, "Standard", _DT, _BS, _DT, _BS, _DT,
+        # C11–C20
+        sup, _DT, "Provisional", _DT, idate, _DT, inum, _DT, _DT, amt,
+        # C21–C30
+        _DT, _DT, _DT, _DT, _DT, _DT, _DT, desc, _DT, _DT,
+        # C31–C40
+        _DT, "IMMEDIATE", _DT, pmeth, _DT, _DT, _DT, _DT, _DT, _DT,
+        # C41–C50
+        _DT, _DT, _DT, _DT, _DT, _DT, _DT, _DT, _DT, _DT,
+        # C51–C60
+        _DT, auth, _DT, admc, _DT, _ENT, _A2E, _DT, _DT, amt,
+        # C61–C70
+        _DT, _AD, _DT, _DT, amt, _DT, gldt, _DT, dist, _DT,
+        # C71–C81
+        _CS, _CF4, _ALT, _DN, _DN, _DN, _DN, _ENT, _SHT, _SHT, _SHT,
+    ]
+
+
+def export_keystroke_file(filepath: str, rows: list) -> str:
+    """
+    Export an 81-column DataLoad keystroke grid to filepath.
+    Load directly in DataLoad (Per Cell mode, 'Use Alternate Method' ticked)
+    as a fallback if SendInput mode fails.
+    Returns an error string, or "" on success.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font, Alignment
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return "openpyxl is not installed."
+
+    try:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "DL_Keystrokes"
+
+        BLUE      = "0070C0"
+        WHITE_TXT = "FFFFFF"
+        GREY_BG   = "F2F2F2"
+        ncols     = 81
+
+        # ── Row 1: title ──────────────────────────────────────────────────────
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+        title = ws.cell(
+            row=1, column=1,
+            value="NT_DL Imprest Surrender — DataLoad Keystroke Fallback  "
+                  "| Load in Per Cell mode  |  'Use Alternate Method' must be ticked in DL settings")
+        title.font      = Font(bold=True, size=10, color=WHITE_TXT)
+        title.fill      = PatternFill(fill_type="solid", fgColor=BLUE)
+        title.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 18
+
+        # ── Row 2: column headers C1–C81 ─────────────────────────────────────
+        for ci in range(1, ncols + 1):
+            cell = ws.cell(row=2, column=ci, value=f"C{ci}")
+            cell.font      = Font(bold=True, color=WHITE_TXT, size=9)
+            cell.fill      = PatternFill(fill_type="solid", fgColor=BLUE)
+            cell.alignment = Alignment(horizontal="center")
+        ws.row_dimensions[2].height = 15
+
+        # ── Rows 3+: one DL keystroke row per invoice ─────────────────────────
+        for ri, row_dict in enumerate(rows, start=3):
+            bg = GREY_BG if ri % 2 == 1 else "FFFFFF"
+            ks_row = _build_dl_keystroke_row(row_dict)
+            for ci, val in enumerate(ks_row, start=1):
+                cell = ws.cell(row=ri, column=ci, value=val)
+                cell.font      = Font(size=9)
+                cell.fill      = PatternFill(fill_type="solid", fgColor=bg)
+                cell.alignment = Alignment(horizontal="left")
+            ws.row_dimensions[ri].height = 14
+
+        # ── Column widths: narrow for macro cols, wider for data cols ─────────
+        # Data is at C11 (sup), C15 (idate), C17 (inum), C20 (amt),
+        # C28 (desc), C34 (pmeth), C52 (auth), C54 (admc), C60 (amt),
+        # C65 (amt), C67 (gldt), C69 (dist)
+        data_cols = {11: 12, 15: 12, 17: 12, 20: 12, 28: 28,
+                     34: 12, 52: 8, 54: 14, 60: 10, 65: 10, 67: 12, 69: 52}
+        for ci in range(1, ncols + 1):
+            ws.column_dimensions[get_column_letter(ci)].width = (
+                data_cols.get(ci, 10))
+
+        ws.freeze_panes = "A3"
+        wb.save(filepath)
+        return ""
+    except Exception as exc:
+        return f"Export failed: {exc}"
+
+
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 def build_row_summary(row: dict) -> str:
@@ -684,6 +809,9 @@ def build_row_summary(row: dict) -> str:
     return (f"{row.get('Invoice_Num', '?')} | "
             f"Supplier {row.get('Supplier_Num', '?')} | "
             f"Amt {row.get('Invoice_Amount', '?')} | {desc}")
+
+
+_INTER_ACTION_DELAY = 0.025   # 25 ms between individual SendInput calls
 
 
 def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
@@ -712,15 +840,18 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
             for _ in range(action[1]):
                 if not sender._si_send_vk(vk_tab):
                     return False
+                time.sleep(_INTER_ACTION_DELAY)
 
         elif kind == "key":
             vk = _SI_VK_MAP.get(action[1], 0)
             if vk and not sender._si_send_vk(vk):
                 return False
+            time.sleep(_INTER_ACTION_DELAY)
 
         elif kind == "hotkey":
             if not sender._si_send_hotkey(action[1], action[2]):
                 return False
+            time.sleep(_INTER_ACTION_DELAY)
 
         elif kind == "delay":
             deadline = time.monotonic() + action[1] / 1000.0
@@ -733,10 +864,12 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
             value = (row_dict.get(action[1]) or "").strip()
             if value and not sender._si_send_unicode(value):
                 return False
+            time.sleep(_INTER_ACTION_DELAY)
 
         elif kind == "text":
             if action[1] and not sender._si_send_unicode(action[1]):
                 return False
+            time.sleep(_INTER_ACTION_DELAY)
 
     return True
 
@@ -819,15 +952,18 @@ class ImprestSurrenderThread(QThread):
                 for _ in range(action[1]):
                     if not sender._si_send_vk(vk_tab):
                         return False
+                    time.sleep(_INTER_ACTION_DELAY)
 
             elif kind == "key":
                 vk = vk_map.get(action[1], 0)
                 if vk and not sender._si_send_vk(vk):
                     return False
+                time.sleep(_INTER_ACTION_DELAY)
 
             elif kind == "hotkey":
                 if not sender._si_send_hotkey(action[1], action[2]):
                     return False
+                time.sleep(_INTER_ACTION_DELAY)
 
             elif kind == "delay":
                 deadline = time.monotonic() + action[1] / 1000.0
@@ -840,9 +976,11 @@ class ImprestSurrenderThread(QThread):
                 value = (row.get(action[1]) or "").strip()
                 if value and not sender._si_send_unicode(value):
                     return False
+                time.sleep(_INTER_ACTION_DELAY)
 
             elif kind == "text":
                 if action[1] and not sender._si_send_unicode(action[1]):
                     return False
+                time.sleep(_INTER_ACTION_DELAY)
 
         return True

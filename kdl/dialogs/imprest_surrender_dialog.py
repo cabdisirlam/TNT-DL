@@ -2,10 +2,11 @@
 Imprest Surrender AP Loader Dialog.
 
 Workflow:
-  1. Export blank Excel template  →  user fills it in
-  2. User uploads the filled file →  system reads invoice rows
+  1. Import IFMIS export  →  auto-fills template  →  user fills 3 amber fields
+  2. User uploads the filled file  →  system reads invoice rows
   3. Preview shows rows found
-  4. Click "Load into Grid" → rows are loaded into the NT_DL spreadsheet
+  4. Click "Load into Grid"  →  rows are loaded into the NT_DL spreadsheet
+     OR "Export DL Keystrokes…"  →  save DataLoad fallback xlsx
   5. User then presses F5 (Load), selects "Imprest Surrender" mode in
      Load Settings, and the keystrokes are sent to IFMIS from the grid.
 """
@@ -54,29 +55,21 @@ class ImprestSurrenderDialog(QDialog):
         layout.setSpacing(6)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        # ── Step 1: Prepare template ──
-        tpl_group = QGroupBox("Step 1 — Prepare Invoice Template")
+        # ── Step 1: Import from IFMIS ──
+        tpl_group = QGroupBox("Step 1 — Import from IFMIS Export")
         tg = QVBoxLayout(tpl_group)
         tg.setSpacing(4)
 
         tpl_desc = QLabel(
-            "Option A: Export a blank template and fill it manually.\n"
-            "Option B: Import your IFMIS export — auto-maps known fields "
-            "and highlights the 3 fields you must fill (Auth Ref, Admin Code, Distribution Account).")
+            "Import your IFMIS export — auto-maps known fields and highlights "
+            "the 3 fields you must fill (Auth Ref, Admin Code, Distribution Account).")
         tpl_desc.setWordWrap(True)
         tg.addWidget(tpl_desc)
-
-        btn_row1 = QHBoxLayout()
-        self._export_btn = QPushButton("Export Blank Template…")
-        self._export_btn.setFixedHeight(26)
-        self._export_btn.clicked.connect(self._export_template)
-        btn_row1.addWidget(self._export_btn)
 
         self._import_ifmis_btn = QPushButton("Import from IFMIS Export…")
         self._import_ifmis_btn.setFixedHeight(26)
         self._import_ifmis_btn.clicked.connect(self._import_ifmis)
-        btn_row1.addWidget(self._import_ifmis_btn)
-        tg.addLayout(btn_row1)
+        tg.addWidget(self._import_ifmis_btn)
 
         self._import_status = QLabel("")
         self._import_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
@@ -121,8 +114,7 @@ class ImprestSurrenderDialog(QDialog):
 
         # ── Info hint ──
         hint = QLabel(
-            "After loading into the grid, press F5 → select Per Cell mode → "
-            "After each row: None (the \\*dn keystroke advances DataLoad automatically).")
+            "After loading into the grid, press F5 → select Imprest mode → Load.")
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; margin-top: 2px;")
         layout.addWidget(hint)
@@ -136,6 +128,15 @@ class ImprestSurrenderDialog(QDialog):
         close_btn.clicked.connect(self.reject)
         btn_row.addWidget(close_btn)
 
+        self._ks_btn = QPushButton("Export DL Keystrokes…")
+        self._ks_btn.setFixedHeight(28)
+        self._ks_btn.setEnabled(False)
+        self._ks_btn.setToolTip(
+            "Export an 81-column DataLoad keystroke file as a fallback.\n"
+            "Load it in DataLoad: Per Cell mode + 'Use Alternate Method' ticked.")
+        self._ks_btn.clicked.connect(self._export_keystrokes)
+        btn_row.addWidget(self._ks_btn)
+
         from kdl.config_store import get_dark_mode
         self._load_btn = QPushButton("  Load into Grid  ")
         self._load_btn.setDefault(True)
@@ -145,23 +146,6 @@ class ImprestSurrenderDialog(QDialog):
         self._load_btn.clicked.connect(self._load_into_grid)
         btn_row.addWidget(self._load_btn)
         layout.addLayout(btn_row)
-
-    # ── Export template ───────────────────────────────────────────────────────
-
-    def _export_template(self):
-        from kdl.engine.imprest_surrender_engine import export_template
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Template",
-            os.path.join(_default_dir(), "AP_Imprest_Surrender_Template.xlsx"),
-            "Excel Files (*.xlsx)")
-        if not path:
-            return
-        err = export_template(path)
-        if err:
-            QMessageBox.critical(self, "Export Error", err)
-        else:
-            self._upload_status.setText(f"Template saved: {os.path.basename(path)}")
-            self._upload_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
 
     # ── Import from IFMIS export ──────────────────────────────────────────────
 
@@ -232,6 +216,7 @@ class ImprestSurrenderDialog(QDialog):
         self._rows = []
         self._preview.clear()
         self._load_btn.setEnabled(False)
+        self._ks_btn.setEnabled(False)
         self._upload_status.setText("Reading file…")
         self._upload_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
 
@@ -255,6 +240,31 @@ class ImprestSurrenderDialog(QDialog):
         lines = [f"Row {i}: {build_row_summary(r)}" for i, r in enumerate(rows, 1)]
         self._preview.setPlainText("\n".join(lines))
         self._load_btn.setEnabled(True)
+        self._ks_btn.setEnabled(True)
+
+    # ── Export DL keystroke fallback ──────────────────────────────────────────
+
+    def _export_keystrokes(self):
+        if not self._rows:
+            QMessageBox.warning(self, "No Data", "Upload a filled template first.")
+            return
+
+        from kdl.engine.imprest_surrender_engine import export_keystroke_file
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export DL Keystrokes",
+            os.path.join(_default_dir(), "AP_Imprest_Surrender_DL_Keystrokes.xlsx"),
+            "Excel Files (*.xlsx)")
+        if not path:
+            return
+
+        err = export_keystroke_file(path, self._rows)
+        if err:
+            QMessageBox.critical(self, "Export Error", err)
+        else:
+            self._upload_status.setText(
+                f"DL keystrokes saved: {os.path.basename(path)}")
+            self._upload_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
 
     # ── Load into grid ────────────────────────────────────────────────────────
 
@@ -265,7 +275,7 @@ class ImprestSurrenderDialog(QDialog):
 
         from kdl.engine.imprest_surrender_engine import build_keystroke_row
 
-        # One 74-cell keystroke row per invoice, starting at grid row 1.
+        # One 81-cell keystroke row per invoice.
         grid_rows = [build_keystroke_row(row) for row in self._rows]
 
         self.load_into_grid.emit(grid_rows)
