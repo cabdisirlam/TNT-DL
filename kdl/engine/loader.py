@@ -682,7 +682,7 @@ class LoaderThread(QThread):
                     sup = row_dict.get("Supplier_Num", "")
                     self.progress_updated.emit(
                         rows_processed, total_rows,
-                        f"[Imprest] Row {row_idx + 1} | Target: {self.sender._target_title!r}"
+                        f"[Imprest] Row {row_idx + 1} | Target: {self.sender.target_title!r}"
                         f" | Supplier: {sup or '(empty)'}"
                     )
                     ok = execute_row_for_loader(
