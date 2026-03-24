@@ -678,8 +678,17 @@ class LoaderThread(QThread):
                               if i < len(row_data) and row_data[i] is not None else "")
                         for i, col in enumerate(COLUMNS)
                     }
-                    # Debug: show target title and first field so user can verify
+                    # Guard: detect per-cell macro strings loaded as invoice data
                     sup = row_dict.get("Supplier_Num", "")
+                    if sup.startswith("\\") or (sup.startswith("{") and "}" in sup):
+                        self.loading_complete.emit(
+                            False,
+                            f"[Imprest] Row {row_idx + 1}: Supplier_Num looks like a DL macro string: {sup[:50]!r}\n"
+                            f"Your spreadsheet row has per-cell keystroke data instead of invoice data.\n"
+                            f"Use File > Export Template to get the correct imprest template."
+                        )
+                        return
+                    # Debug: show target title and first field so user can verify
                     self.progress_updated.emit(
                         rows_processed, total_rows,
                         f"[Imprest] Row {row_idx + 1} | Target: {self.sender.target_title!r}"
