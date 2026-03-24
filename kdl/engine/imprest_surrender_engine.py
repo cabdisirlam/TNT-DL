@@ -250,7 +250,6 @@ TEMPLATE_ACTIONS = (
     ("tab",    1),                           # C61
     # ── Distributions block (Alt+D) ────────────────────────────────────────
     ("hotkey", ["alt"], "d"),                # C62  Alt+D → Distributions
-    ("delay",  500),                         # wait for Distributions block to open
     ("tab",    2),                           # C63–C64
     ("field",  "Invoice_Amount"),            # C65  Dist Amount
     ("tab",    1),                           # C66
@@ -260,20 +259,16 @@ TEMPLATE_ACTIONS = (
     ("tab",    1),                           # C70
     # ── Save and advance to next invoice ──────────────────────────────────
     ("hotkey", ["ctrl"], "s"),               # C71  Ctrl+S save
-    ("delay",  800),                         # wait for save to complete
     ("hotkey", ["ctrl"], "f4"),              # C72  Ctrl+F4 clear record
-    ("delay",  400),                         # wait for form to clear
     ("key",    "alt"),                       # C73  Alt → activate menu
     ("key",    "down"),                      # C74  ↓
     ("key",    "down"),                      # C75  ↓
     ("key",    "down"),                      # C76  ↓
     ("key",    "down"),                      # C77  ↓ (4th menu item)
     ("key",    "enter"),                     # C78  select menu item
-    ("delay",  300),                         # wait for navigation to settle
     ("hotkey", ["shift"], "tab"),            # C79  ⇧Tab
     ("hotkey", ["shift"], "tab"),            # C80  ⇧Tab
     ("hotkey", ["shift"], "tab"),            # C81  ⇧Tab → ready for next invoice
-    ("delay",  200),                         # stabilise before next row
 )
 
 
@@ -811,7 +806,7 @@ def build_row_summary(row: dict) -> str:
             f"Amt {row.get('Invoice_Amount', '?')} | {desc}")
 
 
-_INTER_ACTION_DELAY = 0.025   # 25 ms between individual SendInput calls
+_INTER_ACTION_DELAY = 0.2   # 200 ms between actions — matches DataLoad's per-cell timing
 
 
 def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
