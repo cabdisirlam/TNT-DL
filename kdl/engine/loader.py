@@ -665,34 +665,31 @@ class LoaderThread(QThread):
                     self.loading_complete.emit(False, "Lost focus on target window - stopped.")
                     return
 
-                if self.load_mode in ("imprest_surrender", "imprest_surrender_2"):
+                if self.load_mode == "imprest_surrender":
                     from kdl.engine.imprest_surrender_engine import (
-                        COLUMNS, execute_row_for_loader,
-                        TEMPLATE_ACTIONS, TEMPLATE_ACTIONS_2,
+                        COLUMNS, execute_row_for_loader, TEMPLATE_ACTIONS,
                     )
-                    actions = (TEMPLATE_ACTIONS_2
-                               if self.load_mode == "imprest_surrender_2"
-                               else TEMPLATE_ACTIONS)
                     row_dict = {
                         col: (str(row_data[i]).strip()
                               if i < len(row_data) and row_data[i] is not None else "")
                         for i, col in enumerate(COLUMNS)
                     }
                     sup = row_dict.get("Supplier_Num", "")
-                    # Auto-detect per-cell (74-column DL macro) format.
-                    # When col 0 is a DL macro string (e.g. \{TAB}) the user loaded
-                    # a per-cell keystroke row.  Extract the real invoice data from
-                    # the known fixed column positions inside that row instead.
+                    # Auto-detect per-cell (DL macro) format.
+                    # When col 0 is a DL macro string the user loaded a per-cell
+                    # keystroke row — extract the real invoice data from the known
+                    # fixed column positions inside that row.
                     if sup.startswith("\\") or (sup.startswith("{") and "}" in sup):
                         _d = [
                             str(row_data[i]).strip()
                             if i < len(row_data) and row_data[i] is not None else ""
                             for i in range(len(row_data))
                         ]
-                        # GL_Date and Distribution_Account sit just before the
-                        # \*s save marker regardless of imprest1/2 or delay cells.
+                        # Locate the save command (\^s or \*s) then back-calculate
+                        # GL_Date (save-4) and Distribution_Account (save-2).
                         save_idx = next(
-                            (i for i, v in enumerate(_d) if v in ("\\*s", "*s")),
+                            (i for i, v in enumerate(_d)
+                             if v in ("\\^s", "\\*s", "*s")),
                             len(_d)
                         )
                         row_dict = {
@@ -721,8 +718,7 @@ class LoaderThread(QThread):
                             f" | Supplier: {sup or '(empty)'}"
                         )
                     ok = execute_row_for_loader(
-                        self.sender, row_dict, self._is_stop_requested,
-                        actions=actions)
+                        self.sender, row_dict, self._is_stop_requested)
                     row_had_activity = True
                     if not ok:
                         if not self._is_stop_requested():

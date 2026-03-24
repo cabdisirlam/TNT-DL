@@ -40,8 +40,7 @@ LOAD_MODES = [
     ("Per Cell", "per_cell"),
     ("Per Row", "per_row"),
     ("Per Row (Fast Send)", "fast_send"),
-    ("Imprest 1  (Shift+PgDn)", "imprest_surrender"),
-    ("Imprest 2  (Alt+2/Alt+D)", "imprest_surrender_2"),
+    ("Imprest  (Alt+2 / Alt+D)", "imprest_surrender"),
 ]
 
 
@@ -152,9 +151,6 @@ class LoadSettingsDialog(QDialog):
         self.radio_imprest = QRadioButton(LOAD_MODES[3][0])
         mg.addWidget(self.radio_imprest)
 
-        self.radio_imprest2 = QRadioButton(LOAD_MODES[4][0])
-        mg.addWidget(self.radio_imprest2)
-
         # End of row action (indent under Per Row)
         eor_row = QHBoxLayout()
         eor_row.addSpacing(22)
@@ -186,7 +182,6 @@ class LoadSettingsDialog(QDialog):
         self.radio_per_row.toggled.connect(self._update_mode_controls)
         self.radio_fast_send.toggled.connect(self._update_mode_controls)
         self.radio_imprest.toggled.connect(self._update_mode_controls)
-        self.radio_imprest2.toggled.connect(self._update_mode_controls)
         self.eor_combo.currentIndexChanged.connect(self._update_save_interval_visibility)
 
         layout.addWidget(mode_group)
@@ -331,8 +326,6 @@ class LoadSettingsDialog(QDialog):
     # Actions
     # â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     def _selected_load_mode(self) -> str:
-        if self.radio_imprest2.isChecked():
-            return "imprest_surrender_2"
         if self.radio_imprest.isChecked():
             return "imprest_surrender"
         if self.radio_fast_send.isChecked():
@@ -347,7 +340,7 @@ class LoadSettingsDialog(QDialog):
         # End-of-row action only matters in Per Row / Fast Send (not imprest, not per cell)
         self.eor_combo.setEnabled(is_form_mode)
 
-        if self.radio_imprest.isChecked() or self.radio_imprest2.isChecked():
+        if self.radio_imprest.isChecked():
             # Imprest: template handles its own save (Ctrl+S per row)
             self.eor_combo.setCurrentIndex(0)
             self.cell_delay_input.setText("0.20")

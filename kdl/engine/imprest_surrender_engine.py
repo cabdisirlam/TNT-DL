@@ -80,115 +80,26 @@ COLUMN_SAMPLE = {
 _T       = "{Tab}"
 _BS      = "\\{BACKSPACE}"
 _ENTER   = "\\{ENTER}"
-_PGDN    = "\\+{PGDN}"
-_ALT2ESC = "\\%2\\{ESC}"   # Imprest 2: Alt+2 + Esc  (Lines navigation)
-_ALTD    = "\\%d"           # Imprest 2: Alt+D        (Distributions navigation)
+_ALT2ESC = "\\%2\\{ESC}"   # Alt+2 + Esc  → Lines block
+_ALTD    = "\\%d"           # Alt+D        → Distributions block
+_CTRLS   = "\\^s"           # Ctrl+S       → save
+_CTRLF4  = "\\^{F4}"        # Ctrl+F4      → clear record
+_ALTKEY  = "\\%"            # Alt alone    → activate menu
+_DOWN    = "\\{DOWN}"       # Down arrow
+_SHTAB   = "\\+{TAB}"       # Shift+Tab
 
-# ── Imprest 1: 74-cell DataLoad grid row ──────────────────────────────────────
-# Navigation: \+{PGDN} (Shift+PageDown) for both Lines and Distributions blocks.
-# Delays: \d500 after each \+{PGDN} (2 delays = 1000 ms total per invoice).
+# ── Imprest: 81-cell DataLoad grid row ────────────────────────────────────────
+# Navigation: \%2\{ESC} (Alt+2+Esc) → Lines,  \%d (Alt+D) → Distributions.
+# Post-save: \^{F4} + Alt + 4×Down + Enter + 3×Shift+Tab → ready for next row.
 # REQUIRES: "Use Alternate Method for processing Macros" ticked in DL settings.
 def build_keystroke_row(row: dict) -> list:
     """
-    Convert one invoice row-dict (11 fields) into a 74-element list
-    ready to be written into a DataLoad-style grid row.
-    Fixed cells contain keystroke strings; data cells contain field values.
-    Two \\d500 delay cells (C58, C64) follow each \\+{PGDN} for stability.
+    Convert one invoice row-dict into an 81-cell DataLoad grid row.
+    Matches the full working macro exactly:
+      General fields → Alt+2+Esc (Lines) → Tab×2 → Amount
+      → Alt+D (Distributions) → Tab×2 → Amount → GL_Date → Account
+      → Ctrl+S → Ctrl+F4 → Alt → Down×4 → Enter → Shift+Tab×3
     """
-    sup   = row.get("Supplier_Num", "")
-    idate = row.get("Invoice_Date", "")
-    inum  = row.get("Invoice_Num", "")
-    amt   = row.get("Invoice_Amount", "")
-    desc  = row.get("Description", "")
-    pmeth = row.get("Payment_Method", "")
-    gldt  = row.get("GL_Date", "")
-    auth  = row.get("Auth_Ref_No", "")
-    admc  = row.get("Administrative_Code", "")
-    dist  = row.get("Distribution_Account", "")
-
-    return [
-        _T,          # C1
-        _T,          # C2
-        _BS,         # C3  \{BACKSPACE} — clear pre-filled field
-        _T,          # C4
-        "Standard",  # C5  Invoice Type (fixed)
-        _T,          # C6
-        _BS,         # C7  \{BACKSPACE} — clear pre-filled field
-        _T,          # C8
-        _BS,         # C9  \{BACKSPACE} — clear pre-filled field
-        _T,          # C10
-        sup,         # C11 Supplier_Num
-        _T,          # C12
-        "Provisional", # C13 Inv Type (fixed)
-        _T,          # C14
-        idate,       # C15 Invoice_Date
-        _T,          # C16
-        inum,        # C17 Invoice_Num
-        _T,          # C18
-        _T,          # C19
-        amt,         # C20 Invoice_Amount
-        _T,          # C21
-        _T,          # C22
-        _T,          # C23
-        _T,          # C24
-        _T,          # C25
-        _T,          # C26
-        _T,          # C27
-        desc,        # C28 Description
-        _T,          # C29
-        _T,          # C30
-        _T,          # C31
-        "IMMEDIATE", # C32 Pay Terms (fixed)
-        _T,          # C33
-        pmeth,       # C34 Payment_Method
-        _T,          # C35
-        _T,          # C36
-        _T,          # C37
-        _T,          # C38
-        _T,          # C39
-        _T,          # C40
-        _T,          # C41
-        _T,          # C42
-        _T,          # C43
-        _T,          # C44
-        _T,          # C45
-        _T,          # C46
-        _T,          # C47
-        _T,          # C48
-        _T,          # C49
-        _T,          # C50
-        _T,          # C51
-        auth,        # C52 Auth_Ref_No
-        _T,          # C53
-        admc,        # C54 Administrative_Code
-        _T,          # C55
-        _ENTER,      # C56 \{ENTER} — close modal / confirm
-        _PGDN,       # C57 \+{PGDN} — Next Block: General → Lines
-        "\\d500",    # C58 500 ms delay — let Lines block settle
-        _T,          # C59
-        _T,          # C60
-        amt,         # C61 Line_Amount (= Invoice_Amount)
-        _T,          # C62
-        _PGDN,       # C63 \+{PGDN} — Next Block: Lines → Distributions
-        "\\d500",    # C64 500 ms delay — let Distributions block settle
-        _T,          # C65
-        _T,          # C66
-        amt,         # C67 Dist_Amount (= Invoice_Amount)
-        _T,          # C68
-        gldt,        # C69 GL_Date (distribution)
-        _T,          # C70
-        dist,        # C71 Distribution_Account
-        _T,          # C72
-        "\\*s",      # C73 \*s — Ctrl+S save
-        "*dn",       # C74 *dn — move down to next row
-    ]
-
-
-# ── Imprest 2: 73-cell DataLoad grid row ──────────────────────────────────────
-# Navigation: \%2\{ESC} (Alt+2+Esc) → Lines,  \%d (Alt+D) → Distributions.
-# Delay: \d500 after Lines only — Distributions needs no delay (saves 500 ms).
-# REQUIRES: "Use Alternate Method for processing Macros" ticked in DL settings.
-def build_keystroke_row_2(row: dict) -> list:
     sup   = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
     inum  = row.get("Invoice_Num", "")
@@ -203,24 +114,24 @@ def build_keystroke_row_2(row: dict) -> list:
     return [
         _T,           # C1
         _T,           # C2
-        _BS,          # C3  clear pre-filled field
+        _BS,          # C3   clear pre-filled field
         _T,           # C4
-        "Standard",   # C5  Invoice Type
+        "Standard",   # C5   Invoice Type (fixed)
         _T,           # C6
-        _BS,          # C7  clear pre-filled field
+        _BS,          # C7   clear pre-filled field
         _T,           # C8
-        _BS,          # C9  clear pre-filled field
+        _BS,          # C9   clear pre-filled field
         _T,           # C10
-        sup,          # C11 Supplier_Num
+        sup,          # C11  Supplier_Num
         _T,           # C12
-        "Provisional",# C13 Inv Type
+        "Provisional",# C13  Invoice batch type (fixed)
         _T,           # C14
-        idate,        # C15 Invoice_Date
+        idate,        # C15  Invoice_Date
         _T,           # C16
-        inum,         # C17 Invoice_Num
+        inum,         # C17  Invoice_Num
         _T,           # C18
         _T,           # C19
-        amt,          # C20 Invoice_Amount
+        amt,          # C20  Invoice_Amount
         _T,           # C21
         _T,           # C22
         _T,           # C23
@@ -228,13 +139,13 @@ def build_keystroke_row_2(row: dict) -> list:
         _T,           # C25
         _T,           # C26
         _T,           # C27
-        desc,         # C28 Description
+        desc,         # C28  Description
         _T,           # C29
         _T,           # C30
         _T,           # C31
-        "IMMEDIATE",  # C32 Pay Terms
+        "IMMEDIATE",  # C32  Pay Terms (fixed)
         _T,           # C33
-        pmeth,        # C34 Payment_Method
+        pmeth,        # C34  Payment_Method
         _T,           # C35
         _T,           # C36
         _T,           # C37
@@ -252,28 +163,36 @@ def build_keystroke_row_2(row: dict) -> list:
         _T,           # C49
         _T,           # C50
         _T,           # C51
-        auth,         # C52 Auth_Ref_No
+        auth,         # C52  Auth_Ref_No
         _T,           # C53
-        admc,         # C54 Administrative_Code
+        admc,         # C54  Administrative_Code
         _T,           # C55
-        _ENTER,       # C56 \{ENTER} — close modal / confirm
-        _ALT2ESC,     # C57 \%2\{ESC} — Alt+2+Esc → Lines block
-        "\\d500",     # C58 500 ms delay — let Lines block settle
+        _ENTER,       # C56  \{ENTER} — close modal
+        _ALT2ESC,     # C57  \%2\{ESC} — Alt+2+Esc → Lines block
+        _T,           # C58
         _T,           # C59
-        _T,           # C60
-        amt,          # C61 Line_Amount
-        _T,           # C62
-        _ALTD,        # C63 \%d — Alt+D → Distributions block (no delay needed)
+        amt,          # C60  Line_Amount (= Invoice_Amount)
+        _T,           # C61
+        _ALTD,        # C62  \%d — Alt+D → Distributions block
+        _T,           # C63
         _T,           # C64
-        _T,           # C65
-        amt,          # C66 Dist_Amount
-        _T,           # C67
-        gldt,         # C68 GL_Date
-        _T,           # C69
-        dist,         # C70 Distribution_Account
-        _T,           # C71
-        "\\*s",       # C72 \*s — Ctrl+S save
-        "*dn",        # C73 *dn — move down to next row
+        amt,          # C65  Dist_Amount (= Invoice_Amount)
+        _T,           # C66
+        gldt,         # C67  GL_Date
+        _T,           # C68
+        dist,         # C69  Distribution_Account
+        _T,           # C70
+        _CTRLS,       # C71  \^s — Ctrl+S save
+        _CTRLF4,      # C72  \^{F4} — clear record
+        _ALTKEY,      # C73  \% — Alt → activate menu
+        _DOWN,        # C74  \{DOWN}
+        _DOWN,        # C75  \{DOWN}
+        _DOWN,        # C76  \{DOWN}
+        _DOWN,        # C77  \{DOWN} — navigate to menu item
+        _ENTER,       # C78  \{ENTER} — select menu item
+        _SHTAB,       # C79  \+{TAB}
+        _SHTAB,       # C80  \+{TAB}
+        _SHTAB,       # C81  \+{TAB} — ready for next invoice
     ]
 
 
@@ -286,21 +205,24 @@ def build_keystroke_row_2(row: dict) -> list:
 #   ("field",  col_name)     inject field value via SendInput unicode
 #   ("text",   value)        type a fixed literal string via SendInput unicode
 
-# Imprest 1 — mirrors build_keystroke_row exactly (Shift+PageDown navigation).
-# Delays: 500 ms after each Shift+PageDown = 1000 ms total per invoice.
+# Single imprest template — mirrors build_keystroke_row exactly.
+# Navigation: Alt+2+Esc → Lines,  Alt+D → Distributions.
+# Post-save: Ctrl+F4 + Alt + Down×4 + Enter + Shift+Tab×3 → ready for next.
+# 500 ms delay after Alt+2+Esc for Lines block to open.
 TEMPLATE_ACTIONS = (
+    # ── General block ──────────────────────────────────────────────────────
     ("tab",    2),                           # C1–C2
-    ("key",    "backspace"),                 # C3
+    ("key",    "backspace"),                 # C3   clear pre-filled
     ("tab",    1),                           # C4
-    ("text",   "Standard"),                  # C5  Invoice Type
+    ("text",   "Standard"),                  # C5   Invoice Type
     ("tab",    1),                           # C6
-    ("key",    "backspace"),                 # C7
+    ("key",    "backspace"),                 # C7   clear pre-filled
     ("tab",    1),                           # C8
-    ("key",    "backspace"),                 # C9
+    ("key",    "backspace"),                 # C9   clear pre-filled
     ("tab",    1),                           # C10
     ("field",  "Supplier_Num"),              # C11
     ("tab",    1),                           # C12
-    ("text",   "Provisional"),               # C13 Inv Type
+    ("text",   "Provisional"),               # C13  Invoice batch type
     ("tab",    1),                           # C14
     ("field",  "Invoice_Date"),              # C15
     ("tab",    1),                           # C16
@@ -310,7 +232,7 @@ TEMPLATE_ACTIONS = (
     ("tab",    7),                           # C21–C27
     ("field",  "Description"),               # C28
     ("tab",    3),                           # C29–C31
-    ("text",   "IMMEDIATE"),                 # C32 Pay Terms
+    ("text",   "IMMEDIATE"),                 # C32  Pay Terms
     ("tab",    1),                           # C33
     ("field",  "Payment_Method"),            # C34
     ("tab",    17),                          # C35–C51
@@ -318,72 +240,35 @@ TEMPLATE_ACTIONS = (
     ("tab",    1),                           # C53
     ("field",  "Administrative_Code"),       # C54
     ("tab",    1),                           # C55
-    ("key",    "enter"),                     # C56 close modal
-    ("hotkey", ["shift"], "pagedown"),       # C57 General → Lines
-    ("delay",  500),                         # C58
-    ("tab",    2),                           # C59–C60
-    ("field",  "Invoice_Amount"),            # C61 line amount
-    ("tab",    1),                           # C62
-    ("hotkey", ["shift"], "pagedown"),       # C63 Lines → Distributions
-    ("delay",  500),                         # C64
-    ("tab",    2),                           # C65–C66
-    ("field",  "Invoice_Amount"),            # C67 dist amount
-    ("tab",    1),                           # C68
-    ("field",  "GL_Date"),                   # C69
-    ("tab",    1),                           # C70
-    ("field",  "Distribution_Account"),      # C71
-    ("tab",    1),                           # C72
-    ("hotkey", ["ctrl"], "s"),               # C73
-)
-
-# Imprest 2 — mirrors build_keystroke_row_2 (Alt+2+Esc / Alt+D navigation).
-# Delay: 500 ms after Lines only — Distributions needs no delay (500 ms saved).
-TEMPLATE_ACTIONS_2 = (
-    ("tab",    2),                           # C1–C2
-    ("key",    "backspace"),                 # C3
-    ("tab",    1),                           # C4
-    ("text",   "Standard"),                  # C5  Invoice Type
-    ("tab",    1),                           # C6
-    ("key",    "backspace"),                 # C7
-    ("tab",    1),                           # C8
-    ("key",    "backspace"),                 # C9
-    ("tab",    1),                           # C10
-    ("field",  "Supplier_Num"),              # C11
-    ("tab",    1),                           # C12
-    ("text",   "Provisional"),               # C13 Inv Type
-    ("tab",    1),                           # C14
-    ("field",  "Invoice_Date"),              # C15
-    ("tab",    1),                           # C16
-    ("field",  "Invoice_Num"),               # C17
-    ("tab",    2),                           # C18–C19
-    ("field",  "Invoice_Amount"),            # C20
-    ("tab",    7),                           # C21–C27
-    ("field",  "Description"),               # C28
-    ("tab",    3),                           # C29–C31
-    ("text",   "IMMEDIATE"),                 # C32 Pay Terms
-    ("tab",    1),                           # C33
-    ("field",  "Payment_Method"),            # C34
-    ("tab",    17),                          # C35–C51
-    ("field",  "Auth_Ref_No"),               # C52
-    ("tab",    1),                           # C53
-    ("field",  "Administrative_Code"),       # C54
-    ("tab",    1),                           # C55
-    ("key",    "enter"),                     # C56 close modal
-    ("hotkey", ["alt"], "2"),                # C57a Alt+2  → Lines block
+    ("key",    "enter"),                     # C56  close modal
+    # ── Lines block (Alt+2+Esc) ────────────────────────────────────────────
+    ("hotkey", ["alt"], "2"),                # C57a Alt+2 → Lines
     ("key",    "escape"),                    # C57b Esc
-    ("delay",  500),                         # C58
-    ("tab",    2),                           # C59–C60
-    ("field",  "Invoice_Amount"),            # C61 line amount
-    ("tab",    1),                           # C62
-    ("hotkey", ["alt"], "d"),                # C63 Alt+D → Distributions (no delay)
-    ("tab",    2),                           # C64–C65
-    ("field",  "Invoice_Amount"),            # C66 dist amount
-    ("tab",    1),                           # C67
-    ("field",  "GL_Date"),                   # C68
-    ("tab",    1),                           # C69
-    ("field",  "Distribution_Account"),      # C70
-    ("tab",    1),                           # C71
-    ("hotkey", ["ctrl"], "s"),               # C72
+    ("delay",  500),                         # wait for Lines block to open
+    ("tab",    2),                           # C58–C59
+    ("field",  "Invoice_Amount"),            # C60  Line Amount
+    ("tab",    1),                           # C61
+    # ── Distributions block (Alt+D) ────────────────────────────────────────
+    ("hotkey", ["alt"], "d"),                # C62  Alt+D → Distributions
+    ("tab",    2),                           # C63–C64
+    ("field",  "Invoice_Amount"),            # C65  Dist Amount
+    ("tab",    1),                           # C66
+    ("field",  "GL_Date"),                   # C67
+    ("tab",    1),                           # C68
+    ("field",  "Distribution_Account"),      # C69
+    ("tab",    1),                           # C70
+    # ── Save and advance to next invoice ──────────────────────────────────
+    ("hotkey", ["ctrl"], "s"),               # C71  Ctrl+S save
+    ("hotkey", ["ctrl"], "f4"),              # C72  Ctrl+F4 clear record
+    ("key",    "alt"),                       # C73  Alt → activate menu
+    ("key",    "down"),                      # C74  ↓
+    ("key",    "down"),                      # C75  ↓
+    ("key",    "down"),                      # C76  ↓
+    ("key",    "down"),                      # C77  ↓ (4th menu item)
+    ("key",    "enter"),                     # C78  select menu item
+    ("hotkey", ["shift"], "tab"),            # C79  ⇧Tab
+    ("hotkey", ["shift"], "tab"),            # C80  ⇧Tab
+    ("hotkey", ["shift"], "tab"),            # C81  ⇧Tab → ready for next invoice
 )
 
 
@@ -535,6 +420,262 @@ def export_template(filepath: str) -> str:
         return f"Export failed: {exc}"
 
 
+# ── IFMIS export importer ─────────────────────────────────────────────────────
+
+# Columns that cannot be auto-mapped from the IFMIS export — user must fill them.
+IFMIS_BLANK_COLS = {"Auth_Ref_No", "Administrative_Code", "Distribution_Account"}
+
+# IFMIS header name fragment → our field name (case-insensitive contains match)
+_IFMIS_COL_MAP = {
+    "supplier num":    "Supplier_Num",
+    "invoice date":    "Invoice_Date",
+    "invoice num":     "Invoice_Num",
+    "invoice amount":  "Invoice_Amount",
+    "description":     "Description",
+    "payment method":  "Payment_Method",
+    "gl date":         "GL_Date",
+    "terms date":      "Terms_Date",
+}
+
+
+def _fmt_ifmis_date(v) -> str:
+    """Convert an IFMIS date value (datetime or 'YYYY-MM-DD …') to DD-MMM-YYYY."""
+    if v is None:
+        return ""
+    from datetime import datetime as _dt
+    if isinstance(v, _dt):
+        return v.strftime("%d-%b-%Y").upper()
+    s = str(v).strip()
+    if not s or s.lower() == "none":
+        return ""
+    # "2022-06-08 00:00:00" or "2022-06-08"
+    try:
+        return _dt.strptime(s[:10], "%Y-%m-%d").strftime("%d-%b-%Y").upper()
+    except ValueError:
+        return s
+
+
+def import_ifmis_export(filepath: str) -> tuple:
+    """
+    Read an IFMIS-exported AP invoice Excel and map to our 11-column format.
+    Only rows where the 'Type' column equals 'Prepayment' are imported.
+
+    Returns (rows: list[dict], skipped: int, error: str).
+      rows    — list of dicts keyed by COLUMNS; blank fields = "".
+      skipped — number of non-Prepayment rows ignored.
+      error   — non-empty string if the file could not be read.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        return [], 0, "openpyxl is not installed."
+
+    try:
+        wb = openpyxl.load_workbook(filepath, data_only=True)
+    except Exception as exc:
+        return [], 0, f"Cannot open file: {exc}"
+
+    ws = wb.active
+
+    # ── Build header index (0-based) ──────────────────────────────────────────
+    headers = [str(ws.cell(1, c).value or "").strip().lower()
+               for c in range(1, ws.max_column + 1)]
+
+    def _find(fragment):
+        for i, h in enumerate(headers):
+            if fragment in h:
+                return i
+        return -1
+
+    col_type = _find("type")
+    field_cols = {field: _find(frag) for frag, field in _IFMIS_COL_MAP.items()}
+
+    def _val(row_num, col_idx):
+        if col_idx < 0:
+            return ""
+        v = ws.cell(row_num, col_idx + 1).value
+        return "" if v is None else str(v).strip()
+
+    def _date_val(row_num, col_idx):
+        if col_idx < 0:
+            return ""
+        return _fmt_ifmis_date(ws.cell(row_num, col_idx + 1).value)
+
+    def _amount_val(row_num, col_idx):
+        if col_idx < 0:
+            return ""
+        v = ws.cell(row_num, col_idx + 1).value
+        if v is None:
+            return ""
+        try:
+            f = float(v)
+            return f"{f:,.2f}" if f != int(f) else f"{int(f):,}"
+        except (TypeError, ValueError):
+            return str(v).strip()
+
+    rows = []
+    skipped = 0
+
+    for r in range(2, ws.max_row + 1):
+        # Filter: Prepayment only
+        if col_type >= 0:
+            t = _val(r, col_type).lower()
+            if t and t != "prepayment":
+                skipped += 1
+                continue
+
+        supplier = _val(r, field_cols.get("Supplier_Num", -1))
+        if not supplier:
+            continue   # skip blank rows
+
+        pmeth = _val(r, field_cols.get("Payment_Method", -1)).upper()
+        if pmeth in ("ELECTRONICS",):
+            pmeth = "ELECTRONIC"
+
+        amt_col = field_cols.get("Invoice_Amount", -1)
+
+        row_dict = {
+            "Supplier_Num":         supplier,
+            "Invoice_Date":         _date_val(r, field_cols.get("Invoice_Date", -1)),
+            "Invoice_Num":          _val(r,  field_cols.get("Invoice_Num", -1)),
+            "Invoice_Amount":       _amount_val(r, amt_col),
+            "Description":          _val(r,  field_cols.get("Description", -1)),
+            "Payment_Method":       pmeth,
+            "Terms_Date":           _date_val(r, field_cols.get("Terms_Date", -1)),
+            "GL_Date":              _date_val(r, field_cols.get("GL_Date", -1)),
+            "Auth_Ref_No":          "",   # must be filled by user
+            "Administrative_Code":  "",   # must be filled by user
+            "Distribution_Account": "",   # must be filled by user
+        }
+        rows.append(row_dict)
+
+    return rows, skipped, ""
+
+
+def export_prefilled_template(filepath: str, rows: list) -> str:
+    """
+    Export the 11-column template pre-filled with `rows` data.
+    Blank columns (Auth_Ref_No, Administrative_Code, Distribution_Account)
+    are highlighted orange to remind the user to fill them in.
+    Returns an error string, or "" on success.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return "openpyxl is not installed."
+
+    try:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Data_Entry"
+
+        ncols = len(COLUMNS)
+
+        def _side(style="thin", color="BFBFBF"):
+            return Side(style=style, color=color)
+
+        def _border():
+            s = _side()
+            return Border(left=s, right=s, top=s, bottom=s)
+
+        def _fill(color):
+            return PatternFill(fill_type="solid", fgColor=color)
+
+        BLUE      = "0070C0"
+        WHITE_TXT = "FFFFFF"
+        HINT_BG   = "D6E4F0"
+        SAMPLE_BG = "EAF4FB"
+        ROW_ODD   = "F2F2F2"
+        ROW_EVEN  = "FFFFFF"
+        NEED_FILL = "FFD966"   # amber — user must fill
+
+        # Indices (0-based) of the blank/must-fill columns
+        blank_ci = {ci for ci, col in enumerate(COLUMNS, start=1)
+                    if col in IFMIS_BLANK_COLS}
+
+        # ── Row 1: title ───────────────────────────────────────────────────────
+        ws.merge_cells(start_row=1, start_column=1,
+                       end_row=1,   end_column=ncols)
+        title = ws.cell(row=1, column=1,
+                        value="IFMIS AP Invoice Loader  —  NT_DL  |  "
+                              "Fill AMBER cells then save. One row = one invoice.")
+        title.font      = Font(bold=True, size=11, color=WHITE_TXT)
+        title.fill      = _fill(BLUE)
+        title.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 18
+
+        # ── Row 2: headers ─────────────────────────────────────────────────────
+        hdr_border_s = _side("medium", "FFFFFF")
+        hdr_border   = Border(left=hdr_border_s, right=hdr_border_s,
+                              top=hdr_border_s, bottom=hdr_border_s)
+        for ci, col in enumerate(COLUMNS, start=1):
+            cell = ws.cell(row=2, column=ci, value=col.replace("_", " "))
+            cell.fill      = _fill(BLUE)
+            cell.font      = Font(bold=True, color=WHITE_TXT, size=10)
+            cell.alignment = Alignment(horizontal="center", vertical="center",
+                                       wrap_text=True)
+            cell.border    = hdr_border
+        ws.row_dimensions[2].height = 28
+
+        # ── Row 3: hints ───────────────────────────────────────────────────────
+        for ci, col in enumerate(COLUMNS, start=1):
+            bg = NEED_FILL if ci in blank_ci else HINT_BG
+            cell = ws.cell(row=3, column=ci, value=COLUMN_HINTS.get(col, ""))
+            cell.fill      = _fill(bg)
+            cell.font      = Font(italic=True, color="1F5C8B", size=9)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border    = _border()
+        ws.row_dimensions[3].height = 15
+
+        # ── Row 4: sample ──────────────────────────────────────────────────────
+        for ci, col in enumerate(COLUMNS, start=1):
+            cell = ws.cell(row=4, column=ci, value=COLUMN_SAMPLE.get(col, ""))
+            cell.fill      = _fill(SAMPLE_BG)
+            cell.font      = Font(italic=True, color="1F5C8B", size=9)
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            cell.border    = _border()
+        ws.row_dimensions[4].height = 15
+
+        # ── Rows 5+: pre-filled data ───────────────────────────────────────────
+        for ri, row_dict in enumerate(rows, start=5):
+            bg = ROW_ODD if ri % 2 == 1 else ROW_EVEN
+            for ci, col in enumerate(COLUMNS, start=1):
+                val = row_dict.get(col, "")
+                cell_bg = NEED_FILL if (ci in blank_ci and not val) else bg
+                cell = ws.cell(row=ri, column=ci, value=val if val else None)
+                cell.fill      = _fill(cell_bg)
+                cell.font      = Font(size=10)
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+                cell.border    = _border()
+            ws.row_dimensions[ri].height = 15
+
+        # ── Blank rows after data (up to row 104) ─────────────────────────────
+        last_data = 4 + len(rows)
+        for ri in range(last_data + 1, max(last_data + 2, 105)):
+            bg = ROW_ODD if ri % 2 == 1 else ROW_EVEN
+            for ci in range(1, ncols + 1):
+                cell_bg = NEED_FILL if ci in blank_ci else bg
+                cell = ws.cell(row=ri, column=ci)
+                cell.fill      = _fill(cell_bg)
+                cell.font      = Font(size=10)
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+                cell.border    = _border()
+            ws.row_dimensions[ri].height = 15
+
+        # ── Column widths ─────────────────────────────────────────────────────
+        col_widths = [14, 14, 14, 14, 30, 16, 14, 14, 12, 18, 68]
+        for ci, w in enumerate(col_widths, start=1):
+            ws.column_dimensions[get_column_letter(ci)].width = w
+
+        ws.freeze_panes = "A5"
+        wb.save(filepath)
+        return ""
+    except Exception as exc:
+        return f"Export failed: {exc}"
+
+
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 def build_row_summary(row: dict) -> str:
@@ -549,12 +690,11 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
                            actions=None) -> bool:
     """
     Execute the AP invoice template for one row using an existing DataSender.
-    Used by the main LoaderThread when load_mode is 'imprest_surrender' or
-    'imprest_surrender_2'.
+    Used by the main LoaderThread when load_mode is 'imprest_surrender'.
       sender            – a configured DataSender instance (use_fast_send=True)
       row_dict          – {col_name: value} for the 11 AP invoice columns
       is_stop_requested – callable() -> bool
-      actions           – TEMPLATE_ACTIONS or TEMPLATE_ACTIONS_2 (default: TEMPLATE_ACTIONS)
+      actions           – action tuple sequence (default: TEMPLATE_ACTIONS)
     """
     if actions is None:
         actions = TEMPLATE_ACTIONS

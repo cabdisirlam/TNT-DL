@@ -54,21 +54,33 @@ class ImprestSurrenderDialog(QDialog):
         layout.setSpacing(6)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        # ── Step 1: Export template ──
-        tpl_group = QGroupBox("Step 1 — Download Sample Template")
+        # ── Step 1: Prepare template ──
+        tpl_group = QGroupBox("Step 1 — Prepare Invoice Template")
         tg = QVBoxLayout(tpl_group)
         tg.setSpacing(4)
 
         tpl_desc = QLabel(
-            "Export a blank Excel template (Data_Entry sheet). "
-            "Fill in the yellow cells — one row per invoice.")
+            "Option A: Export a blank template and fill it manually.\n"
+            "Option B: Import your IFMIS export — auto-maps known fields "
+            "and highlights the 3 fields you must fill (Auth Ref, Admin Code, Distribution Account).")
         tpl_desc.setWordWrap(True)
         tg.addWidget(tpl_desc)
 
-        self._export_btn = QPushButton("Export Sample Template…")
+        btn_row1 = QHBoxLayout()
+        self._export_btn = QPushButton("Export Blank Template…")
         self._export_btn.setFixedHeight(26)
         self._export_btn.clicked.connect(self._export_template)
-        tg.addWidget(self._export_btn)
+        btn_row1.addWidget(self._export_btn)
+
+        self._import_ifmis_btn = QPushButton("Import from IFMIS Export…")
+        self._import_ifmis_btn.setFixedHeight(26)
+        self._import_ifmis_btn.clicked.connect(self._import_ifmis)
+        btn_row1.addWidget(self._import_ifmis_btn)
+        tg.addLayout(btn_row1)
+
+        self._import_status = QLabel("")
+        self._import_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+        tg.addWidget(self._import_status)
         layout.addWidget(tpl_group)
 
         # ── Step 2: Upload filled sheet ──
@@ -150,6 +162,56 @@ class ImprestSurrenderDialog(QDialog):
         else:
             self._upload_status.setText(f"Template saved: {os.path.basename(path)}")
             self._upload_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+
+    # ── Import from IFMIS export ──────────────────────────────────────────────
+
+    def _import_ifmis(self):
+        from kdl.engine.imprest_surrender_engine import (
+            import_ifmis_export, export_prefilled_template, IFMIS_BLANK_COLS)
+
+        # 1. Pick IFMIS source file
+        src, _ = QFileDialog.getOpenFileName(
+            self, "Open IFMIS Export",
+            _default_dir(),
+            "Excel Files (*.xlsx *.xls)")
+        if not src:
+            return
+
+        self._import_status.setText("Reading IFMIS export…")
+        self._import_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+
+        rows, skipped, err = import_ifmis_export(src)
+        if err:
+            self._import_status.setText(f"Error: {err}")
+            self._import_status.setStyleSheet("color: #d9534f; font-size: 12px;")
+            return
+
+        if not rows:
+            self._import_status.setText(
+                "No Prepayment rows found in the IFMIS export.")
+            self._import_status.setStyleSheet("color: #e8a900; font-size: 12px;")
+            return
+
+        # 2. Pick destination for pre-filled template
+        dest, _ = QFileDialog.getSaveFileName(
+            self, "Save Pre-filled Template",
+            os.path.join(_default_dir(), "AP_Imprest_Surrender_Prefilled.xlsx"),
+            "Excel Files (*.xlsx)")
+        if not dest:
+            return
+
+        err = export_prefilled_template(dest, rows)
+        if err:
+            self._import_status.setText(f"Export error: {err}")
+            self._import_status.setStyleSheet("color: #d9534f; font-size: 12px;")
+            return
+
+        blank_names = ", ".join(sorted(IFMIS_BLANK_COLS))
+        msg = (f"{len(rows)} rows imported"
+               f"{f', {skipped} non-Prepayment skipped' if skipped else ''}.\n"
+               f"Template saved. Fill the AMBER columns ({blank_names}) then upload below.")
+        self._import_status.setText(msg)
+        self._import_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
 
     # ── Browse / load rows ────────────────────────────────────────────────────
 

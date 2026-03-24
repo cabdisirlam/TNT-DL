@@ -51,7 +51,7 @@ COMMAND_GROUPS = [
 ]
 
 LOAD_DEFAULTS_VERSION = 6
-VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send", "imprest_surrender", "imprest_surrender_2"}
+VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send", "imprest_surrender"}
 TABLE_FORMAT_HEADERS = [
     "Line",
     "Type",
@@ -433,7 +433,7 @@ class MainWindow(QMainWindow):
             self._default_load_mode = saved_mode
         else:
             self._default_load_mode = "per_cell"
-        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_surrender_2")
+        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender")
 
         self._default_validate_before_load = bool(
             load_defaults.get("validate_before_load", self._default_validate_before_load)
@@ -1536,7 +1536,7 @@ class MainWindow(QMainWindow):
         chosen_mode = mode_combo.currentData() or "per_cell"
         self._default_wait_hourglass = wait_check.isChecked()
         self._default_load_mode = chosen_mode if chosen_mode in VALID_LOAD_MODES else "per_cell"
-        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_surrender_2")
+        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender")
         self._default_validate_before_load = validate_check.isChecked()
         self._compact_mode_enabled = compact_check.isChecked()
         self._default_end_of_row_action = eor_combo.currentData()
@@ -1934,9 +1934,7 @@ class MainWindow(QMainWindow):
         dialog.cell_delay_input.setText(f"{self._default_speed_delay:g}")
         dialog.window_delay_input.setText(f"{self._default_window_delay:g}")
         dialog.hourglass_check.setChecked(self._default_wait_hourglass)
-        if self._default_load_mode == "imprest_surrender_2":
-            dialog.radio_imprest2.setChecked(True)
-        elif self._default_load_mode == "imprest_surrender":
+        if self._default_load_mode == "imprest_surrender":
             dialog.radio_imprest.setChecked(True)
         elif self._default_load_mode == "per_row":
             dialog.radio_per_row.setChecked(True)
@@ -2092,7 +2090,7 @@ class MainWindow(QMainWindow):
         if chosen_mode not in VALID_LOAD_MODES:
             chosen_mode = "per_cell"
         self._default_load_mode = chosen_mode
-        self._default_form_mode = chosen_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_surrender_2")
+        self._default_form_mode = chosen_mode in ("per_row", "fast_send", "imprest_surrender")
         self._default_validate_before_load = settings.get(
             "validate_before_load", self._default_validate_before_load
         )
@@ -2217,12 +2215,12 @@ class MainWindow(QMainWindow):
             key_columns=list(self.spreadsheet.key_columns),
             selected_columns=list(selected_cols) if selected_cols else None,
             delay_columns=list(delay_cols),
-            form_mode=load_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_surrender_2"),
+            form_mode=load_mode in ("per_row", "fast_send", "imprest_surrender"),
             load_mode=load_mode,
             end_of_row_action=settings.get("end_of_row_action", "none"),
             save_interval=settings.get("save_interval", 50),
             db_settings=self._db_settings,
-            use_fast_send=load_mode in ("fast_send", "imprest_surrender", "imprest_surrender_2"),
+            use_fast_send=load_mode in ("fast_send", "imprest_surrender"),
             popup_stop_on_error=settings.get("popup_behavior", "pause") == "stop",
             load_control=settings.get("load_control", False),
         )
