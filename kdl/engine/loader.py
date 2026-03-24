@@ -678,22 +678,48 @@ class LoaderThread(QThread):
                               if i < len(row_data) and row_data[i] is not None else "")
                         for i, col in enumerate(COLUMNS)
                     }
-                    # Guard: detect per-cell macro strings loaded as invoice data
                     sup = row_dict.get("Supplier_Num", "")
+                    # Auto-detect per-cell (74-column DL macro) format.
+                    # When col 0 is a DL macro string (e.g. \{TAB}) the user loaded
+                    # a per-cell keystroke row.  Extract the real invoice data from
+                    # the known fixed column positions inside that row instead.
                     if sup.startswith("\\") or (sup.startswith("{") and "}" in sup):
-                        self.loading_complete.emit(
-                            False,
-                            f"[Imprest] Row {row_idx + 1}: Supplier_Num looks like a DL macro string: {sup[:50]!r}\n"
-                            f"Your spreadsheet row has per-cell keystroke data instead of invoice data.\n"
-                            f"Use File > Export Template to get the correct imprest template."
+                        _d = [
+                            str(row_data[i]).strip()
+                            if i < len(row_data) and row_data[i] is not None else ""
+                            for i in range(len(row_data))
+                        ]
+                        # GL_Date and Distribution_Account sit just before the
+                        # \*s save marker regardless of imprest1/2 or delay cells.
+                        save_idx = next(
+                            (i for i, v in enumerate(_d) if v in ("\\*s", "*s")),
+                            len(_d)
                         )
-                        return
-                    # Debug: show target title and first field so user can verify
-                    self.progress_updated.emit(
-                        rows_processed, total_rows,
-                        f"[Imprest] Row {row_idx + 1} | Target: {self.sender.target_title!r}"
-                        f" | Supplier: {sup or '(empty)'}"
-                    )
+                        row_dict = {
+                            "Supplier_Num":         _d[10] if len(_d) > 10 else "",
+                            "Invoice_Date":         _d[14] if len(_d) > 14 else "",
+                            "Invoice_Num":          _d[16] if len(_d) > 16 else "",
+                            "Invoice_Amount":       _d[19] if len(_d) > 19 else "",
+                            "Description":          _d[27] if len(_d) > 27 else "",
+                            "Payment_Method":       _d[33] if len(_d) > 33 else "",
+                            "Terms_Date":           "",
+                            "Auth_Ref_No":          _d[51] if len(_d) > 51 else "",
+                            "Administrative_Code":  _d[53] if len(_d) > 53 else "",
+                            "GL_Date":              _d[save_idx - 4] if save_idx >= 4 else "",
+                            "Distribution_Account": _d[save_idx - 2] if save_idx >= 2 else "",
+                        }
+                        sup = row_dict.get("Supplier_Num", "")
+                        self.progress_updated.emit(
+                            rows_processed, total_rows,
+                            f"[Imprest] Row {row_idx + 1} | per-cell fmt"
+                            f" | Supplier: {sup or '(empty)'}"
+                        )
+                    else:
+                        self.progress_updated.emit(
+                            rows_processed, total_rows,
+                            f"[Imprest] Row {row_idx + 1} | Target: {self.sender.target_title!r}"
+                            f" | Supplier: {sup or '(empty)'}"
+                        )
                     ok = execute_row_for_loader(
                         self.sender, row_dict, self._is_stop_requested,
                         actions=actions)
