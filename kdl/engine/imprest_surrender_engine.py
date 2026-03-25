@@ -593,21 +593,17 @@ def import_ifmis_export(filepath: str) -> tuple:
         if not supplier:
             continue   # skip blank rows
 
-        pmeth = _val(r, field_cols.get("Payment_Method", -1)).upper()
-        if pmeth in ("ELECTRONICS",):
-            pmeth = "ELECTRONIC"
-
         amt_col = field_cols.get("Invoice_Amount", -1)
 
         row_dict = {
             "Supplier_Num":         supplier,
-            "Invoice_Date":         _date_val(r, field_cols.get("Invoice_Date", -1)),
+            "Invoice_Date":         "",   # left blank — user fills the dates
             "Invoice_Num":          _val(r,  field_cols.get("Invoice_Num", -1)),
             "Invoice_Amount":       _amount_val(r, amt_col),
             "Description":          _val(r,  field_cols.get("Description", -1)),
-            "Payment_Method":       pmeth,
-            "Terms_Date":           _date_val(r, field_cols.get("Terms_Date", -1)),
-            "GL_Date":              _date_val(r, field_cols.get("GL_Date", -1)),
+            "Payment_Method":       "CHECK",   # always CHECK for imprest
+            "Terms_Date":           "",   # left blank — user fills the dates
+            "GL_Date":              "",   # left blank — user fills the dates
             "Auth_Ref_No":          "",   # must be filled by user
             "Administrative_Code":  "",   # must be filled by user
             "Distribution_Account": "",   # must be filled by user
