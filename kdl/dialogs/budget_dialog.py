@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -121,7 +122,7 @@ class BudgetDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("GOK IFMIS Budget Processor")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(640)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
         self._worker       = None
         self._sheet_loader = None
@@ -136,19 +137,29 @@ class BudgetDialog(QDialog):
     # ------------------------------------------------------------------
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(14)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        intro = QLabel(
+            "Choose the IFMIS budget workbook, select the sheets to process, then "
+            "review the summary before saving the output workbook."
+        )
+        intro.setObjectName("DialogIntro")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
 
         # ── Budget Excel file ──
-        file_group  = QGroupBox("Budget Excel File")
+        file_group = QGroupBox("Source Budget Workbook")
         file_layout = QHBoxLayout(file_group)
+        file_layout.setSpacing(10)
         self._file_edit = QLineEdit()
         self._file_edit.setPlaceholderText(
-            "Select the IFMIS Statement of Budget Execution file..."
+            "Choose the IFMIS Statement of Budget Execution workbook..."
         )
         self._file_edit.setReadOnly(True)
         browse_btn = QPushButton("Browse...")
-        browse_btn.setFixedWidth(90)
+        browse_btn.setMinimumWidth(112)
+        browse_btn.setMinimumHeight(38)
         browse_btn.clicked.connect(self._browse_file)
         file_layout.addWidget(self._file_edit)
         file_layout.addWidget(browse_btn)
@@ -157,14 +168,14 @@ class BudgetDialog(QDialog):
         # ── Sheet selector (multi-select, up to 3 sheets) ──
         sheet_group = QGroupBox("Sheets to Process")
         sheet_outer = QVBoxLayout(sheet_group)
-        sheet_outer.setSpacing(6)
+        sheet_outer.setSpacing(8)
 
         sel_row = QHBoxLayout()
         sel_all_btn = QPushButton("Select All")
-        sel_all_btn.setFixedWidth(90)
+        sel_all_btn.setMinimumWidth(108)
         sel_all_btn.clicked.connect(self._select_all_sheets)
-        sel_none_btn = QPushButton("Select None")
-        sel_none_btn.setFixedWidth(90)
+        sel_none_btn = QPushButton("Clear All")
+        sel_none_btn.setMinimumWidth(108)
         sel_none_btn.clicked.connect(self._select_no_sheets)
         sel_row.addWidget(sel_all_btn)
         sel_row.addWidget(sel_none_btn)
@@ -172,8 +183,8 @@ class BudgetDialog(QDialog):
         sheet_outer.addLayout(sel_row)
 
         self._sheet_check_container = QWidget()
-        self._sheet_check_layout    = QGridLayout(self._sheet_check_container)
-        self._sheet_check_layout.setSpacing(4)
+        self._sheet_check_layout = QGridLayout(self._sheet_check_container)
+        self._sheet_check_layout.setSpacing(8)
         self._sheet_check_layout.setContentsMargins(4, 2, 4, 2)
         sheet_outer.addWidget(self._sheet_check_container)
         layout.addWidget(sheet_group)
@@ -181,33 +192,37 @@ class BudgetDialog(QDialog):
         # ── Process button ──
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self._process_btn = QPushButton("  Process Budget  ")
+        self._process_btn = QPushButton("Process Workbook")
         self._process_btn.setEnabled(False)
         from kdl.config_store import get_dark_mode
+        self._process_btn.setMinimumWidth(176)
+        self._process_btn.setMinimumHeight(38)
         self._process_btn.setStyleSheet(accent_button_qss(get_dark_mode()))
         self._process_btn.clicked.connect(self._run_processing)
         btn_row.addWidget(self._process_btn)
         layout.addLayout(btn_row)
 
         # ── Result ──
-        result_group  = QGroupBox("Result")
+        result_group = QGroupBox("Processing Summary")
         result_layout = QVBoxLayout(result_group)
         self._result_text = QTextEdit()
         self._result_text.setReadOnly(True)
-        self._result_text.setFixedHeight(120)
+        self._result_text.setFixedHeight(136)
         self._result_text.setPlaceholderText("Processing result will appear here...")
         result_layout.addWidget(self._result_text)
         layout.addWidget(result_group)
 
         # ── Save + Close ──
         action_row = QHBoxLayout()
-        self._save_btn = QPushButton("Save Budget...")
+        self._save_btn = QPushButton("Save Workbook...")
+        self._save_btn.setMinimumWidth(148)
         self._save_btn.setEnabled(False)
         self._save_btn.setToolTip(
             "Save the processed budget workbook as an Excel file"
         )
         self._save_btn.clicked.connect(self._save_output)
         self._close_btn = QPushButton("Close")
+        self._close_btn.setMinimumWidth(104)
         self._close_btn.clicked.connect(self.accept)
         action_row.addWidget(self._save_btn)
         action_row.addStretch()
@@ -289,7 +304,7 @@ class BudgetDialog(QDialog):
             return
 
         self._process_btn.setEnabled(False)
-        self._process_btn.setText("Processing\u2026")
+        self._process_btn.setText("Processing...")
         self._save_btn.setEnabled(False)
         self._wb_out = None
         self._result_text.setPlainText("Processing\u2026")
@@ -303,7 +318,7 @@ class BudgetDialog(QDialog):
         self._worker = None
 
         self._process_btn.setEnabled(True)
-        self._process_btn.setText("  Process Budget  ")
+        self._process_btn.setText("Process Workbook")
 
         if worker is None:
             return
@@ -312,7 +327,7 @@ class BudgetDialog(QDialog):
             self._wb_out = worker.wb_out
             self._result_text.setPlainText(worker.message)
             self._save_btn.setEnabled(True)
-            self._result_text.append('\nClick "Save Budget..." to save the output.')
+            self._result_text.append('\nClick "Save Workbook..." to save the output workbook.')
         else:
             self._result_text.setPlainText(f"ERROR:\n{worker.message}")
             QMessageBox.critical(self, "Processing Failed", worker.message[:600])

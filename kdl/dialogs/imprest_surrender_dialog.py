@@ -1,26 +1,30 @@
 """
-Imprest Surrender AP Loader Dialog.
+Imprest Surrender AP Loader dialog.
 
 Workflow:
-  1. Import IFMIS export  →  auto-fills template  →  user fills 3 amber fields
-  2. User uploads the filled file  →  system reads invoice rows
-  3. Preview shows rows found
-  4. Click "Load into Grid"  →  rows are loaded into the NT_DL spreadsheet
-     OR "Export DL Keystrokes…"  →  save DataLoad fallback xlsx
-  5. User then presses F5 (Load), selects "Imprest Surrender" mode in
-     Load Settings, and the keystrokes are sent to IFMIS from the grid.
+1. Import the IFMIS export to create a prefilled template.
+2. Open the completed template after the remaining amber fields are filled.
+3. Review the invoice rows and either load them into the TNT DL grid or
+   export a DataLoad fallback workbook.
 """
 
 import os
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
-    QPushButton, QLineEdit, QTextEdit,
-    QFileDialog, QMessageBox,
+    QDialog,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
 )
 
-from kdl.styles import accent_button_qss, dialog_qss, TEXT_MUTED
+from kdl.styles import TEXT_MUTED, accent_button_qss, dialog_qss
 
 
 def _default_dir() -> str:
@@ -29,139 +33,162 @@ def _default_dir() -> str:
 
 
 class ImprestSurrenderDialog(QDialog):
-    """Converts a filled AP Imprest Surrender Excel template into grid rows."""
+    """Convert a completed AP Imprest Surrender workbook into grid rows."""
 
-    load_into_grid = Signal(list)   # emits list[list] — one inner list per invoice row
+    load_into_grid = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("NT_DL — Imprest Surrender AP Loader")
-        self.setMinimumWidth(500)
+        self.setWindowTitle("Imprest Surrender AP Loader")
+        self.setMinimumWidth(640)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
         from kdl.config_store import get_dark_mode
+
         self.setStyleSheet(dialog_qss(dark=get_dark_mode()))
 
-        self._rows: list = []       # list of dicts from read_invoice_rows
+        self._rows: list = []
         self._filepath: str = ""
 
         self._build_ui()
-
-    # ── UI construction ───────────────────────────────────────────────────────
+        self._fit_to_screen()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(6)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(12)
+        layout.setContentsMargins(18, 18, 18, 18)
 
-        # ── Step 1: Import from IFMIS ──
-        tpl_group = QGroupBox("Step 1 — Import from IFMIS Export")
-        tg = QVBoxLayout(tpl_group)
-        tg.setSpacing(4)
+        intro = QLabel(
+            "Create a ready-to-load Imprest workbook in three steps: import the IFMIS "
+            "export, open the completed template, then review the invoice rows."
+        )
+        intro.setObjectName("DialogIntro")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
 
-        tpl_desc = QLabel(
-            "Import your IFMIS export — auto-maps known fields and highlights "
-            "the 3 fields you must fill (Auth Ref, Admin Code, Distribution Account).")
-        tpl_desc.setWordWrap(True)
-        tg.addWidget(tpl_desc)
+        import_group = QGroupBox("Step 1 - Import IFMIS Export")
+        import_layout = QVBoxLayout(import_group)
+        import_layout.setSpacing(8)
 
-        self._import_ifmis_btn = QPushButton("Import from IFMIS Export…")
-        self._import_ifmis_btn.setFixedHeight(26)
+        import_desc = QLabel(
+            "Start with the IFMIS AP export. TNT DL fills the known fields and marks "
+            "the three values you still need to complete: Auth Ref, Admin Code, and "
+            "Distribution Account."
+        )
+        import_desc.setObjectName("DialogHint")
+        import_desc.setWordWrap(True)
+        import_layout.addWidget(import_desc)
+
+        self._import_ifmis_btn = QPushButton("Import IFMIS File...")
+        self._import_ifmis_btn.setMinimumWidth(180)
+        self._import_ifmis_btn.setMinimumHeight(38)
         self._import_ifmis_btn.clicked.connect(self._import_ifmis)
-        tg.addWidget(self._import_ifmis_btn)
+        import_layout.addWidget(self._import_ifmis_btn)
 
         self._import_status = QLabel("")
         self._import_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        tg.addWidget(self._import_status)
-        layout.addWidget(tpl_group)
+        self._import_status.setWordWrap(True)
+        import_layout.addWidget(self._import_status)
+        layout.addWidget(import_group)
 
-        # ── Step 2: Upload filled sheet ──
-        upload_group = QGroupBox("Step 2 — Upload Filled Template")
-        ug = QVBoxLayout(upload_group)
-        ug.setSpacing(4)
+        open_group = QGroupBox("Step 2 - Open Completed Template")
+        open_layout = QVBoxLayout(open_group)
+        open_layout.setSpacing(8)
 
         browse_row = QHBoxLayout()
+        browse_row.setSpacing(10)
         self._path_edit = QLineEdit()
-        self._path_edit.setPlaceholderText("Select your filled .xlsx file…")
+        self._path_edit.setPlaceholderText("Choose the completed .xlsx template...")
         self._path_edit.setReadOnly(True)
         browse_row.addWidget(self._path_edit, 1)
 
-        self._browse_btn = QPushButton("Browse…")
-        self._browse_btn.setFixedWidth(72)
+        self._browse_btn = QPushButton("Browse...")
+        self._browse_btn.setMinimumWidth(112)
+        self._browse_btn.setMinimumHeight(38)
         self._browse_btn.clicked.connect(self._browse_file)
         browse_row.addWidget(self._browse_btn)
-        ug.addLayout(browse_row)
+        open_layout.addLayout(browse_row)
 
         self._upload_status = QLabel("")
         self._upload_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        ug.addWidget(self._upload_status)
-        layout.addWidget(upload_group)
+        self._upload_status.setWordWrap(True)
+        open_layout.addWidget(self._upload_status)
+        layout.addWidget(open_group)
 
-        # ── Step 3: Preview ──
-        preview_group = QGroupBox("Step 3 — Invoice Preview")
-        pg = QVBoxLayout(preview_group)
-        pg.setSpacing(2)
+        preview_group = QGroupBox("Step 3 - Review Invoice Rows")
+        preview_layout = QVBoxLayout(preview_group)
+        preview_layout.setSpacing(8)
 
         self._preview = QTextEdit()
         self._preview.setReadOnly(True)
-        self._preview.setFixedHeight(96)
-        self._preview.setPlaceholderText("Invoice rows will appear here after upload…")
+        self._preview.setFixedHeight(128)
+        self._preview.setPlaceholderText(
+            "Loaded invoice rows will appear here after you open the template."
+        )
         self._preview.setStyleSheet(
-            "font-family: Consolas, 'Courier New', monospace; font-size: 11px;")
-        pg.addWidget(self._preview)
+            "font-family: Consolas, 'Courier New', monospace; font-size: 12px;"
+        )
+        preview_layout.addWidget(self._preview)
         layout.addWidget(preview_group)
 
-        # ── Info hint ──
         hint = QLabel(
-            "After loading into the grid, press F5 → select Imprest mode → Load.")
+            "Next: load the rows into the grid, press F5, choose Imprest Surrender "
+            "mode, then start the load."
+        )
+        hint.setObjectName("DialogHint")
         hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; margin-top: 2px;")
         layout.addWidget(hint)
 
-        # ── Buttons ──
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
+        button_row = QHBoxLayout()
+        button_row.setSpacing(10)
 
         close_btn = QPushButton("Close")
-        close_btn.setFixedWidth(72)
+        close_btn.setMinimumWidth(104)
         close_btn.clicked.connect(self.reject)
-        btn_row.addWidget(close_btn)
+        button_row.addWidget(close_btn)
 
-        self._ks_btn = QPushButton("Export DL Keystrokes…")
-        self._ks_btn.setFixedHeight(28)
+        self._ks_btn = QPushButton("Export DataLoad File...")
+        self._ks_btn.setMinimumWidth(180)
+        self._ks_btn.setMinimumHeight(38)
         self._ks_btn.setEnabled(False)
         self._ks_btn.setToolTip(
             "Export an 81-column DataLoad keystroke file as a fallback.\n"
-            "Load it in DataLoad: Per Cell mode + 'Use Alternate Method' ticked.")
+            "Load it in DataLoad using Per Cell mode and Use Alternate Method."
+        )
         self._ks_btn.clicked.connect(self._export_keystrokes)
-        btn_row.addWidget(self._ks_btn)
+        button_row.addWidget(self._ks_btn)
 
         from kdl.config_store import get_dark_mode
-        self._load_btn = QPushButton("  Load into Grid  ")
+
+        self._load_btn = QPushButton("Load Rows into Grid")
         self._load_btn.setDefault(True)
-        self._load_btn.setFixedHeight(28)
+        self._load_btn.setMinimumWidth(170)
+        self._load_btn.setMinimumHeight(38)
         self._load_btn.setEnabled(False)
         self._load_btn.setStyleSheet(accent_button_qss(dark=get_dark_mode()))
         self._load_btn.clicked.connect(self._load_into_grid)
-        btn_row.addWidget(self._load_btn)
-        layout.addLayout(btn_row)
-
-    # ── Import from IFMIS export ──────────────────────────────────────────────
+        button_row.addWidget(self._load_btn)
+        button_row.addStretch()
+        layout.addLayout(button_row)
 
     def _import_ifmis(self):
         from kdl.engine.imprest_surrender_engine import (
-            import_ifmis_export, export_prefilled_template, IFMIS_BLANK_COLS)
+            IFMIS_BLANK_COLS,
+            export_prefilled_template,
+            import_ifmis_export,
+        )
 
-        # 1. Pick IFMIS source file
         src, _ = QFileDialog.getOpenFileName(
-            self, "Open IFMIS Export",
+            self,
+            "Open IFMIS Export",
             _default_dir(),
-            "Excel Files (*.xlsx *.xls)")
+            "Excel Files (*.xlsx *.xls)",
+        )
         if not src:
             return
 
-        self._import_status.setText("Reading IFMIS export…")
+        self._import_status.setText("Reading IFMIS export...")
         self._import_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
 
         rows, skipped, err = import_ifmis_export(src)
@@ -171,16 +198,16 @@ class ImprestSurrenderDialog(QDialog):
             return
 
         if not rows:
-            self._import_status.setText(
-                "No Prepayment rows found in the IFMIS export.")
+            self._import_status.setText("No Prepayment rows found in the IFMIS export.")
             self._import_status.setStyleSheet("color: #e8a900; font-size: 12px;")
             return
 
-        # 2. Pick destination for pre-filled template
         dest, _ = QFileDialog.getSaveFileName(
-            self, "Save Pre-filled Template",
+            self,
+            "Save Prefilled Template",
             os.path.join(_default_dir(), "AP_Imprest_Surrender_Prefilled.xlsx"),
-            "Excel Files (*.xlsx)")
+            "Excel Files (*.xlsx)",
+        )
         if not dest:
             return
 
@@ -191,19 +218,21 @@ class ImprestSurrenderDialog(QDialog):
             return
 
         blank_names = ", ".join(sorted(IFMIS_BLANK_COLS))
-        msg = (f"{len(rows)} rows imported"
-               f"{f', {skipped} non-Prepayment skipped' if skipped else ''}.\n"
-               f"Template saved. Fill the AMBER columns ({blank_names}) then upload below.")
-        self._import_status.setText(msg)
+        message = (
+            f"{len(rows)} row(s) imported"
+            f"{f', {skipped} non-Prepayment row(s) skipped' if skipped else ''}.\n"
+            f"Template saved. Fill the amber columns ({blank_names}), then open it below."
+        )
+        self._import_status.setText(message)
         self._import_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
-
-    # ── Browse / load rows ────────────────────────────────────────────────────
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Filled Template",
+            self,
+            "Open Completed Template",
             _default_dir(),
-            "Excel Files (*.xlsx *.xls)")
+            "Excel Files (*.xlsx *.xls)",
+        )
         if not path:
             return
         self._path_edit.setText(path)
@@ -211,13 +240,13 @@ class ImprestSurrenderDialog(QDialog):
         self._read_rows(path)
 
     def _read_rows(self, path: str):
-        from kdl.engine.imprest_surrender_engine import read_invoice_rows, build_row_summary
+        from kdl.engine.imprest_surrender_engine import build_row_summary, read_invoice_rows
 
         self._rows = []
         self._preview.clear()
         self._load_btn.setEnabled(False)
         self._ks_btn.setEnabled(False)
-        self._upload_status.setText("Reading file…")
+        self._upload_status.setText("Reading workbook...")
         self._upload_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
 
         rows, err = read_invoice_rows(path)
@@ -229,32 +258,33 @@ class ImprestSurrenderDialog(QDialog):
 
         if not rows:
             self._upload_status.setText(
-                "No invoice rows found. Make sure data starts at row 5.")
+                "No invoice rows found. Confirm that the data starts on row 5."
+            )
             self._upload_status.setStyleSheet("color: #e8a900; font-size: 12px;")
             return
 
         self._rows = rows
-        self._upload_status.setText(f"✓  {len(rows)} invoice(s) ready to load")
+        self._upload_status.setText(f"Ready: {len(rows)} invoice row(s) loaded from the template.")
         self._upload_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
 
-        lines = [f"Row {i}: {build_row_summary(r)}" for i, r in enumerate(rows, 1)]
+        lines = [f"Row {index}: {build_row_summary(row)}" for index, row in enumerate(rows, 1)]
         self._preview.setPlainText("\n".join(lines))
         self._load_btn.setEnabled(True)
         self._ks_btn.setEnabled(True)
 
-    # ── Export DL keystroke fallback ──────────────────────────────────────────
-
     def _export_keystrokes(self):
         if not self._rows:
-            QMessageBox.warning(self, "No Data", "Upload a filled template first.")
+            QMessageBox.warning(self, "No Data", "Open a completed template first.")
             return
 
         from kdl.engine.imprest_surrender_engine import export_keystroke_file
 
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export DL Keystrokes",
+            self,
+            "Export DataLoad File",
             os.path.join(_default_dir(), "AP_Imprest_Surrender_DL_Keystrokes.xlsx"),
-            "Excel Files (*.xlsx)")
+            "Excel Files (*.xlsx)",
+        )
         if not path:
             return
 
@@ -262,21 +292,27 @@ class ImprestSurrenderDialog(QDialog):
         if err:
             QMessageBox.critical(self, "Export Error", err)
         else:
-            self._upload_status.setText(
-                f"DL keystrokes saved: {os.path.basename(path)}")
+            self._upload_status.setText(f"DataLoad file saved: {os.path.basename(path)}")
             self._upload_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
-
-    # ── Load into grid ────────────────────────────────────────────────────────
 
     def _load_into_grid(self):
         if not self._rows:
-            QMessageBox.warning(self, "No Data", "Upload a filled template first.")
+            QMessageBox.warning(self, "No Data", "Open a completed template first.")
             return
 
         from kdl.engine.imprest_surrender_engine import build_keystroke_row
 
-        # One 81-cell keystroke row per invoice.
         grid_rows = [build_keystroke_row(row) for row in self._rows]
-
         self.load_into_grid.emit(grid_rows)
         self.accept()
+
+    def _fit_to_screen(self):
+        from PySide6.QtGui import QGuiApplication
+
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen:
+            ag = screen.availableGeometry()
+            self.resize(
+                min(max(640, self.sizeHint().width() + 32), ag.width() - 80),
+                min(max(520, self.sizeHint().height() + 28), ag.height() - 80),
+            )

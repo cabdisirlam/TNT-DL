@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -263,7 +264,7 @@ class StatementConverterDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Bank Statement Converter")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(640)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
         self._worker = None
         self._sheet_loader = None
@@ -289,31 +290,41 @@ class StatementConverterDialog(QDialog):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(14)
+        layout.setContentsMargins(18, 18, 18, 18)
 
-        file_group = QGroupBox("Excel File")
+        intro = QLabel(
+            "Choose the source workbook, select the sheets to convert, then review "
+            "the summary before loading the output into the grid."
+        )
+        intro.setObjectName("DialogIntro")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        file_group = QGroupBox("Source Workbook")
         file_layout = QHBoxLayout(file_group)
+        file_layout.setSpacing(10)
         self._file_edit = QLineEdit()
-        self._file_edit.setPlaceholderText("Select an Excel file (.xlsx / .xls)...")
+        self._file_edit.setPlaceholderText("Choose the bank statement workbook (.xlsx, .xls, .xlsm)...")
         self._file_edit.setReadOnly(True)
         browse_btn = QPushButton("Browse...")
-        browse_btn.setFixedWidth(90)
+        browse_btn.setMinimumWidth(112)
+        browse_btn.setMinimumHeight(38)
         browse_btn.clicked.connect(self._browse_file)
         file_layout.addWidget(self._file_edit)
         file_layout.addWidget(browse_btn)
         layout.addWidget(file_group)
 
-        sheet_group = QGroupBox("Sheets to Convert")
+        sheet_group = QGroupBox("Sheets")
         sheet_outer = QVBoxLayout(sheet_group)
-        sheet_outer.setSpacing(6)
+        sheet_outer.setSpacing(8)
 
         sel_row = QHBoxLayout()
         sel_all_btn = QPushButton("Select All")
-        sel_all_btn.setFixedWidth(90)
+        sel_all_btn.setMinimumWidth(108)
         sel_all_btn.clicked.connect(self._select_all_sheets)
-        sel_none_btn = QPushButton("Select None")
-        sel_none_btn.setFixedWidth(90)
+        sel_none_btn = QPushButton("Clear All")
+        sel_none_btn.setMinimumWidth(108)
         sel_none_btn.clicked.connect(self._select_no_sheets)
         sel_row.addWidget(sel_all_btn)
         sel_row.addWidget(sel_none_btn)
@@ -322,12 +333,12 @@ class StatementConverterDialog(QDialog):
 
         self._sheet_check_container = QWidget()
         self._sheet_check_layout = QGridLayout(self._sheet_check_container)
-        self._sheet_check_layout.setSpacing(4)
+        self._sheet_check_layout.setSpacing(8)
         self._sheet_check_layout.setContentsMargins(4, 2, 4, 2)
         sheet_outer.addWidget(self._sheet_check_container)
         layout.addWidget(sheet_group)
 
-        options_group = QGroupBox("Options")
+        options_group = QGroupBox("Conversion Options")
         options_layout = QVBoxLayout(options_group)
         self._skip_contra_check = QCheckBox("Skip contra/duplicate matched rows (CONTRA_MATCHED)")
         self._skip_contra_check.setChecked(True)
@@ -339,34 +350,38 @@ class StatementConverterDialog(QDialog):
         layout.addWidget(options_group)
 
         btn_row = QHBoxLayout()
-        self._convert_btn = QPushButton("  Convert  ")
+        self._convert_btn = QPushButton("Convert Workbook")
         self._convert_btn.setEnabled(False)
         from kdl.config_store import get_dark_mode
 
+        self._convert_btn.setMinimumWidth(170)
+        self._convert_btn.setMinimumHeight(38)
         self._convert_btn.setStyleSheet(accent_button_qss(dark=get_dark_mode()))
         self._convert_btn.clicked.connect(self._run_conversion)
         btn_row.addStretch()
         btn_row.addWidget(self._convert_btn)
         layout.addLayout(btn_row)
 
-        result_group = QGroupBox("Result Summary")
+        result_group = QGroupBox("Conversion Summary")
         result_layout = QVBoxLayout(result_group)
         self._result_text = QTextEdit()
         self._result_text.setReadOnly(True)
-        self._result_text.setFixedHeight(110)
+        self._result_text.setFixedHeight(136)
         self._result_text.setPlaceholderText("Conversion summary will appear here...")
         result_layout.addWidget(self._result_text)
         layout.addWidget(result_group)
 
         action_row = QHBoxLayout()
-        self._load_grid_btn = QPushButton("Load Output into Grid")
+        self._load_grid_btn = QPushButton("Load Output to Grid")
+        self._load_grid_btn.setMinimumWidth(158)
         self._load_grid_btn.setEnabled(False)
         self._load_grid_btn.setToolTip(
-            "Load the converted Output sheet into the TNT DL grid and save to Excel"
+            "Load the converted Output sheet into the TNT DL grid and save the workbook."
         )
         self._load_grid_btn.clicked.connect(self._load_into_grid)
 
         self._close_btn = QPushButton("Close")
+        self._close_btn.setMinimumWidth(104)
         self._close_btn.clicked.connect(self.accept)
 
         action_row.addWidget(self._load_grid_btn)
@@ -470,7 +485,7 @@ class StatementConverterDialog(QDialog):
             return
 
         self._convert_btn.setEnabled(True)
-        self._convert_btn.setText("  Convert  ")
+        self._convert_btn.setText("Convert Workbook")
 
         if worker.error_message:
             self._result = None
@@ -495,7 +510,7 @@ class StatementConverterDialog(QDialog):
         if result.success:
             self._load_grid_btn.setEnabled(bool(result.output_data))
             self._result_text.append(
-                '\nClick "Load Output into Grid" to load and save to Excel.'
+                '\nClick "Load Output to Grid" to load the result and save the workbook.'
             )
 
     def _load_into_grid(self):

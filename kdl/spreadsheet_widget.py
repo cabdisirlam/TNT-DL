@@ -10,9 +10,10 @@ from typing import Dict, List, Optional, Tuple
 from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QMenu,
     QFileDialog, QApplication, QMessageBox, QTableWidgetSelectionRange,
-    QDialog, QVBoxLayout, QGridLayout, QLabel, QSpinBox, QDialogButtonBox
+    QDialog, QVBoxLayout, QGridLayout, QLabel, QSpinBox, QDialogButtonBox,
+    QStyledItemDelegate, QAbstractItemDelegate, QAbstractItemView
 )
-from PySide6.QtCore import Qt, Signal, QItemSelectionModel
+from PySide6.QtCore import Qt, Signal, QItemSelectionModel, QEvent, QTimer
 from PySide6.QtGui import QColor, QFont, QAction, QKeySequence, QBrush, QPainter, QPen
 
 
@@ -110,6 +111,50 @@ class _HighlightHeaderView(QHeaderView):
         painter.restore()
 
 
+class _SpreadsheetItemDelegate(QStyledItemDelegate):
+    """Commit inline editor changes and hand back spreadsheet-like navigation."""
+
+    enter_pressed = Signal()
+    shift_enter_pressed = Signal()
+    tab_pressed = Signal()
+    backtab_pressed = Signal()
+
+    def _commit_and_close(self, editor):
+        if editor is None or bool(editor.property("_kdl_editor_closed")):
+            return
+        editor.setProperty("_kdl_editor_closed", True)
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor, QAbstractItemDelegate.NoHint)
+
+    def eventFilter(self, editor, event):
+        if event.type() == QEvent.KeyPress:
+            key = event.key()
+            mods = event.modifiers()
+            if key in (Qt.Key_Return, Qt.Key_Enter):
+                self._commit_and_close(editor)
+                if mods & Qt.ShiftModifier:
+                    self.shift_enter_pressed.emit()
+                else:
+                    self.enter_pressed.emit()
+                return True
+            if key == Qt.Key_Tab and not (mods & Qt.ControlModifier):
+                self._commit_and_close(editor)
+                if mods & Qt.ShiftModifier:
+                    self.backtab_pressed.emit()
+                else:
+                    self.tab_pressed.emit()
+                return True
+            if key == Qt.Key_Backtab:
+                self._commit_and_close(editor)
+                self.backtab_pressed.emit()
+                return True
+
+        if event.type() == QEvent.FocusOut:
+            self._commit_and_close(editor)
+
+        return super().eventFilter(editor, event)
+
+
 class SpreadsheetWidget(QTableWidget):
     """
     Editable spreadsheet grid with keystroke syntax highlighting.
@@ -177,6 +222,19 @@ class SpreadsheetWidget(QTableWidget):
         # while still keeping a single active current cell for guides.
         self.setSelectionMode(QTableWidget.ExtendedSelection)
         self.setSelectionBehavior(QTableWidget.SelectItems)
+        self.setEditTriggers(
+            QAbstractItemView.DoubleClicked
+            | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.AnyKeyPressed
+            | QAbstractItemView.SelectedClicked
+        )
+
+        self._editor_delegate = _SpreadsheetItemDelegate(self)
+        self.setItemDelegate(self._editor_delegate)
+        self._editor_delegate.enter_pressed.connect(lambda: self._queue_editor_navigation("down"))
+        self._editor_delegate.shift_enter_pressed.connect(lambda: self._queue_editor_navigation("up"))
+        self._editor_delegate.tab_pressed.connect(lambda: self._queue_editor_navigation("right"))
+        self._editor_delegate.backtab_pressed.connect(lambda: self._queue_editor_navigation("left"))
 
         # Font
         font = QFont("Consolas", 13)
@@ -1241,6 +1299,46 @@ class SpreadsheetWidget(QTableWidget):
 
     # ── Keyboard shortcuts ──
 
+    def _queue_editor_navigation(self, direction: str):
+        QTimer.singleShot(0, lambda d=direction: self._move_current_cell(d))
+
+    def _move_current_cell(self, direction: str):
+        if self.rowCount() <= 0 or self.columnCount() <= 0:
+            return
+
+        row = self.currentRow()
+        col = self.currentColumn()
+        if row < 0:
+            row = 0
+        if col < 0:
+            col = 0
+
+        target_row, target_col = row, col
+        if direction == "down":
+            target_row = min(self.rowCount() - 1, row + 1)
+        elif direction == "up":
+            target_row = max(0, row - 1)
+        elif direction == "right":
+            if col < self.columnCount() - 1:
+                target_col = col + 1
+            elif row < self.rowCount() - 1:
+                target_row = row + 1
+                target_col = 0
+        elif direction == "left":
+            if col > 0:
+                target_col = col - 1
+            elif row > 0:
+                target_row = row - 1
+                target_col = self.columnCount() - 1
+
+        self.clearSelection()
+        self.setCurrentCell(target_row, target_col)
+        item = self.item(target_row, target_col)
+        if item is not None:
+            self.scrollToItem(item)
+        else:
+            self.scrollTo(self.model().index(target_row, target_col))
+
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts."""
         if (
@@ -1253,6 +1351,20 @@ class SpreadsheetWidget(QTableWidget):
             )
         ):
             self._extend_selection_with_shift(event.key())
+            return
+
+        is_editing = self.state() == QAbstractItemView.EditingState
+        if not is_editing and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self._shift_anchor = None
+            self._move_current_cell("up" if event.modifiers() & Qt.ShiftModifier else "down")
+            return
+        if not is_editing and event.key() == Qt.Key_Tab and not (event.modifiers() & Qt.ControlModifier):
+            self._shift_anchor = None
+            self._move_current_cell("left" if event.modifiers() & Qt.ShiftModifier else "right")
+            return
+        if not is_editing and event.key() == Qt.Key_Backtab:
+            self._shift_anchor = None
+            self._move_current_cell("left")
             return
 
         if event.modifiers() & Qt.AltModifier and event.key() == Qt.Key_Left:

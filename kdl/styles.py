@@ -618,25 +618,36 @@ def dialog_qss(dark: bool = False) -> str:
         QDialog {{
             background-color: {bg_base};
             color: {text_primary};
-            font-size: 13px;
+            font-size: 14px;
             font-family: "Segoe UI", "Helvetica Neue", sans-serif;
         }}
         QLabel {{
             color: {text_primary};
         }}
+        QLabel#DialogIntro {{
+            color: {text_secondary};
+            font-size: 13px;
+            line-height: 1.35;
+            padding: 0 2px 4px 2px;
+        }}
+        QLabel#DialogHint {{
+            color: {p["TEXT_MUTED"]};
+            font-size: 12px;
+            padding: 2px 2px 0 2px;
+        }}
         QGroupBox {{
             border: 1px solid {border_default};
-            border-radius: 14px;
-            margin-top: 18px;
-            padding-top: 20px;
+            border-radius: 16px;
+            margin-top: 16px;
+            padding-top: 18px;
             font-weight: 600;
             color: {text_primary};
             background-color: {bg_surface};
         }}
         QGroupBox::title {{
             subcontrol-origin: margin;
-            left: 16px;
-            padding: 0 10px;
+            left: 14px;
+            padding: 0 9px;
             color: {accent_pressed};
             font-size: 13px;
             font-weight: 700;
@@ -648,7 +659,7 @@ def dialog_qss(dark: bool = False) -> str:
             background-color: {bg_surface};
             color: {text_primary};
             font-size: 13px;
-            min-height: 30px;
+            min-height: 34px;
             selection-background-color: {accent_light};
         }}
         QComboBox:hover, QLineEdit:hover {{
@@ -683,6 +694,8 @@ def dialog_qss(dark: bool = False) -> str:
             font-size: 13px;
             font-weight: 600;
             color: {text_primary};
+            min-height: 36px;
+            min-width: 96px;
         }}
         QPushButton:hover {{
             background-color: {bg_hover};
@@ -690,6 +703,11 @@ def dialog_qss(dark: bool = False) -> str:
         }}
         QPushButton:pressed {{
             background-color: {bg_active};
+        }}
+        QPushButton:disabled {{
+            background-color: {bg_elevated};
+            color: {p["TEXT_MUTED"]};
+            border-color: {border_subtle};
         }}
         QCheckBox, QRadioButton {{
             font-size: 13px;
@@ -744,14 +762,17 @@ def dialog_qss(dark: bool = False) -> str:
             padding: 6px 10px;
             font-size: 13px;
         }}
-        QPlainTextEdit {{
+        QTextEdit, QPlainTextEdit {{
             background-color: {bg_surface};
             color: {text_primary};
             border: 1px solid {border_default};
-            border-radius: 10px;
-            padding: 8px;
+            border-radius: 12px;
+            padding: 10px;
             font-family: "Consolas", monospace;
             font-size: 13px;
+        }}
+        QTextEdit:focus, QPlainTextEdit:focus {{
+            border: 2px solid {accent};
         }}
         QScrollBar:vertical {{
             background: {bg_base};

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -199,7 +200,7 @@ class FinancialReportDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("IFMIS Financial Statements Generator")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(640)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
         self._worker       = None
         self._sheet_loader = None
@@ -214,29 +215,39 @@ class FinancialReportDialog(QDialog):
     # ------------------------------------------------------------------
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(14)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        intro = QLabel(
+            "Select the IFMIS Notes workbook and one source sheet, then generate "
+            "the statements workbook and save it when the summary looks correct."
+        )
+        intro.setObjectName("DialogIntro")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
 
         # ── Notes file ──
-        file_group  = QGroupBox("Notes Excel File")
+        file_group = QGroupBox("Source Notes Workbook")
         file_layout = QHBoxLayout(file_group)
+        file_layout.setSpacing(10)
         self._file_edit = QLineEdit()
-        self._file_edit.setPlaceholderText("Select the IFMIS Notes Excel file...")
+        self._file_edit.setPlaceholderText("Choose the IFMIS Notes workbook...")
         self._file_edit.setReadOnly(True)
         browse_btn = QPushButton("Browse...")
-        browse_btn.setFixedWidth(90)
+        browse_btn.setMinimumWidth(112)
+        browse_btn.setMinimumHeight(38)
         browse_btn.clicked.connect(self._browse_file)
         file_layout.addWidget(self._file_edit)
         file_layout.addWidget(browse_btn)
         layout.addWidget(file_group)
 
         # ── Sheet selector ──
-        sheet_group = QGroupBox("Notes Sheet (select one)")
+        sheet_group = QGroupBox("Notes Sheet")
         sheet_outer = QVBoxLayout(sheet_group)
-        sheet_outer.setSpacing(6)
+        sheet_outer.setSpacing(8)
         self._sheet_check_container = QWidget()
-        self._sheet_check_layout    = QGridLayout(self._sheet_check_container)
-        self._sheet_check_layout.setSpacing(4)
+        self._sheet_check_layout = QGridLayout(self._sheet_check_container)
+        self._sheet_check_layout.setSpacing(8)
         self._sheet_check_layout.setContentsMargins(4, 2, 4, 2)
         sheet_outer.addWidget(self._sheet_check_container)
         layout.addWidget(sheet_group)
@@ -244,31 +255,35 @@ class FinancialReportDialog(QDialog):
         # ── Generate button ──
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self._generate_btn = QPushButton("  Generate  ")
+        self._generate_btn = QPushButton("Generate Statements")
         self._generate_btn.setEnabled(False)
         from kdl.config_store import get_dark_mode
+        self._generate_btn.setMinimumWidth(182)
+        self._generate_btn.setMinimumHeight(38)
         self._generate_btn.setStyleSheet(accent_button_qss(get_dark_mode()))
         self._generate_btn.clicked.connect(self._run_generation)
         btn_row.addWidget(self._generate_btn)
         layout.addLayout(btn_row)
 
         # ── Result ──
-        result_group  = QGroupBox("Result")
+        result_group = QGroupBox("Generation Summary")
         result_layout = QVBoxLayout(result_group)
         self._result_text = QTextEdit()
         self._result_text.setReadOnly(True)
-        self._result_text.setFixedHeight(120)
+        self._result_text.setFixedHeight(136)
         self._result_text.setPlaceholderText("Generation result will appear here...")
         result_layout.addWidget(self._result_text)
         layout.addWidget(result_group)
 
         # ── Save + Close ──
         action_row = QHBoxLayout()
-        self._save_btn = QPushButton("Save Financial Statements...")
+        self._save_btn = QPushButton("Save Statements...")
+        self._save_btn.setMinimumWidth(158)
         self._save_btn.setEnabled(False)
         self._save_btn.setToolTip("Save the generated 5-sheet workbook to an Excel file")
         self._save_btn.clicked.connect(self._save_output)
         self._close_btn = QPushButton("Close")
+        self._close_btn.setMinimumWidth(104)
         self._close_btn.clicked.connect(self.accept)
         action_row.addWidget(self._save_btn)
         action_row.addStretch()
@@ -369,7 +384,7 @@ class FinancialReportDialog(QDialog):
         self._worker = None
 
         self._generate_btn.setEnabled(True)
-        self._generate_btn.setText("  Generate  ")
+        self._generate_btn.setText("Generate Statements")
 
         if worker is None:
             return
@@ -378,7 +393,7 @@ class FinancialReportDialog(QDialog):
             self._wb_out = worker.wb_out
             self._result_text.setPlainText(worker.message)
             self._save_btn.setEnabled(True)
-            self._result_text.append('\nClick "Save Financial Statements..." to save the output.')
+            self._result_text.append('\nClick "Save Statements..." to save the output workbook.')
         else:
             self._result_text.setPlainText(f"ERROR:\n{worker.message}")
             QMessageBox.critical(self, "Generation Failed", worker.message[:600])
