@@ -503,36 +503,16 @@ def main_window_qss(dark: bool = False) -> str:
         QFrame#TopRowsCard, QFrame#FormulaCard {{
             background-color: {bg_surface};
             border: 1px solid {border_default};
-            border-radius: 16px;
-        }}
-        QFrame#PositionCard {{
-            background-color: {accent_light};
-            border: 1px solid {border_default};
-            border-radius: 12px;
+            border-radius: 14px;
         }}
         QFrame#TopRowsDivider {{
             color: {border_subtle};
+            max-height: 1px;
         }}
 
         QLabel#ShellFieldLabel, QLabel#ShellFieldLabelStacked {{
             color: {text_secondary};
-            font-size: 13px;
-            font-weight: 700;
-        }}
-        QLabel#NotesDisplay {{
-            background-color: {bg_elevated};
-            border: 1px solid {border_default};
-            border-radius: 12px;
-            padding: 10px 12px;
-            min-height: 42px;
-            font-family: "Consolas", "Cascadia Code", monospace;
-            font-size: 14px;
-            color: {text_primary};
-        }}
-        QLabel#PositionValue {{
-            color: {accent_pressed};
-            font-family: "Consolas", "Cascadia Code", monospace;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 700;
         }}
         QLabel#CellRefPill {{
@@ -545,17 +525,17 @@ def main_window_qss(dark: bool = False) -> str:
             font-weight: 700;
         }}
         QComboBox#ShellCombo, QLineEdit#FormulaBar {{
-            min-height: 38px;
-            font-size: 15px;
+            min-height: 36px;
+            font-size: 14px;
             font-weight: 600;
         }}
         QPushButton#ShellRefreshButton {{
             background-color: {accent};
             color: {TEXT_ON_ACCENT};
             border: 1px solid {accent_pressed};
-            border-radius: 12px;
-            padding: 0 18px;
-            min-height: 38px;
+            border-radius: 11px;
+            padding: 0 16px;
+            min-height: 36px;
             font-size: 14px;
             font-weight: 700;
         }}

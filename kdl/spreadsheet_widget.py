@@ -147,6 +147,7 @@ class SpreadsheetWidget(QTableWidget):
         self._nav_forward_stack: List[Tuple[int, int]] = []
         self._nav_internal = False
         self._shift_anchor: Optional[Tuple[int, int]] = None
+        self._row_header_anchor: Optional[int] = None
         self._freeze_header: bool = False
 
         # Initialize grid
@@ -172,9 +173,9 @@ class SpreadsheetWidget(QTableWidget):
         self.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
 
-        # Selection: allow contiguous range selection for "selected rows/cols" loads,
+        # Selection: allow standard Ctrl/Shift multi-selection for row operations
         # while still keeping a single active current cell for guides.
-        self.setSelectionMode(QTableWidget.ContiguousSelection)
+        self.setSelectionMode(QTableWidget.ExtendedSelection)
         self.setSelectionBehavior(QTableWidget.SelectItems)
 
         # Font
@@ -966,8 +967,36 @@ class SpreadsheetWidget(QTableWidget):
         self.paste_completed.emit(paste_rows, paste_cols)
 
     def _on_row_header_clicked(self, row: int):
-        """Select the entire row when its header number is clicked."""
-        self.selectRow(row)
+        """Support Ctrl/Shift multi-row selection for row operations."""
+        if row < 0 or self.columnCount() <= 0:
+            return
+
+        last_col = self.columnCount() - 1
+        current_col = self.currentColumn()
+        if current_col < 0:
+            current_col = 0
+        current_col = min(current_col, last_col)
+        row_range = QTableWidgetSelectionRange(row, 0, row, last_col)
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers & Qt.ShiftModifier:
+            anchor = self._row_header_anchor
+            if anchor is None:
+                anchor = self.currentRow() if self.currentRow() >= 0 else row
+            top = min(anchor, row)
+            bottom = max(anchor, row)
+            self.clearSelection()
+            self.setRangeSelected(QTableWidgetSelectionRange(top, 0, bottom, last_col), True)
+        elif modifiers & Qt.ControlModifier:
+            self.setRangeSelected(row_range, row not in self._selected_rows())
+            self._row_header_anchor = row
+        else:
+            self.clearSelection()
+            self.setRangeSelected(row_range, True)
+            self._row_header_anchor = row
+
+        self.setCurrentCell(row, current_col, QItemSelectionModel.NoUpdate)
+        self.scrollTo(self.model().index(row, current_col))
 
     def _insert_row(self):
         row = self.currentRow()

@@ -941,23 +941,22 @@ class MainWindow(QMainWindow):
     def _build_central(self):
         central = QWidget()
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(12, 10, 12, 0)
-        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(12, 8, 12, 0)
+        main_layout.setSpacing(6)
 
         self.top_rows_container = QFrame()
         self.top_rows_container.setObjectName("TopRowsCard")
         top_rows_layout = QVBoxLayout(self.top_rows_container)
-        top_rows_layout.setContentsMargins(14, 14, 14, 12)
-        top_rows_layout.setSpacing(8)
+        top_rows_layout.setContentsMargins(14, 12, 14, 10)
+        top_rows_layout.setSpacing(0)
 
-        # â”€â”€ Row 1: Window selector â”€â”€
-        window_row = QHBoxLayout()
-        window_row.setSpacing(8)
+        shell_row = QHBoxLayout()
+        shell_row.setSpacing(12)
 
         win_label = QLabel("Window")
         win_label.setObjectName("ShellFieldLabel")
-        win_label.setMinimumWidth(72)
-        window_row.addWidget(win_label)
+        win_label.setMinimumWidth(56)
+        shell_row.addWidget(win_label)
 
         self.window_combo = QComboBox()
         self.window_combo.setObjectName("ShellCombo")
@@ -969,27 +968,20 @@ class MainWindow(QMainWindow):
         self.window_combo.setPlaceholderText("Select IFMIS/Oracle target window")
         self.window_combo.setView(QListView())
         self.window_combo.currentTextChanged.connect(self._update_window_combo_tooltip)
-        self.window_combo.setMinimumWidth(350)
-        self.window_combo.setSizePolicy(
-            self.window_combo.sizePolicy().horizontalPolicy(),
-            self.window_combo.sizePolicy().verticalPolicy()
-        )
-        window_row.addWidget(self.window_combo, 1)
+        self.window_combo.setMinimumWidth(280)
+        shell_row.addWidget(self.window_combo, 5)
 
-        # Refresh button
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.setObjectName("ShellRefreshButton")
-        self.refresh_btn.setFixedHeight(40)
+        self.refresh_btn.setFixedHeight(38)
         self.refresh_btn.setCursor(Qt.PointingHandCursor)
         self.refresh_btn.clicked.connect(self._refresh_windows)
-        window_row.addWidget(self.refresh_btn)
+        shell_row.addWidget(self.refresh_btn)
 
-        window_row.addSpacing(20)
-
-        # Command Group
-        cg_label = QLabel("Command\nGroup")
-        cg_label.setObjectName("ShellFieldLabelStacked")
-        window_row.addWidget(cg_label)
+        cg_label = QLabel("Command Group")
+        cg_label.setObjectName("ShellFieldLabel")
+        cg_label.setMinimumWidth(112)
+        shell_row.addWidget(cg_label)
 
         self.command_group_combo = QComboBox()
         self.command_group_combo.setObjectName("ShellCombo")
@@ -1001,51 +993,17 @@ class MainWindow(QMainWindow):
             self.command_group_combo.setItemIcon(idx, self._icon_for_command_group(group_name))
             self.command_group_combo.setItemData(idx, group_name, Qt.ToolTipRole)
         self.command_group_combo.setCurrentIndex(1)  # Default: Oracle EBS R12 / 11i
-        self.command_group_combo.setMinimumWidth(180)
-        window_row.addWidget(self.command_group_combo)
+        self.command_group_combo.setMinimumWidth(210)
+        shell_row.addWidget(self.command_group_combo, 2)
 
-        top_rows_layout.addLayout(window_row)
-
-        # â”€â”€ Row 2: Notes / Position info â”€â”€
-        info_row = QHBoxLayout()
-        info_row.setSpacing(8)
-
-        notes_label = QLabel("Notes")
-        notes_label.setObjectName("ShellFieldLabel")
-        notes_label.setMinimumWidth(72)
-        info_row.addWidget(notes_label)
-
-        self.notes_display = QLabel("")
-        self.notes_display.setObjectName("NotesDisplay")
-        self.notes_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        info_row.addWidget(self.notes_display, 1)
-
-        info_row.addSpacing(20)
-
-        # R / C position
-        rc_frame = QFrame()
-        rc_frame.setObjectName("PositionCard")
-        rc_layout = QVBoxLayout(rc_frame)
-        rc_layout.setContentsMargins(12, 8, 12, 8)
-        rc_layout.setSpacing(2)
-        self.pos_r_label = QLabel("R1")
-        self.pos_c_label = QLabel("C1")
-        self.pos_r_label.setObjectName("PositionValue")
-        self.pos_c_label.setObjectName("PositionValue")
-        self.pos_r_label.setAlignment(Qt.AlignCenter)
-        self.pos_c_label.setAlignment(Qt.AlignCenter)
-        rc_layout.addWidget(self.pos_r_label)
-        rc_layout.addWidget(self.pos_c_label)
-        info_row.addWidget(rc_frame)
-
-        top_rows_layout.addLayout(info_row)
+        top_rows_layout.addLayout(shell_row)
 
         # â”€â”€ Separator line â”€â”€
         sep = QFrame()
         sep.setObjectName("TopRowsDivider")
         sep.setFrameShape(QFrame.HLine)
         top_rows_layout.addWidget(sep)
-        main_layout.addWidget(self.top_rows_container, 0, Qt.AlignLeft)
+        main_layout.addWidget(self.top_rows_container, 0)
 
         # â”€â”€ Spreadsheet Grid â”€â”€
         # Formula Bar
@@ -1070,8 +1028,7 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
-        # Connect cell selection to position display and formula bar
-        self.spreadsheet.currentCellChanged.connect(self._on_cell_selected)
+        # Connect cell selection to the formula bar
         self.spreadsheet.currentCellChanged.connect(self._update_formula_bar)
         self._formula_bar.returnPressed.connect(self._apply_formula_bar)
         self.spreadsheet.data_changed.connect(self._update_row_count)
@@ -1106,23 +1063,6 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("font-weight: 600; font-size: 18px; color: #FFFFFF;")
         self.status_bar.addPermanentWidget(self.status_label)
-
-    def _on_cell_selected(self, row, col, prev_row, prev_col):
-        self.pos_r_label.setText(f"R{row + 1}")
-        self.pos_c_label.setText(f"C{col + 1}")
-
-        # Update notes with cell content
-        item = self.spreadsheet.item(row, col)
-        if item and item.text().strip():
-            val = item.text()
-            if val.startswith("\\"):
-                self.notes_display.setText(f"Keystroke: {val}")
-            elif val.startswith("*"):
-                self.notes_display.setText(f"Command: {val}")
-            else:
-                self.notes_display.setText(val)
-        else:
-            self.notes_display.setText("")
 
     def _update_formula_bar(self, row, col, *_):
         self._cell_ref_label.setText(f"R{row + 1} C{col + 1}")
