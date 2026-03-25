@@ -804,6 +804,9 @@ def export_keystroke_file(filepath: str, rows: list) -> str:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "DL_Keystrokes"
+        _write_keystroke_sheet(ws, rows)
+        wb.save(filepath)
+        return ""
 
         BLUE      = "0070C0"
         WHITE_TXT = "FFFFFF"
@@ -858,6 +861,90 @@ def export_keystroke_file(filepath: str, rows: list) -> str:
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
+
+def export_keystroke_sheet_to_workbook(source_path: str, save_path: str, rows: list) -> str:
+    """
+    Save a copy of the completed workbook with a DL_Keystrokes sheet added.
+    Replaces any existing DL_Keystrokes sheet in the saved copy.
+    Returns an error string, or "" on success.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        return "openpyxl is not installed."
+
+    try:
+        keep_vba = source_path.lower().endswith(".xlsm") or save_path.lower().endswith(".xlsm")
+        wb = openpyxl.load_workbook(source_path, keep_vba=keep_vba)
+        if "DL_Keystrokes" in wb.sheetnames:
+            del wb["DL_Keystrokes"]
+        ws = wb.create_sheet("DL_Keystrokes")
+        _write_keystroke_sheet(ws, rows)
+        wb.save(save_path)
+        return ""
+    except Exception as exc:
+        return f"Export failed: {exc}"
+
+
+def _write_keystroke_sheet(ws, rows: list) -> None:
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    blue = "0070C0"
+    white_text = "FFFFFF"
+    grey_bg = "F2F2F2"
+    ncols = 81
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+    title = ws.cell(
+        row=1,
+        column=1,
+        value=(
+            "NT_DL Imprest Surrender - DataLoad Keystroke Fallback  "
+            "| Load in Per Cell mode  |  'Use Alternate Method' must be ticked in DL settings"
+        ),
+    )
+    title.font = Font(bold=True, size=10, color=white_text)
+    title.fill = PatternFill(fill_type="solid", fgColor=blue)
+    title.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 18
+
+    for ci in range(1, ncols + 1):
+        cell = ws.cell(row=2, column=ci, value=f"C{ci}")
+        cell.font = Font(bold=True, color=white_text, size=9)
+        cell.fill = PatternFill(fill_type="solid", fgColor=blue)
+        cell.alignment = Alignment(horizontal="center")
+    ws.row_dimensions[2].height = 15
+
+    for ri, row_dict in enumerate(rows, start=3):
+        bg = grey_bg if ri % 2 == 1 else "FFFFFF"
+        ks_row = _build_dl_keystroke_row(row_dict)
+        for ci, val in enumerate(ks_row, start=1):
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.font = Font(size=9)
+            cell.fill = PatternFill(fill_type="solid", fgColor=bg)
+            cell.alignment = Alignment(horizontal="left")
+        ws.row_dimensions[ri].height = 14
+
+    data_cols = {
+        11: 12,
+        15: 12,
+        17: 12,
+        20: 12,
+        28: 28,
+        34: 12,
+        52: 8,
+        54: 14,
+        60: 10,
+        65: 10,
+        67: 12,
+        69: 52,
+    }
+    for ci in range(1, ncols + 1):
+        ws.column_dimensions[get_column_letter(ci)].width = data_cols.get(ci, 10)
+
+    ws.freeze_panes = "A3"
+
 
 def build_row_summary(row: dict) -> str:
     """One-line human-readable summary of an invoice row."""

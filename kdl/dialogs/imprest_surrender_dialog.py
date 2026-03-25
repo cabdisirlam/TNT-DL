@@ -153,8 +153,8 @@ class ImprestSurrenderDialog(QDialog):
         self._ks_btn.setMinimumHeight(38)
         self._ks_btn.setEnabled(False)
         self._ks_btn.setToolTip(
-            "Export an 81-column DataLoad keystroke file as a fallback.\n"
-            "Load it in DataLoad using Per Cell mode and Use Alternate Method."
+            "Save a workbook copy with a DL_Keystrokes sheet as a fallback.\n"
+            "Load that sheet in DataLoad using Per Cell mode and Use Alternate Method."
         )
         self._ks_btn.clicked.connect(self._export_keystrokes)
         button_row.addWidget(self._ks_btn)
@@ -167,6 +167,7 @@ class ImprestSurrenderDialog(QDialog):
         self._load_btn.setMinimumHeight(38)
         self._load_btn.setEnabled(False)
         self._load_btn.setStyleSheet(accent_button_qss(dark=get_dark_mode()))
+        self._load_btn.setToolTip("Load the raw invoice values into columns A:K of the grid.")
         self._load_btn.clicked.connect(self._load_into_grid)
         button_row.addWidget(self._load_btn)
         button_row.addStretch()
@@ -273,26 +274,36 @@ class ImprestSurrenderDialog(QDialog):
         self._ks_btn.setEnabled(True)
 
     def _export_keystrokes(self):
-        if not self._rows:
+        if not self._rows or not self._filepath:
             QMessageBox.warning(self, "No Data", "Open a completed template first.")
             return
 
-        from kdl.engine.imprest_surrender_engine import export_keystroke_file
+        from kdl.engine.imprest_surrender_engine import export_keystroke_sheet_to_workbook
+
+        source_dir = os.path.dirname(self._filepath) or _default_dir()
+        source_name, source_ext = os.path.splitext(os.path.basename(self._filepath))
+        save_ext = source_ext if source_ext.lower() in (".xlsx", ".xlsm") else ".xlsx"
+        default_path = os.path.join(
+            source_dir,
+            f"{source_name}_with_DL_Keystrokes{save_ext}",
+        )
 
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export DataLoad File",
-            os.path.join(_default_dir(), "AP_Imprest_Surrender_DL_Keystrokes.xlsx"),
-            "Excel Files (*.xlsx)",
+            "Save Workbook with DataLoad Sheet",
+            default_path,
+            "Excel Files (*.xlsx *.xlsm)",
         )
         if not path:
             return
 
-        err = export_keystroke_file(path, self._rows)
+        err = export_keystroke_sheet_to_workbook(self._filepath, path, self._rows)
         if err:
             QMessageBox.critical(self, "Export Error", err)
         else:
-            self._upload_status.setText(f"DataLoad file saved: {os.path.basename(path)}")
+            self._upload_status.setText(
+                f"Workbook saved with DL_Keystrokes sheet: {os.path.basename(path)}"
+            )
             self._upload_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
 
     def _load_into_grid(self):
@@ -300,9 +311,9 @@ class ImprestSurrenderDialog(QDialog):
             QMessageBox.warning(self, "No Data", "Open a completed template first.")
             return
 
-        from kdl.engine.imprest_surrender_engine import build_keystroke_row
+        from kdl.engine.imprest_surrender_engine import COLUMNS
 
-        grid_rows = [build_keystroke_row(row) for row in self._rows]
+        grid_rows = [[row.get(column, "") for column in COLUMNS] for row in self._rows]
         self.load_into_grid.emit(grid_rows)
         self.accept()
 
