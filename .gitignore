@@ -10,6 +10,7 @@ __pycache__/
 
 # Build outputs
 build/
+build_codex/
 dist/
 *.spec
 

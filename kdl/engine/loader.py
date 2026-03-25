@@ -1,4 +1,4 @@
-"""
+﻿"""
 KDL Loader Engine
 Main loading orchestrator that iterates through spreadsheet rows,
 parses each cell, and sends data to the target application.
@@ -112,6 +112,7 @@ class LoaderThread(QThread):
         self.sender.load_control = bool(load_control)
         self.sender.wait_for_hourglass = wait_hourglass or bool(load_control)
         self.sender.set_stop_checker(self._is_stop_requested)
+        self.sender.set_pause_checker(self._is_pause_requested)
 
         self.key_columns = set(key_columns) if key_columns else set()
         self.selected_columns = set(selected_columns) if selected_columns else None
@@ -174,7 +175,7 @@ class LoaderThread(QThread):
             if is_down and not self._esc_was_down:
                 now = time.time()
                 if self._esc_first_time and (now - self._esc_first_time) <= self._ESC_DOUBLE_WINDOW:
-                    # Second press within window → stop
+                    # Second press within window â†’ stop
                     self._esc_first_time = 0.0
                     self._stop_requested = True
                     if not self._stop_reason:
@@ -182,7 +183,7 @@ class LoaderThread(QThread):
                     self._esc_was_down = True
                     return True
                 else:
-                    # First press — record time, wait for second
+                    # First press â€” record time, wait for second
                     self._esc_first_time = now
             self._esc_was_down = is_down
         except Exception:
@@ -195,7 +196,7 @@ class LoaderThread(QThread):
             return
         now = time.time()
         if self._esc_first_time and (now - self._esc_first_time) <= self._ESC_DOUBLE_WINDOW:
-            # Second press → stop
+            # Second press â†’ stop
             self._esc_first_time = 0.0
             self._request_stop("ESC key")
             self._pause_requested = False
@@ -204,7 +205,7 @@ class LoaderThread(QThread):
             self._wait_condition.wakeAll()
             self._mutex.unlock()
         else:
-            # First press — wait for second
+            # First press â€” wait for second
             self._esc_first_time = now
 
     def _on_keyboard_event(self, event):
@@ -280,6 +281,9 @@ class LoaderThread(QThread):
             return True
         return self._check_esc_stop()
 
+    def _is_pause_requested(self) -> bool:
+        return bool(self._pause_requested)
+
     def _format_elapsed(self, started_at: float) -> str:
         elapsed_sec = max(0, int(time.time() - started_at))
         mins = elapsed_sec // 60
@@ -326,6 +330,26 @@ class LoaderThread(QThread):
                 self._request_stop(reason)
             return False
         return not self._is_stop_requested()
+
+    def _wait_after_ui_action(self, fallback_delay: float) -> bool:
+        """
+        Wait after navigation keys like Tab, Down, Enter, or Save.
+        With Load Control on, rely on app readiness instead of fixed delays.
+        """
+        if self.sender.load_control:
+            if not self.sender._wait_for_ready():
+                if not self._is_stop_requested():
+                    reason = (self.sender.last_error or "target remained busy").strip()
+                    self._request_stop(reason or "target remained busy")
+                return False
+            return True
+
+        if not self._interruptible_delay(fallback_delay, wait_hourglass=True):
+            if not self._is_stop_requested():
+                reason = (self.sender.last_error or "target remained busy").strip()
+                self._request_stop(reason or "target remained busy")
+            return False
+        return True
 
     def run(self):
         """Main orchestrator for loading."""
@@ -468,7 +492,7 @@ class LoaderThread(QThread):
         # Fallback: only reinterpret p/r/payment/receipt as IFMIS type tokens when
         # header-based detection actually ran and confirmed a type column exists
         # (self._form_type_col is not None means detection succeeded but col_idx
-        # just didn't match — so skip the fallback).
+        # just didn't match â€” so skip the fallback).
         # When detection found nothing (_form_type_col is None AND _form_no_col is
         # None), it means the sheet layout is unknown; applying the fallback silently
         # to any sheet with "r"/"p" in an early column is dangerous for non-IFMIS
@@ -577,44 +601,34 @@ class LoaderThread(QThread):
         save_settle = max(0.1, float(self.sender.speed_delay))
         if self.end_of_row_action == "new_record":
             pyautogui.press('down')
-            if not self._interruptible_delay(eor_delay):
-                return False
+            return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action in ("new_record_save_n", "new_record_save_50"):
             completed_rows = rows_processed + 1
             interval = self.save_interval if self.end_of_row_action == "new_record_save_n" else 50
             if completed_rows % interval == 0 or is_last_row:
-                if is_last_row:
-                    time.sleep(0.5)   # extra settle on last row — prevents skip at fast speeds
+                if is_last_row and not self._wait_after_ui_action(0.5):
+                    return False
                 pyautogui.hotkey('ctrl', 's')
-                if not self._interruptible_delay(save_settle):
+                if not self._wait_after_ui_action(save_settle):
                     return False
             pyautogui.press('down')
-            if not self._interruptible_delay(eor_delay):
-                return False
+            return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action == "save_proceed":
-            if is_last_row:
-                time.sleep(0.5)       # extra settle on last row
+            if is_last_row and not self._wait_after_ui_action(0.5):
+                return False
             pyautogui.hotkey('ctrl', 's')
-            if not self._interruptible_delay(save_settle):
+            if not self._wait_after_ui_action(save_settle):
                 return False
             pyautogui.press('down')
-            if not self._interruptible_delay(eor_delay):
-                return False
+            return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action == "enter":
             pyautogui.press('enter')
-            if not self._interruptible_delay(eor_delay):
-                return False
+            return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action == "tab":
             pyautogui.press('tab')
-            if not self._interruptible_delay(self.sender.speed_delay):
-                return False
+            return self._wait_after_ui_action(self.sender.speed_delay)
         elif self.end_of_row_action == "none":
-            pass
-
-        if not self.sender._wait_if_hourglass():
-            if not self._is_stop_requested():
-                self._request_stop((self.sender.last_error or "target remained busy").strip())
-            return False
+            return self._wait_after_ui_action(0.0)
         return True
 
     def _run_ui_mode(self):
@@ -682,7 +696,7 @@ class LoaderThread(QThread):
                     sup = row_dict.get("Supplier_Num", "")
                     # Auto-detect per-cell (DL macro) format.
                     # When col 0 is a DL macro string the user loaded a per-cell
-                    # keystroke row — extract the real invoice data from the known
+                    # keystroke row â€” extract the real invoice data from the known
                     # fixed column positions inside that row.
                     if sup.startswith("\\") or (sup.startswith("{") and "}" in sup):
                         _d = [
@@ -726,30 +740,32 @@ class LoaderThread(QThread):
                         """Auto-handle LOV (e.g. Supplier Site): press Enter to
                         select the highlighted row and close it.  Falls back to a
                         manual pause only if Enter does not dismiss the popup."""
-                        import time as _time
                         from kdl.window.window_manager import WindowManager
 
-                        _time.sleep(0.15)
+                        if not self._interruptible_delay(0.15):
+                            return False
                         self.sender._si_send_vk(0x0D)   # VK_RETURN
-                        _time.sleep(0.35)
+                        if not self._wait_after_ui_action(0.35):
+                            return False
 
                         still_open = WindowManager.detect_blocking_popup(
                             self.sender.target_hwnd, self.sender.target_title)
                         if not still_open:
                             self.progress_updated.emit(
                                 rows_processed, total_rows,
-                                f"[Imprest] Auto-accepted LOV '{popup_title}' → Enter")
+                                f"[Imprest] Auto-accepted LOV '{popup_title}' â†’ Enter")
                             return not self._is_stop_requested()
 
                         # Second attempt
                         self.sender._si_send_vk(0x0D)
-                        _time.sleep(0.35)
+                        if not self._wait_after_ui_action(0.35):
+                            return False
                         still_open = WindowManager.detect_blocking_popup(
                             self.sender.target_hwnd, self.sender.target_title)
                         if not still_open:
                             self.progress_updated.emit(
                                 rows_processed, total_rows,
-                                f"[Imprest] Auto-accepted LOV '{popup_title}' → Enter (2nd)")
+                                f"[Imprest] Auto-accepted LOV '{popup_title}' â†’ Enter (2nd)")
                             return not self._is_stop_requested()
 
                         # Fallback: manual pause
@@ -839,7 +855,7 @@ class LoaderThread(QThread):
                         # move to the next field just before next cell send.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             pyautogui.press('tab')
-                            if not self._interruptible_delay(self.sender.speed_delay, wait_hourglass=True):
+                            if not self._wait_after_ui_action(self.sender.speed_delay):
                                 break
                             pending_tab_after_receipt = False
 
@@ -867,7 +883,7 @@ class LoaderThread(QThread):
                         # Auto-Tab only between plain data fields.
                         if i in data_positions and data_positions and i != data_positions[-1]:
                             pyautogui.press('tab')
-                            if not self._interruptible_delay(self.sender.speed_delay, wait_hourglass=True):
+                            if not self._wait_after_ui_action(self.sender.speed_delay):
                                 break
 
                 if not self._stop_requested and row_had_activity:
@@ -877,7 +893,7 @@ class LoaderThread(QThread):
             else:
                 # CELL MODE (original behavior)
                 if not self.sender.activate_target():
-                    self.loading_complete.emit(False, "Lost focus on target window â€” stopped.")
+                    self.loading_complete.emit(False, "Lost focus on target window - stopped.")
                     return
 
                 for col_idx, cell_value in enumerate(row_data):
@@ -952,8 +968,8 @@ class LoaderThread(QThread):
         """
         Called immediately after send_cell() returns False.
         Checks whether an IFMIS/Oracle popup caused the failure before
-        labelling it a generic cell error.  Popup → pause/stop per setting.
-        Cell error (no popup) → always stop.
+        labelling it a generic cell error.  Popup â†’ pause/stop per setting.
+        Cell error (no popup) â†’ always stop.
         """
         if self._is_stop_requested():
             return
@@ -961,15 +977,15 @@ class LoaderThread(QThread):
         self._last_popup_check_at = 0.0
         if self._check_blocking_popup(rows_processed, total_rows):
             # Popup was the root cause.  Even if the user dismissed it
-            # (pause mode), we cannot safely retry the failed cell — its
-            # data is in an unknown state — so stop with a clear message.
+            # (pause mode), we cannot safely retry the failed cell â€” its
+            # data is in an unknown state â€” so stop with a clear message.
             if not self._is_stop_requested():
                 self._request_stop(
                     f"popup during send at R{row_idx + 1} C{col_idx + 1} "
-                    f"— verify data and restart from that row"
+                    f"â€” verify data and restart from that row"
                 )
             return
-        # No popup — genuine send failure.
+        # No popup â€” genuine send failure.
         detail = (self.sender.last_error or "send failed").strip()
         self._request_stop(f"cell error at R{row_idx + 1} C{col_idx + 1}: {detail}")
 
@@ -1003,7 +1019,7 @@ class LoaderThread(QThread):
             return False
 
         if self._popup_stop_on_error:
-            # Stop mode — for unsupervised runs.
+            # Stop mode â€” for unsupervised runs.
             if popup_title != self._last_popup_title:
                 self._last_popup_title = popup_title
                 self._request_stop(f"popup detected: {popup_title}")
@@ -1014,7 +1030,7 @@ class LoaderThread(QThread):
                 )
             return True
 
-        # Pause mode — user dismisses popup and resumes manually.
+        # Pause mode â€” user dismisses popup and resumes manually.
         self._pause_requested = True
         if popup_title != self._last_popup_title:
             self._last_popup_title = popup_title
@@ -1035,4 +1051,3 @@ class LoaderThread(QThread):
         while not self._step_advance_requested and not self._is_stop_requested():
             self._wait_condition.wait(self._mutex, 30)
         self._mutex.unlock()
-

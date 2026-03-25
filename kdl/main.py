@@ -1,5 +1,5 @@
 """
-NT_DL - IFMIS Data Loader
+NT DL Multipurpose Tool
 Application entry point.
 """
 
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QSplashScreen
 from PySide6.QtCore import Qt, QTimer, QRect
 from PySide6.QtGui import QFont, QPixmap, QPainter, QColor, QLinearGradient, QIcon
 
-from kdl import __version__
+from kdl import __app_name__, __display_name__, __version__
 from kdl.main_window import MainWindow
 from kdl.window.window_manager import WindowManager
 
@@ -56,11 +56,11 @@ def create_splash_pixmap():
     else:
         painter.setPen(QColor("#FFFFFF"))
         painter.setFont(QFont("Segoe UI", 46, QFont.Bold))
-        painter.drawText(left_rect, Qt.AlignCenter, "NT_DL")
+        painter.drawText(left_rect, Qt.AlignCenter, "NT DL")
 
     painter.setPen(QColor("#FFFFFF"))
-    painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
-    painter.drawText(QRect(18, 268, 184, 28), Qt.AlignLeft | Qt.AlignVCenter, "NT_DL - IFMIS Loader")
+    painter.setFont(QFont("Segoe UI", 10, QFont.Bold))
+    painter.drawText(QRect(18, 266, 184, 34), Qt.AlignLeft | Qt.AlignVCenter, "NT DL Multipurpose Tool")
     painter.setFont(QFont("Segoe UI", 9))
     painter.drawText(QRect(18, 294, 184, 22), Qt.AlignLeft | Qt.AlignVCenter, "")
 
@@ -68,7 +68,7 @@ def create_splash_pixmap():
     right_x = 246
     painter.setPen(QColor("#FF2D2D"))
     painter.setFont(QFont("Segoe UI", 34, QFont.Bold))
-    painter.drawText(QRect(right_x, 30, 490, 56), Qt.AlignLeft | Qt.AlignVCenter, "NT_DL")
+    painter.drawText(QRect(right_x, 30, 490, 56), Qt.AlignLeft | Qt.AlignVCenter, "NT DL")
 
     painter.setPen(QColor("#FFFFFF"))
     painter.setFont(QFont("Segoe UI", 22, QFont.Bold))
@@ -76,13 +76,13 @@ def create_splash_pixmap():
 
     painter.setPen(QColor("#E2E2E2"))
     painter.setFont(QFont("Segoe UI", 14))
-    painter.drawText(QRect(right_x, 146, 490, 34), Qt.AlignLeft | Qt.AlignVCenter, "IFMIS Data Loader")
-    painter.drawText(QRect(right_x, 184, 490, 34), Qt.AlignLeft | Qt.AlignVCenter, "Forms Automation")
+    painter.drawText(QRect(right_x, 146, 490, 34), Qt.AlignLeft | Qt.AlignVCenter, "Automation, Reports, and Utilities")
+    painter.drawText(QRect(right_x, 184, 490, 34), Qt.AlignLeft | Qt.AlignVCenter, "Oracle, ERP, and workflow tools")
 
     painter.setPen(QColor("#B9B9B9"))
     painter.setFont(QFont("Segoe UI", 11))
     painter.drawText(QRect(right_x, 254, 490, 28), Qt.AlignLeft | Qt.AlignVCenter, "www.ntdl.local")
-    painter.drawText(QRect(right_x, 282, 490, 28), Qt.AlignLeft | Qt.AlignVCenter, "Support: IFMIS Operations")
+    painter.drawText(QRect(right_x, 282, 490, 28), Qt.AlignLeft | Qt.AlignVCenter, "Support: Workflow Operations")
 
     painter.end()
     return pixmap
@@ -106,7 +106,7 @@ def _install_exception_hook():
             from PySide6.QtWidgets import QMessageBox, QApplication as _App
             if _App.instance():
                 QMessageBox.critical(
-                    None, "NT_DL - Unexpected Error",
+                    None, f"{__display_name__} - Unexpected Error",
                     f"An unexpected error occurred:\n\n{exc_value}\n\n"
                     "The application may be unstable. Please save your work.",
                 )
@@ -121,7 +121,7 @@ def _activate_existing_instance():
     try:
         for hwnd, title in WindowManager.get_open_windows():
             text = (title or "").strip()
-            if "NT_DL" not in text or "Data Loader" not in text:
+            if text != __display_name__ and not text.startswith(f"{__display_name__}  |"):
                 continue
             if ctypes.windll.user32.IsIconic(hwnd):
                 ctypes.windll.user32.ShowWindow(hwnd, _SW_RESTORE)
@@ -169,10 +169,10 @@ def main():
         )
 
     # Application metadata
-    app.setApplicationName("NT_DL")
-    app.setApplicationDisplayName("NT_DL")
+    app.setApplicationName(__app_name__)
+    app.setApplicationDisplayName(__display_name__)
     app.setApplicationVersion(__version__)
-    app.setOrganizationName("NT_DL")
+    app.setOrganizationName(__app_name__)
 
     # App icon
     icon_path = resource_path(os.path.join("kdl", "assets", "kdl_a.ico"))

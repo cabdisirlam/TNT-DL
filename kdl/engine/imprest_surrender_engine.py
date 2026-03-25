@@ -910,6 +910,14 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
     from kdl.engine.data_sender import _SI_VK_MAP
     vk_tab = _SI_VK_MAP.get("tab", 0x09)
 
+    def _wait_after_action(delay_seconds: float) -> bool:
+        if sender.load_control:
+            return sender._wait_for_ready()
+        if not sender._sleep_interruptible(delay_seconds):
+            sender.last_error = "imprest action interrupted"
+            return False
+        return sender._wait_if_hourglass()
+
     for action in actions:
         if is_stop_requested():
             return False
@@ -920,42 +928,46 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
             for _ in range(action[1]):
                 if not sender._si_send_vk(vk_tab):
                     return False
-                time.sleep(inter_action_delay)
+                if not _wait_after_action(inter_action_delay):
+                    return False
 
         elif kind == "key":
             vk = _SI_VK_MAP.get(action[1], 0)
             if vk and not sender._si_send_vk(vk):
                 return False
-            time.sleep(inter_action_delay)
+            if not _wait_after_action(inter_action_delay):
+                return False
 
         elif kind == "hotkey":
             # On the last row, add a 500 ms settle before saving to ensure
             # the row is written before the macro moves on.
             if is_last_row and action[1] == ["ctrl"] and action[2] == "s":
-                time.sleep(0.5)
+                if not _wait_after_action(0.5):
+                    return False
             if not sender._si_send_hotkey(action[1], action[2]):
                 return False
-            time.sleep(inter_action_delay)
+            if not _wait_after_action(inter_action_delay):
+                return False
 
         elif kind == "delay":
-            deadline = time.monotonic() + action[1] / 1000.0
-            while time.monotonic() < deadline:
-                if is_stop_requested():
-                    return False
-                time.sleep(0.05)
+            if not sender._sleep_interruptible(action[1] / 1000.0):
+                sender.last_error = "imprest delay interrupted"
+                return False
 
         elif kind == "field":
             value = (row_dict.get(action[1]) or "").strip()
             if value and not sender._si_send_unicode(value):
                 return False
-            time.sleep(inter_action_delay)
+            if not _wait_after_action(inter_action_delay):
+                return False
             if not _mid_row_popup_check(sender, popup_fn):
                 return False
 
         elif kind == "text":
             if action[1] and not sender._si_send_unicode(action[1]):
                 return False
-            time.sleep(inter_action_delay)
+            if not _wait_after_action(inter_action_delay):
+                return False
             if not _mid_row_popup_check(sender, popup_fn):
                 return False
 

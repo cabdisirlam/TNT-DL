@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QGuiApplication
 
+from kdl import __display_name__
 from kdl.engine.keystroke_parser import DEFAULT_SHORTCUTS
 from kdl.styles import dialog_qss, accent_button_qss, TEXT_MUTED
 
@@ -19,7 +20,7 @@ class ShortcutsDialog(QDialog):
 
     def __init__(self, shortcuts: dict = None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("NT_DL - Edit Shortcuts / Commands")
+        self.setWindowTitle(f"{__display_name__} - Shortcuts / Commands")
         self.setMinimumSize(460, 360)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)

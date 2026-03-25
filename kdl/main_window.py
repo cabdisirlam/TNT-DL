@@ -1,7 +1,6 @@
 ﻿"""
-NT_DL - IFMIS Data Loader
-Main Window with FDL-style spreadsheet, toolbar with Window/Command Group selectors,
-and loading controls for Oracle IFMIS workflows.
+NT DL Multipurpose Tool
+Main window with spreadsheet, automation, and workflow utilities.
 """
 
 import os
@@ -21,7 +20,7 @@ from PySide6.QtGui import QAction, QFont, QKeySequence, QColor, QIcon, QGuiAppli
 
 from kdl.spreadsheet_widget import SpreadsheetWidget
 from kdl.config_store import load_settings, save_settings
-from kdl import __version__
+from kdl import __display_name__, __version__
 from kdl.dialogs.load_settings_dialog import LoadSettingsDialog, END_OF_ROW_ACTIONS, LOAD_MODES
 from kdl.dialogs.shortcuts_dialog import ShortcutsDialog
 from kdl.dialogs.macro_recorder_dialog import MacroRecorderDialog
@@ -234,7 +233,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("NT_DL  |  IFMIS Data Loader")
+        self._apply_window_title()
         self._responsive_show_applied = False
         self._compact_layout = False
         self._base_min_size = QSize(1100, 700)
@@ -257,10 +256,12 @@ class MainWindow(QMainWindow):
         self._default_speed_delay = 0.1
         self._default_window_delay = 0.05
         self._default_wait_hourglass = True
+        self._default_load_control = False
         self._default_form_mode = False
         self._default_load_mode = "per_cell"
         self._default_end_of_row_action = "none"
         self._default_validate_before_load = True
+        self._default_popup_behavior = "pause"
         self._db_settings = {"mode": "ui_automation", "active_profile": "", "profiles": []}
         self._overlay_total_rows = 0
         self._overlay_total_cols = 0
@@ -427,6 +428,9 @@ class MainWindow(QMainWindow):
         self._default_wait_hourglass = bool(
             load_defaults.get("wait_hourglass", self._default_wait_hourglass)
         )
+        self._default_load_control = bool(
+            load_defaults.get("load_control", self._default_load_control)
+        )
         self._default_form_mode = bool(load_defaults.get("form_mode", self._default_form_mode))
         saved_mode = str(load_defaults.get("load_mode", "")).strip().lower()
         if saved_mode in VALID_LOAD_MODES:
@@ -441,6 +445,10 @@ class MainWindow(QMainWindow):
         self._default_end_of_row_action = str(
             load_defaults.get("end_of_row_action", self._default_end_of_row_action)
         )
+        popup_behavior = str(
+            load_defaults.get("popup_behavior", self._default_popup_behavior)
+        ).strip().lower()
+        self._default_popup_behavior = popup_behavior if popup_behavior in {"pause", "stop"} else "pause"
         if migrated_defaults:
             self._default_load_mode = "per_cell"
             self._default_form_mode = False
@@ -475,10 +483,12 @@ class MainWindow(QMainWindow):
                 "speed_delay": self._default_speed_delay,
                 "window_delay": self._default_window_delay,
                 "wait_hourglass": self._default_wait_hourglass,
+                "load_control": self._default_load_control,
                 "form_mode": self._default_form_mode,
                 "load_mode": self._default_load_mode,
                 "validate_before_load": self._default_validate_before_load,
                 "end_of_row_action": self._default_end_of_row_action,
+                "popup_behavior": self._default_popup_behavior,
             },
             "ui": {
                 "protect_load_enabled": self._protect_load_enabled,
@@ -735,7 +745,7 @@ class MainWindow(QMainWindow):
         # â”€â”€ Help Menu â”€â”€
         help_menu = menubar.addMenu('&Help')
 
-        about_action = QAction("&About NT_DL", self)
+        about_action = QAction(f"&About {__display_name__}", self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
@@ -1371,7 +1381,11 @@ class MainWindow(QMainWindow):
                 # Collect process names while still in background
                 result = []
                 for hwnd, title in windows:
-                    if ("NT_DL" in title or "KDL" in title) and "Data Loader" in title:
+                    title_text = title or ""
+                    if (
+                        __display_name__ in title_text
+                        or (("NT_DL" in title_text or "KDL" in title_text) and "Data Loader" in title_text)
+                    ):
                         continue
                     pname = WindowManager.get_window_process_name(hwnd)
                     result.append((hwnd, title, pname))
@@ -1775,12 +1789,18 @@ class MainWindow(QMainWindow):
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # File Operations
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    def _apply_window_title(self, detail: str | None = None):
+        if detail:
+            self.setWindowTitle(f"{__display_name__}  |  {detail}")
+            return
+        self.setWindowTitle(__display_name__)
+
     def _new_file(self):
         if self._confirm_discard():
             self.spreadsheet.clear_all()
             self.current_file = None
             self._has_header_row = False
-            self.setWindowTitle("NT_DL  |  New File")
+            self._apply_window_title("New File")
             self.status_label.setText("New file created")
 
     def _open_file(self):
@@ -1799,7 +1819,7 @@ class MainWindow(QMainWindow):
             else:
                 self.spreadsheet.import_csv(filepath)
             self.current_file = filepath
-            self.setWindowTitle(f"NT_DL  |  {os.path.basename(filepath)}")
+            self._apply_window_title(os.path.basename(filepath))
             self.status_label.setText(f"Opened: {os.path.basename(filepath)}")
 
     def _save_file(self) -> bool:
@@ -1826,7 +1846,7 @@ class MainWindow(QMainWindow):
             else:
                 self.spreadsheet.export_csv(filepath)
             self.current_file = filepath
-            self.setWindowTitle(f"NT_DL  |  {os.path.basename(filepath)}")
+            self._apply_window_title(os.path.basename(filepath))
             self.status_label.setText(f"Saved: {os.path.basename(filepath)}")
             return True
         return False
@@ -1934,6 +1954,7 @@ class MainWindow(QMainWindow):
         dialog.cell_delay_input.setText(f"{self._default_speed_delay:g}")
         dialog.window_delay_input.setText(f"{self._default_window_delay:g}")
         dialog.hourglass_check.setChecked(self._default_wait_hourglass)
+        dialog.load_control_check.setChecked(self._default_load_control)
         if self._default_load_mode == "imprest_surrender":
             dialog.radio_imprest.setChecked(True)
         elif self._default_load_mode == "imprest_test":
@@ -1945,7 +1966,12 @@ class MainWindow(QMainWindow):
         else:
             dialog.radio_per_cell.setChecked(True)
         dialog._update_mode_controls()
+        dialog._sync_load_control_state(self._default_load_control)
         dialog.validate_check.setChecked(self._default_validate_before_load)
+        if self._default_popup_behavior == "stop":
+            dialog.radio_popup_stop.setChecked(True)
+        else:
+            dialog.radio_popup_pause.setChecked(True)
         for idx, (_, key) in enumerate(END_OF_ROW_ACTIONS):
             if key == self._default_end_of_row_action:
                 dialog.eor_combo.setCurrentIndex(idx)
@@ -2088,6 +2114,7 @@ class MainWindow(QMainWindow):
         self._default_speed_delay = settings.get("speed_delay", self._default_speed_delay)
         self._default_window_delay = settings.get("window_delay", self._default_window_delay)
         self._default_wait_hourglass = settings.get("wait_hourglass", self._default_wait_hourglass)
+        self._default_load_control = settings.get("load_control", self._default_load_control)
         chosen_mode = str(settings.get("load_mode", "")).strip().lower()
         if chosen_mode not in VALID_LOAD_MODES:
             chosen_mode = "per_cell"
@@ -2099,6 +2126,8 @@ class MainWindow(QMainWindow):
         self._default_end_of_row_action = settings.get(
             "end_of_row_action", self._default_end_of_row_action
         )
+        popup_behavior = str(settings.get("popup_behavior", self._default_popup_behavior)).strip().lower()
+        self._default_popup_behavior = popup_behavior if popup_behavior in {"pause", "stop"} else "pause"
         self._persist_settings()
 
         from_row = settings.get("from_row", 0)
@@ -3538,14 +3567,15 @@ class MainWindow(QMainWindow):
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _show_about(self):
         QMessageBox.about(
-            self, "About NT_DL",
-            "<h2>NT_DL</h2>"
+            self, f"About {__display_name__}",
+            f"<h2>{__display_name__}</h2>"
             f"<p>Version {__version__}</p>"
-            "<p>Designed for Oracle IFMIS data loading.</p>"
-            "<p>Automates data entry by sending data and keystrokes "
-            "to Oracle Forms through the front-end interface.</p>"
-            "<p><b>Supports:</b> Oracle EBS R12 and above, Oracle Cloud Apps, "
-            "and other ERP systems.</p>"
+            "<p>Multipurpose desktop tool for automation, reporting, conversions, "
+            "and Oracle/ERP workflow support.</p>"
+            "<p>Includes data loading, financial utilities, statement conversion, "
+            "and task-specific workflow tools in one application.</p>"
+            "<p><b>Purchase this app:</b> USD 1,000.<br>"
+            "<b>Discounted offer:</b> USD 900.</p>"
             "<hr>"
         )
 
@@ -3553,13 +3583,13 @@ class MainWindow(QMainWindow):
 
     def _show_how_to(self):
         QMessageBox.information(
-            self, "How to Use NT_DL",
+            self, f"How to Use {__display_name__}",
             "<h3>Quick Start Guide</h3>"
             "<ol>"
-            "<li><b>Select Target Window:</b> Choose the Oracle IFMIS form "
+            "<li><b>Select Target Window:</b> Choose the target form or application "
             "from the Window dropdown at the top</li>"
-            "<li><b>Select Command Group:</b> Choose 'Oracle EBS R12 / 11i' "
-            "or your Oracle version</li>"
+            "<li><b>Select Command Group:</b> Choose the command group that matches "
+            "your Oracle or ERP screen</li>"
             "<li><b>Prepare Data:</b> Enter transaction data in the grid, "
             "or import from Excel/CSV</li>"
             "<li><b>Add Navigation:</b> Use keystrokes in key columns:<br>"

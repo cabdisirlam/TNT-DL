@@ -116,6 +116,7 @@ class DataSender:
         self.wait_for_hourglass: bool = False
         self.hourglass_timeout: float = 30.0  # Max wait time for hourglass
         self.stop_requested_cb: Optional[Callable[[], bool]] = None
+        self.pause_requested_cb: Optional[Callable[[], bool]] = None
         self.last_error: str = ""
         self.use_fast_send: bool = False
         self.load_control: bool = False   # Adaptive: skip fixed delay, wait for app readiness
@@ -127,6 +128,10 @@ class DataSender:
         """Set callback used to abort long waits when stop is requested."""
         self.stop_requested_cb = checker
 
+    def set_pause_checker(self, checker: Optional[Callable[[], bool]]):
+        """Set callback used to pause long waits while the loader is paused."""
+        self.pause_requested_cb = checker
+
     def _is_stop_requested(self) -> bool:
         if not self.stop_requested_cb:
             return False
@@ -135,11 +140,29 @@ class DataSender:
         except Exception:
             return False
 
+    def _is_pause_requested(self) -> bool:
+        if not self.pause_requested_cb:
+            return False
+        try:
+            return bool(self.pause_requested_cb())
+        except Exception:
+            return False
+
+    def _wait_while_paused(self) -> bool:
+        """Yield while paused so manual Pause also affects sender waits."""
+        while self._is_pause_requested():
+            if self._is_stop_requested():
+                return False
+            time.sleep(0.01)
+        return not self._is_stop_requested()
+
     def _sleep_interruptible(self, seconds: float) -> bool:
         """Sleep in small chunks so stop requests can interrupt long waits."""
         seconds = max(0.0, float(seconds))
         end_time = time.time() + seconds
         while time.time() < end_time:
+            if not self._wait_while_paused():
+                return False
             if self._is_stop_requested():
                 return False
             time.sleep(max(0, min(0.01, end_time - time.time())))
@@ -255,7 +278,13 @@ class DataSender:
             return True
 
         start = time.time()
+        if not self._wait_while_paused():
+            self.last_error = "hourglass wait interrupted"
+            return False
         while WindowManager.is_cursor_hourglass():
+            if not self._wait_while_paused():
+                self.last_error = "hourglass wait interrupted"
+                return False
             if self._is_stop_requested():
                 self.last_error = "hourglass wait interrupted"
                 return False
