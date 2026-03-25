@@ -17,8 +17,15 @@ except ImportError:
     openpyxl = None
 
 # ── Constants ──────────────────────────────────────────────
-DN_PREFIX_CELL = r"\*s"
-OUTPUT_LAST_COL = 16    # A:P
+OUTPUT_HEADERS = [
+    "Action",
+    "Type",
+    "Code",
+    "Number",
+    "Transaction Date",
+    "Value Date",
+    "Amount",
+]
 AUDIT_DETAIL_HEADER_ROW = 9
 AUDIT_DETAIL_FIRST_ROW = 10
 
@@ -231,27 +238,33 @@ def _fmt_date(d: date) -> str:
 
 def _make_payment_row(doc_no, dt: date, amt: float) -> list:
     return [
-        'tab', 'tab', 'trfd', 'tab',
-        str(doc_no) if doc_no else '',
         'tab',
-        _fmt_date(dt), 'tab', _fmt_date(dt), 'tab',
+        'Payment',
+        'TRFD',
+        str(doc_no) if doc_no else '',
+        _fmt_date(dt),
+        _fmt_date(dt),
         amt,
-        'tab', DN_PREFIX_CELL, '*dn', '', ''
     ]
 
 
 def _make_receipt_row(doc_no: str, dt: date, amt: float) -> list:
     return [
-        'tab', '*dn', 'r', 'tab', 'trfc', 'tab',
+        'tab',
+        'Receipt',
+        'TRFC',
         doc_no,
-        'tab', _fmt_date(dt), 'tab', _fmt_date(dt), 'tab',
+        _fmt_date(dt),
+        _fmt_date(dt),
         amt,
-        'tab', DN_PREFIX_CELL, '*dn'
     ]
 
 
 def _write_rows_to_sheet(ws_out: Worksheet, rows: list[list]):
-    """Write a list of value-lists to ws_out starting at row 2."""
+    """Write a list of table-format value-lists to ws_out starting at row 2."""
+    for c, header in enumerate(OUTPUT_HEADERS, 1):
+        cell = ws_out.cell(row=1, column=c, value=header)
+        cell.font = Font(bold=True)
     for i, row_vals in enumerate(rows):
         for c, val in enumerate(row_vals, 1):
             ws_out.cell(row=i + 2, column=c, value=val)
@@ -475,8 +488,8 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
 
     # 8) Sort combined rows by date in Python, then write to worksheet once
     def _sort_key(row_vals: list) -> date:
-        # index 8 (col 9) = receipt value-date; index 6 (col 7) = payment date
-        v = row_vals[8] if row_vals[8] else row_vals[6]
+        # Table format: index 5 = value date, index 4 = transaction date.
+        v = row_vals[5] if len(row_vals) > 5 and row_vals[5] else row_vals[4]
         if isinstance(v, str):
             try:
                 return _parse_dmon_y(v, '-') or date.min

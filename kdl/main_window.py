@@ -1047,6 +1047,9 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
 
         self.rows_label = QLabel("Rows: 0")
+        self.rows_label.setStyleSheet(
+            "font-weight: 600; font-size: 15px; color: #FFFFFF; padding: 0 8px;"
+        )
         self.status_bar.addWidget(self.rows_label)
 
         self.progress_bar = QProgressBar()
