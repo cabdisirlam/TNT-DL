@@ -75,15 +75,17 @@ class LoadProgressOverlay(QWidget):
         )
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.setFixedSize(460, 118)
+        self.setFixedSize(450, 126)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
 
         self._mode_label = "Per Cell"
         self.title_label = QLabel("")
-        self.title_label.setStyleSheet("font-weight: 600; font-size: 15px; color: #4E6E8F;")
+        self.title_label.setStyleSheet(
+            "font-weight: 700; font-size: 13px; color: #4E6E8F; letter-spacing: 0.4px;"
+        )
         layout.addWidget(self.title_label)
         self._refresh_title()
 
@@ -122,7 +124,9 @@ class LoadProgressOverlay(QWidget):
         cell_lbl = QLabel("Cell")
         cell_lbl.setFixedWidth(30)
         self.cell_value = QLabel("")
-        self.cell_value.setStyleSheet("font-family: Consolas;")
+        self.cell_value.setStyleSheet(
+            "font-family: Consolas; font-size: 13px; color: #18324A; font-weight: 600;"
+        )
         self.cell_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         cell_row.addWidget(cell_lbl)
         cell_row.addWidget(self.cell_value, 1)
@@ -131,20 +135,24 @@ class LoadProgressOverlay(QWidget):
         self.setStyleSheet(
             """
             QWidget {
-                background: #F8FCFF;
-                border: 1px solid #B6D3EE;
-                border-radius: 8px;
-                color: #1B3550;
-                font-size: 15px;
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #FFFFFF,
+                    stop:1 #F3F8FC
+                );
+                border: 1px solid #BFD1E1;
+                border-radius: 14px;
+                color: #18324A;
+                font-size: 13px;
             }
             QProgressBar {
-                border: 1px solid #B6D3EE;
-                border-radius: 3px;
-                background-color: #EAF4FE;
+                border: 1px solid #BDD0E0;
+                border-radius: 6px;
+                background-color: #EAF1F8;
             }
             QProgressBar::chunk {
-                background-color: #69B4E8;
-                border-radius: 2px;
+                background-color: #1F7AB8;
+                border-radius: 5px;
             }
             """
         )
@@ -154,7 +162,7 @@ class LoadProgressOverlay(QWidget):
 
     def _refresh_title(self):
         mode = (self._mode_label or "").strip() or "Per Cell"
-        self.title_label.setText(f"NT_DL: 2× Esc to stop | Mode: {mode}")
+        self.title_label.setText(f"NT DL  |  2x Esc to stop  |  Mode: {mode}")
 
     def _position_top_right(self):
         screen = QGuiApplication.primaryScreen()
@@ -357,6 +365,7 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "main_toolbar"):
             self.main_toolbar.setIconSize(QSize(20, 20) if compact else QSize(24, 24))
+            self._normalize_toolbar_button_geometry()
         if hasattr(self, "window_combo"):
             self.window_combo.setMinimumWidth(280 if compact else 350)
         if hasattr(self, "command_group_combo"):
@@ -770,6 +779,7 @@ class MainWindow(QMainWindow):
 
     def _build_toolbar(self):
         toolbar = QToolBar("Main Toolbar")
+        toolbar.setObjectName("MainToolbar")
         toolbar.setMovable(False)
         toolbar.setIconSize(QSize(24, 24))
         toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
@@ -911,13 +921,19 @@ class MainWindow(QMainWindow):
         """Force uniform button and icon size for every toolbar action."""
         if not self.main_toolbar:
             return
+        icon_size = self.main_toolbar.iconSize()
+        compact = icon_size.width() <= 20
         for action in self.main_toolbar.actions():
             btn = self.main_toolbar.widgetForAction(action)
             if btn is None or not isinstance(btn, QToolButton):
                 continue
             btn.setAutoRaise(False)
-            btn.setFixedSize(44, 40)
-            btn.setIconSize(QSize(24, 24))
+            btn.setCursor(Qt.PointingHandCursor)
+            if compact:
+                btn.setFixedSize(44, 40)
+            else:
+                btn.setFixedSize(50, 46)
+            btn.setIconSize(icon_size)
 
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Central Widget
@@ -925,23 +941,26 @@ class MainWindow(QMainWindow):
     def _build_central(self):
         central = QWidget()
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(4, 4, 4, 0)
-        main_layout.setSpacing(4)
+        main_layout.setContentsMargins(12, 10, 12, 0)
+        main_layout.setSpacing(8)
 
-        self.top_rows_container = QWidget()
+        self.top_rows_container = QFrame()
+        self.top_rows_container.setObjectName("TopRowsCard")
         top_rows_layout = QVBoxLayout(self.top_rows_container)
-        top_rows_layout.setContentsMargins(0, 0, 0, 0)
-        top_rows_layout.setSpacing(4)
+        top_rows_layout.setContentsMargins(14, 14, 14, 12)
+        top_rows_layout.setSpacing(8)
 
         # â”€â”€ Row 1: Window selector â”€â”€
         window_row = QHBoxLayout()
         window_row.setSpacing(8)
 
         win_label = QLabel("Window")
-        win_label.setStyleSheet("font-weight: 600; font-size: 18px; min-width: 72px; color: #1B3550;")
+        win_label.setObjectName("ShellFieldLabel")
+        win_label.setMinimumWidth(72)
         window_row.addWidget(win_label)
 
         self.window_combo = QComboBox()
+        self.window_combo.setObjectName("ShellCombo")
         self.window_combo.setEditable(True)
         self.window_combo.setInsertPolicy(QComboBox.NoInsert)
         self.window_combo.setMaxVisibleItems(24)
@@ -951,7 +970,6 @@ class MainWindow(QMainWindow):
         self.window_combo.setView(QListView())
         self.window_combo.currentTextChanged.connect(self._update_window_combo_tooltip)
         self.window_combo.setMinimumWidth(350)
-        self.window_combo.setStyleSheet("font-size: 18px; font-weight: 500;")
         self.window_combo.setSizePolicy(
             self.window_combo.sizePolicy().horizontalPolicy(),
             self.window_combo.sizePolicy().verticalPolicy()
@@ -960,14 +978,9 @@ class MainWindow(QMainWindow):
 
         # Refresh button
         self.refresh_btn = QPushButton("Refresh")
-        self.refresh_btn.setFixedHeight(30)
+        self.refresh_btn.setObjectName("ShellRefreshButton")
+        self.refresh_btn.setFixedHeight(40)
         self.refresh_btn.setCursor(Qt.PointingHandCursor)
-        self.refresh_btn.setStyleSheet("""
-            QPushButton {
-                font-size: 18px; font-weight: 600; padding: 6px 18px;
-                border-radius: 5px;
-            }
-        """)
         self.refresh_btn.clicked.connect(self._refresh_windows)
         window_row.addWidget(self.refresh_btn)
 
@@ -975,10 +988,11 @@ class MainWindow(QMainWindow):
 
         # Command Group
         cg_label = QLabel("Command\nGroup")
-        cg_label.setStyleSheet("font-weight: 600; font-size: 18px; color: #1B3550;")
+        cg_label.setObjectName("ShellFieldLabelStacked")
         window_row.addWidget(cg_label)
 
         self.command_group_combo = QComboBox()
+        self.command_group_combo.setObjectName("ShellCombo")
         self.command_group_combo.setMaxVisibleItems(20)
         self.command_group_combo.setIconSize(QSize(16, 16))
         self.command_group_combo.setView(QListView())
@@ -988,7 +1002,6 @@ class MainWindow(QMainWindow):
             self.command_group_combo.setItemData(idx, group_name, Qt.ToolTipRole)
         self.command_group_combo.setCurrentIndex(1)  # Default: Oracle EBS R12 / 11i
         self.command_group_combo.setMinimumWidth(180)
-        self.command_group_combo.setStyleSheet("font-size: 18px; font-weight: 500;")
         window_row.addWidget(self.command_group_combo)
 
         top_rows_layout.addLayout(window_row)
@@ -998,28 +1011,29 @@ class MainWindow(QMainWindow):
         info_row.setSpacing(8)
 
         notes_label = QLabel("Notes")
-        notes_label.setStyleSheet("font-weight: 600; font-size: 18px; min-width: 72px; color: #1B3550;")
+        notes_label.setObjectName("ShellFieldLabel")
+        notes_label.setMinimumWidth(72)
         info_row.addWidget(notes_label)
 
         self.notes_display = QLabel("")
-        self.notes_display.setStyleSheet("""
-            background: white; border: 1px solid #B6D3EE; border-radius: 4px;
-            padding: 4px 8px; font-family: Consolas; font-size: 18px; min-height: 26px;
-            color: #1B3550;
-        """)
+        self.notes_display.setObjectName("NotesDisplay")
+        self.notes_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         info_row.addWidget(self.notes_display, 1)
 
         info_row.addSpacing(20)
 
         # R / C position
-        rc_frame = QWidget()
+        rc_frame = QFrame()
+        rc_frame.setObjectName("PositionCard")
         rc_layout = QVBoxLayout(rc_frame)
-        rc_layout.setContentsMargins(0, 0, 0, 0)
-        rc_layout.setSpacing(0)
+        rc_layout.setContentsMargins(12, 8, 12, 8)
+        rc_layout.setSpacing(2)
         self.pos_r_label = QLabel("R1")
         self.pos_c_label = QLabel("C1")
-        self.pos_r_label.setStyleSheet("font-weight: 600; font-size: 18px; font-family: Consolas; color: #1B3550;")
-        self.pos_c_label.setStyleSheet("font-weight: 600; font-size: 18px; font-family: Consolas; color: #1B3550;")
+        self.pos_r_label.setObjectName("PositionValue")
+        self.pos_c_label.setObjectName("PositionValue")
+        self.pos_r_label.setAlignment(Qt.AlignCenter)
+        self.pos_c_label.setAlignment(Qt.AlignCenter)
         rc_layout.addWidget(self.pos_r_label)
         rc_layout.addWidget(self.pos_c_label)
         info_row.addWidget(rc_frame)
@@ -1028,29 +1042,28 @@ class MainWindow(QMainWindow):
 
         # â”€â”€ Separator line â”€â”€
         sep = QFrame()
+        sep.setObjectName("TopRowsDivider")
         sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #D7E7F6;")
         top_rows_layout.addWidget(sep)
         main_layout.addWidget(self.top_rows_container, 0, Qt.AlignLeft)
 
         # â”€â”€ Spreadsheet Grid â”€â”€
         # Formula Bar
-        _fb_row = QHBoxLayout()
-        _fb_row.setContentsMargins(6, 2, 6, 2)
+        formula_card = QFrame()
+        formula_card.setObjectName("FormulaCard")
+        _fb_row = QHBoxLayout(formula_card)
+        _fb_row.setContentsMargins(10, 8, 10, 8)
+        _fb_row.setSpacing(8)
         self._cell_ref_label = QLabel("R1 C1")
-        self._cell_ref_label.setFixedWidth(62)
+        self._cell_ref_label.setObjectName("CellRefPill")
+        self._cell_ref_label.setFixedWidth(74)
         self._cell_ref_label.setAlignment(Qt.AlignCenter)
-        self._cell_ref_label.setStyleSheet(
-            "font-family: Consolas; font-size: 11px; "
-            "background: #EAF4FB; border: 1px solid #C5DCF0; border-radius: 3px; padding: 1px 4px;")
         self._formula_bar = QLineEdit()
+        self._formula_bar.setObjectName("FormulaBar")
         self._formula_bar.setPlaceholderText("Cell value")
-        self._formula_bar.setStyleSheet(
-            "font-family: Consolas; font-size: 12px; "
-            "border: 1px solid #C5DCF0; border-radius: 3px; padding: 1px 4px;")
         _fb_row.addWidget(self._cell_ref_label)
         _fb_row.addWidget(self._formula_bar, 1)
-        main_layout.addLayout(_fb_row, 0)
+        main_layout.addWidget(formula_card, 0)
 
         self.spreadsheet = SpreadsheetWidget()
         main_layout.addWidget(self.spreadsheet, 1)
@@ -2796,23 +2809,23 @@ class MainWindow(QMainWindow):
             btn.setStyleSheet(
                 """
                 QToolButton {
-                    background-color: rgba(255, 255, 255, 0.16);
+                    background-color: rgba(255, 255, 255, 0.12);
                     color: #FFFFFF;
-                    border: 1px solid rgba(255, 255, 255, 0.32);
-                    border-radius: 7px;
-                    padding: 4px;
-                    min-width: 40px;
-                    min-height: 36px;
+                    border: 1px solid rgba(255, 255, 255, 0.22);
+                    border-radius: 12px;
+                    padding: 5px;
+                    min-width: 44px;
+                    min-height: 40px;
                 }
                 QToolButton:hover {
-                    background-color: rgba(255, 255, 255, 0.26);
-                    border: 1px solid rgba(255, 255, 255, 0.56);
+                    background-color: rgba(255, 255, 255, 0.18);
+                    border: 1px solid rgba(255, 255, 255, 0.30);
                 }
                 QToolButton:pressed {
-                    background-color: rgba(0, 0, 0, 0.14);
+                    background-color: rgba(0, 0, 0, 0.18);
                 }
                 QToolButton:disabled {
-                    background-color: rgba(209, 213, 219, 0.75);
+                    background-color: rgba(209, 213, 219, 0.72);
                     color: #6B7280;
                     border: 1px solid #9CA3AF;
                 }
@@ -2823,23 +2836,40 @@ class MainWindow(QMainWindow):
             btn = self.main_toolbar.widgetForAction(action)
             if btn is None or not isinstance(btn, QToolButton):
                 return
+            base = QColor(bg)
+            top = base.lighter(118).name()
+            bottom = base.darker(108).name()
+            hover_top = base.lighter(128).name()
+            hover_bottom = base.darker(100).name()
+            pressed_bg = base.darker(120).name()
+            hover_border = QColor(border).darker(110).name()
             btn.setStyleSheet(
                 f"""
                 QToolButton {{
-                    background-color: {bg};
+                    background-color: qlineargradient(
+                        x1:0, y1:0, x2:0, y2:1,
+                        stop:0 {top},
+                        stop:1 {bottom}
+                    );
                     color: {fg};
                     border: 1px solid {border};
-                    border-radius: 7px;
-                    padding: 4px;
-                    min-width: 40px;
-                    min-height: 36px;
+                    border-radius: 12px;
+                    padding: 5px;
+                    min-width: 44px;
+                    min-height: 40px;
                 }}
                 QToolButton:hover {{
-                    border: 2px solid #0F172A;
+                    background-color: qlineargradient(
+                        x1:0, y1:0, x2:0, y2:1,
+                        stop:0 {hover_top},
+                        stop:1 {hover_bottom}
+                    );
+                    border: 1px solid {hover_border};
                 }}
                 QToolButton:pressed {{
-                    background-color: {border};
-                    color: #FFFFFF;
+                    background-color: {pressed_bg};
+                    border: 1px solid {border};
+                    color: {fg};
                 }}
                 QToolButton:disabled {{
                     background-color: #D1D5DB;
@@ -2854,6 +2884,9 @@ class MainWindow(QMainWindow):
         style_action(self.pause_btn, "#D97706", "#111827", "#92400E")
         style_action(self.step_btn, "#2563EB", "#FFFFFF", "#1E3A8A")
         style_action(self.statement_btn, "#2563EB", "#FFFFFF", "#1D4ED8")
+        style_action(self.report_btn, "#0F766E", "#FFFFFF", "#115E59")
+        style_action(self.budget_btn, "#C77A11", "#FFFFFF", "#9A5A09")
+        style_action(self.imprest_btn, "#0891B2", "#FFFFFF", "#0E7490")
         style_action(self.rec_btn, "#BE123C", "#FFFFFF", "#881337")
         style_action(self.convert_table_btn, "#0F766E", "#FFFFFF", "#115E59")
         style_action(self.convert_cell_btn, "#0EA5E9", "#0F172A", "#0369A1")
