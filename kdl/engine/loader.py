@@ -583,6 +583,8 @@ class LoaderThread(QThread):
             completed_rows = rows_processed + 1
             interval = self.save_interval if self.end_of_row_action == "new_record_save_n" else 50
             if completed_rows % interval == 0 or is_last_row:
+                if is_last_row:
+                    time.sleep(0.5)   # extra settle on last row — prevents skip at fast speeds
                 pyautogui.hotkey('ctrl', 's')
                 if not self._interruptible_delay(save_settle):
                     return False
@@ -590,6 +592,8 @@ class LoaderThread(QThread):
             if not self._interruptible_delay(eor_delay):
                 return False
         elif self.end_of_row_action == "save_proceed":
+            if is_last_row:
+                time.sleep(0.5)       # extra settle on last row
             pyautogui.hotkey('ctrl', 's')
             if not self._interruptible_delay(save_settle):
                 return False
@@ -665,9 +669,10 @@ class LoaderThread(QThread):
                     self.loading_complete.emit(False, "Lost focus on target window - stopped.")
                     return
 
-                if self.load_mode == "imprest_surrender":
+                if self.load_mode in ("imprest_surrender", "imprest_test"):
                     from kdl.engine.imprest_surrender_engine import (
                         COLUMNS, execute_row_for_loader,
+                        TEMPLATE_ACTIONS, TEMPLATE_ACTIONS_PGDN,
                     )
                     row_dict = {
                         col: (str(row_data[i]).strip()
@@ -718,18 +723,53 @@ class LoaderThread(QThread):
                             f" | Supplier: {sup or '(empty)'}"
                         )
                     def _imprest_popup_fn(popup_title):
-                        """Pause on mid-row LOV/popup; return True to continue."""
+                        """Auto-handle LOV (e.g. Supplier Site): press Enter to
+                        select the highlighted row and close it.  Falls back to a
+                        manual pause only if Enter does not dismiss the popup."""
+                        import time as _time
+                        from kdl.window.window_manager import WindowManager
+
+                        _time.sleep(0.15)
+                        self.sender._si_send_vk(0x0D)   # VK_RETURN
+                        _time.sleep(0.35)
+
+                        still_open = WindowManager.detect_blocking_popup(
+                            self.sender.target_hwnd, self.sender.target_title)
+                        if not still_open:
+                            self.progress_updated.emit(
+                                rows_processed, total_rows,
+                                f"[Imprest] Auto-accepted LOV '{popup_title}' → Enter")
+                            return not self._is_stop_requested()
+
+                        # Second attempt
+                        self.sender._si_send_vk(0x0D)
+                        _time.sleep(0.35)
+                        still_open = WindowManager.detect_blocking_popup(
+                            self.sender.target_hwnd, self.sender.target_title)
+                        if not still_open:
+                            self.progress_updated.emit(
+                                rows_processed, total_rows,
+                                f"[Imprest] Auto-accepted LOV '{popup_title}' → Enter (2nd)")
+                            return not self._is_stop_requested()
+
+                        # Fallback: manual pause
                         self._pause_requested = True
                         self.popup_paused.emit(popup_title)
                         self.progress_updated.emit(
                             rows_processed, total_rows,
-                            f"Paused: popup '{popup_title}' during imprest entry. "
+                            f"Paused: popup '{popup_title}' could not be auto-dismissed. "
                             f"Dismiss it then click Resume.")
                         self._check_pause()
                         return not self._is_stop_requested()
 
+                    actions = (TEMPLATE_ACTIONS_PGDN
+                               if self.load_mode == "imprest_test"
+                               else TEMPLATE_ACTIONS)
                     ok = execute_row_for_loader(
                         self.sender, row_dict, self._is_stop_requested,
+                        actions=actions,
+                        inter_action_delay=self.sender.speed_delay,
+                        is_last_row=(row_idx == self.end_row),
                         popup_fn=_imprest_popup_fn)
                     row_had_activity = True
                     if not ok:

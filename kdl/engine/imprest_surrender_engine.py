@@ -81,6 +81,7 @@ _T       = "{Tab}"
 _BS      = "\\{BACKSPACE}"
 _ENTER   = "\\{ENTER}"
 _ALT2ESC = "\\%2\\{ESC}"   # Alt+2 + Esc  → Lines block
+_PGDN    = "\\+{PgDn}"      # Shift+PgDn   → Lines block (Test variant)
 _ALTD    = "\\%d"           # Alt+D        → Distributions block
 _CTRLS   = "\\^s"           # Ctrl+S       → save
 _CTRLF4  = "\\^{F4}"        # Ctrl+F4      → clear record
@@ -269,6 +270,70 @@ TEMPLATE_ACTIONS = (
     ("hotkey", ["shift"], "tab"),            # C79  ⇧Tab
     ("hotkey", ["shift"], "tab"),            # C80  ⇧Tab
     ("hotkey", ["shift"], "tab"),            # C81  ⇧Tab → ready for next invoice
+)
+
+# ── Imprest TEST template — identical to TEMPLATE_ACTIONS except Lines navigation
+# Uses Shift+PageDown instead of Alt+2+Esc to jump to the Lines block.
+# Swap in the "Imprest Test" load mode to test this navigation path.
+TEMPLATE_ACTIONS_PGDN = (
+    # ── General block ──────────────────────────────────────────────────────
+    ("tab",    2),
+    ("key",    "backspace"),
+    ("tab",    1),
+    ("text",   "Standard"),
+    ("tab",    1),
+    ("key",    "backspace"),
+    ("tab",    1),
+    ("key",    "backspace"),
+    ("tab",    1),
+    ("field",  "Supplier_Num"),
+    ("tab",    1),
+    ("text",   "Provisional"),
+    ("tab",    1),
+    ("field",  "Invoice_Date"),
+    ("tab",    1),
+    ("field",  "Invoice_Num"),
+    ("tab",    2),
+    ("field",  "Invoice_Amount"),
+    ("tab",    7),
+    ("field",  "Description"),
+    ("tab",    3),
+    ("text",   "IMMEDIATE"),
+    ("tab",    1),
+    ("text",   "CHECK"),
+    ("tab",    17),
+    ("field",  "Auth_Ref_No"),
+    ("tab",    1),
+    ("field",  "Administrative_Code"),
+    ("tab",    1),
+    ("key",    "enter"),                     # close modal
+    # ── Lines block (Shift+PageDown) ───────────────────────────────────────
+    ("hotkey", ["shift"], "pagedown"),       # Shift+PgDn → Lines block
+    ("delay",  500),                         # wait for Lines block to open
+    ("tab",    2),
+    ("field",  "Invoice_Amount"),            # Line Amount
+    ("tab",    1),
+    # ── Distributions block (Alt+D) ────────────────────────────────────────
+    ("hotkey", ["alt"], "d"),
+    ("tab",    2),
+    ("field",  "Invoice_Amount"),            # Dist Amount
+    ("tab",    1),
+    ("field",  "GL_Date"),
+    ("tab",    1),
+    ("field",  "Distribution_Account"),
+    ("tab",    1),
+    # ── Save and advance to next invoice ──────────────────────────────────
+    ("hotkey", ["ctrl"], "s"),
+    ("hotkey", ["ctrl"], "f4"),
+    ("key",    "alt"),
+    ("key",    "down"),
+    ("key",    "down"),
+    ("key",    "down"),
+    ("key",    "down"),
+    ("key",    "enter"),
+    ("hotkey", ["shift"], "tab"),
+    ("hotkey", ["shift"], "tab"),
+    ("hotkey", ["shift"], "tab"),
 )
 
 
@@ -825,21 +890,26 @@ def _mid_row_popup_check(sender, popup_fn) -> bool:
 
 
 def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
-                           actions=None, popup_fn=None) -> bool:
+                           actions=None, popup_fn=None,
+                           inter_action_delay=None, is_last_row=False) -> bool:
     """
     Execute the AP invoice template for one row using an existing DataSender.
-    Used by the main LoaderThread when load_mode is 'imprest_surrender'.
-      sender            – a configured DataSender instance (use_fast_send=True)
-      row_dict          – {col_name: value} for the 11 AP invoice columns
-      is_stop_requested – callable() -> bool
-      actions           – action tuple sequence (default: TEMPLATE_ACTIONS)
-      popup_fn          – optional callable(popup_title: str) -> bool
-                          called when a blocking popup (e.g. Supplier Site LOV)
-                          is detected mid-row; return True to continue after
-                          the user dismisses it, False to abort the row.
+    Used by the main LoaderThread when load_mode is 'imprest_surrender' or 'imprest_test'.
+      sender              – a configured DataSender instance (use_fast_send=True)
+      row_dict            – {col_name: value} for the 11 AP invoice columns
+      is_stop_requested   – callable() -> bool
+      actions             – action tuple sequence (default: TEMPLATE_ACTIONS)
+      popup_fn            – optional callable(popup_title: str) -> bool
+                            called when a blocking popup is detected mid-row
+      inter_action_delay  – delay in seconds between keystrokes; defaults to
+                            _INTER_ACTION_DELAY (0.2) when None
+      is_last_row         – when True, adds a 500 ms settle delay before the
+                            Ctrl+S save to ensure the last row is fully saved
     """
     if actions is None:
         actions = TEMPLATE_ACTIONS
+    if inter_action_delay is None:
+        inter_action_delay = _INTER_ACTION_DELAY
 
     from kdl.engine.data_sender import _SI_VK_MAP
     vk_tab = _SI_VK_MAP.get("tab", 0x09)
@@ -854,18 +924,22 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
             for _ in range(action[1]):
                 if not sender._si_send_vk(vk_tab):
                     return False
-                time.sleep(_INTER_ACTION_DELAY)
+                time.sleep(inter_action_delay)
 
         elif kind == "key":
             vk = _SI_VK_MAP.get(action[1], 0)
             if vk and not sender._si_send_vk(vk):
                 return False
-            time.sleep(_INTER_ACTION_DELAY)
+            time.sleep(inter_action_delay)
 
         elif kind == "hotkey":
+            # On the last row, add a 500 ms settle before saving to ensure
+            # the row is written before the macro moves on.
+            if is_last_row and action[1] == ["ctrl"] and action[2] == "s":
+                time.sleep(0.5)
             if not sender._si_send_hotkey(action[1], action[2]):
                 return False
-            time.sleep(_INTER_ACTION_DELAY)
+            time.sleep(inter_action_delay)
 
         elif kind == "delay":
             deadline = time.monotonic() + action[1] / 1000.0
@@ -878,14 +952,14 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
             value = (row_dict.get(action[1]) or "").strip()
             if value and not sender._si_send_unicode(value):
                 return False
-            time.sleep(_INTER_ACTION_DELAY)
+            time.sleep(inter_action_delay)
             if not _mid_row_popup_check(sender, popup_fn):
                 return False
 
         elif kind == "text":
             if action[1] and not sender._si_send_unicode(action[1]):
                 return False
-            time.sleep(_INTER_ACTION_DELAY)
+            time.sleep(inter_action_delay)
             if not _mid_row_popup_check(sender, popup_fn):
                 return False
 
