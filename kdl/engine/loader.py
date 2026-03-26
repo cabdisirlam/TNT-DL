@@ -749,35 +749,65 @@ class LoaderThread(QThread):
                             f" | Supplier: {sup or '(empty)'}"
                         )
                     def _imprest_popup_fn(popup_title):
-                        """Auto-handle LOV (e.g. Supplier Site): press Enter to
-                        select the highlighted row and close it.  Falls back to a
-                        manual pause only if Enter does not dismiss the popup."""
+                        """Auto-handle LOV (e.g. Supplier Site): accept the
+                        highlighted row and close it.
+
+                        Oracle LOV accept strategy:
+                          1. Enter  — works when focus is already on a result row.
+                          2. Down + Enter  — when focus is on the Find field (text
+                             was typed in it), Down moves focus to the first result
+                             row and Enter accepts it.
+                          3. Tab + Enter  — last resort before manual pause.
+                        Falls back to a manual pause only when all attempts fail.
+                        """
                         from kdl.window.window_manager import WindowManager
 
                         if not self._interruptible_delay(0.15):
                             return False
-                        self.sender._si_send_vk(0x0D)   # VK_RETURN
-                        if not self._wait_after_ui_action(0.35):
-                            return False
 
+                        # Attempt 1: plain Enter (works when focus is on result row)
+                        self.sender._si_send_vk(0x0D)   # VK_RETURN
+                        if not self._wait_after_ui_action(0.40):
+                            return False
                         still_open = WindowManager.detect_blocking_popup(
                             self.sender.target_hwnd, self.sender.target_title)
                         if not still_open:
                             self.progress_updated.emit(
                                 rows_processed, total_rows,
-                                f"[Imprest] Auto-accepted LOV '{popup_title}' â†’ Enter")
+                                f"[Imprest] Auto-accepted LOV ‘{popup_title}’ → Enter")
                             return not self._is_stop_requested()
 
-                        # Second attempt
-                        self.sender._si_send_vk(0x0D)
-                        if not self._wait_after_ui_action(0.35):
+                        # Attempt 2: Down Arrow then Enter.
+                        # When the LOV Find field has focus (text was typed into it),
+                        # Enter only re-queries; Down Arrow moves focus to the first
+                        # result row so the following Enter accepts it.
+                        self.sender._si_send_vk(0x28)   # VK_DOWN
+                        if not self._wait_after_ui_action(0.20):
+                            return False
+                        self.sender._si_send_vk(0x0D)   # VK_RETURN
+                        if not self._wait_after_ui_action(0.40):
                             return False
                         still_open = WindowManager.detect_blocking_popup(
                             self.sender.target_hwnd, self.sender.target_title)
                         if not still_open:
                             self.progress_updated.emit(
                                 rows_processed, total_rows,
-                                f"[Imprest] Auto-accepted LOV '{popup_title}' â†’ Enter (2nd)")
+                                f"[Imprest] Auto-accepted LOV ‘{popup_title}’ → Down+Enter")
+                            return not self._is_stop_requested()
+
+                        # Attempt 3: Tab then Enter (alternative focus move)
+                        self.sender._si_send_vk(0x09)   # VK_TAB
+                        if not self._wait_after_ui_action(0.20):
+                            return False
+                        self.sender._si_send_vk(0x0D)   # VK_RETURN
+                        if not self._wait_after_ui_action(0.40):
+                            return False
+                        still_open = WindowManager.detect_blocking_popup(
+                            self.sender.target_hwnd, self.sender.target_title)
+                        if not still_open:
+                            self.progress_updated.emit(
+                                rows_processed, total_rows,
+                                f"[Imprest] Auto-accepted LOV ‘{popup_title}’ → Tab+Enter")
                             return not self._is_stop_requested()
 
                         # Fallback: manual pause
@@ -785,7 +815,7 @@ class LoaderThread(QThread):
                         self.popup_paused.emit(popup_title)
                         self.progress_updated.emit(
                             rows_processed, total_rows,
-                            f"Paused: popup '{popup_title}' could not be auto-dismissed. "
+                            f"Paused: popup ‘{popup_title}’ could not be auto-dismissed. "
                             f"Dismiss it then click Resume.")
                         self._check_pause()
                         return not self._is_stop_requested()

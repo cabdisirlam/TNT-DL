@@ -14,14 +14,15 @@ Columns (A–K):
   Payment_Method, Terms_Date, GL_Date, Auth_Ref_No, Administrative_Code,
   Distribution_Account
 
-Keystroke template (per row) — 74-cell DL grid (C1–C74):
+Keystroke template (per row) — 82-cell DL grid (C1–C82):
   Requires "Use Alternate Method for processing Macros" in DL Load Settings.
   \\+{PGDN} = Shift+PageDown = Next Block (General→Lines, Lines→Distributions).
   \\d500    = 500 ms delay (DL built-in) — inserted after each \\+{PGDN} for stability.
-  \\{ENTER} = close modal / confirm.
+  \\{ENTER} = close modal / confirm / dismiss prepayment alert.
   \\{BACKSPACE} = clear pre-filled field.
   Macro flow:
-    General fields → \\{ENTER} (close modal) → \\+{PGDN} (→Lines block) → \\d500
+    General fields → \\{ENTER} (dismiss prepayment alert if any) → "Provisional"
+    → \\{ENTER} (close modal) → \\+{PGDN} (→Lines block) → \\d500
     → Tab to Amount → enter amount → \\+{PGDN} (→Distributions block) → \\d500
     → Tab to Amount → enter amount → GL Date → Dist Account → Save → Down
 """
@@ -95,9 +96,10 @@ _SHTAB   = "\\+{TAB}"       # Shift+Tab
 # REQUIRES: "Use Alternate Method for processing Macros" ticked in DL settings.
 def build_keystroke_row(row: dict) -> list:
     """
-    Convert one invoice row-dict into an 81-cell DataLoad grid row.
+    Convert one invoice row-dict into an 82-cell DataLoad grid row.
     Matches the full working macro exactly:
-      General fields → Alt+2+Esc (Lines) → Tab×2 → Amount
+      General fields → Enter (dismiss prepayment alert) → "Provisional"
+      → Alt+2+Esc (Lines) → Tab×2 → Amount
       → Alt+D (Distributions) → Tab×2 → Amount → GL_Date → Account
       → Ctrl+S → Ctrl+F4 → Alt → Down×4 → Enter → Shift+Tab×3
     """
@@ -125,29 +127,29 @@ def build_keystroke_row(row: dict) -> list:
         _T,           # C10
         sup,          # C11  Supplier_Num
         _T,           # C12
-        "Provisional",# C13  Invoice batch type (fixed)
-        _T,           # C14
-        idate,        # C15  Invoice_Date
-        _T,           # C16
-        inum,         # C17  Invoice_Num
-        _T,           # C18
+        _ENTER,       # C13  dismiss prepayment alert if present (harmless otherwise)
+        "Provisional",# C14  Supplier Site / batch type (fixed)
+        _T,           # C15
+        idate,        # C16  Invoice_Date
+        _T,           # C17
+        inum,         # C18  Invoice_Num
         _T,           # C19
-        amt,          # C20  Invoice_Amount
-        _T,           # C21
+        _T,           # C20
+        amt,          # C21  Invoice_Amount
         _T,           # C22
         _T,           # C23
         _T,           # C24
         _T,           # C25
         _T,           # C26
         _T,           # C27
-        desc,         # C28  Description
-        _T,           # C29
+        _T,           # C28
+        desc,         # C29  Description
         _T,           # C30
         _T,           # C31
-        "IMMEDIATE",  # C32  Pay Terms (fixed)
-        _T,           # C33
-        pmeth,        # C34  Payment_Method
-        _T,           # C35
+        _T,           # C32
+        "IMMEDIATE",  # C33  Pay Terms (fixed)
+        _T,           # C34
+        pmeth,        # C35  Payment_Method
         _T,           # C36
         _T,           # C37
         _T,           # C38
@@ -164,36 +166,37 @@ def build_keystroke_row(row: dict) -> list:
         _T,           # C49
         _T,           # C50
         _T,           # C51
-        auth,         # C52  Auth_Ref_No
-        _T,           # C53
-        admc,         # C54  Administrative_Code
-        _T,           # C55
-        _ENTER,       # C56  \{ENTER} — close modal
-        _ALT2ESC,     # C57  \%2\{ESC} — Alt+2+Esc → Lines block
-        _T,           # C58
+        _T,           # C52
+        auth,         # C53  Auth_Ref_No
+        _T,           # C54
+        admc,         # C55  Administrative_Code
+        _T,           # C56
+        _ENTER,       # C57  \{ENTER} — close modal
+        _ALT2ESC,     # C58  \%2\{ESC} — Alt+2+Esc → Lines block
         _T,           # C59
-        amt,          # C60  Line_Amount (= Invoice_Amount)
-        _T,           # C61
-        _ALTD,        # C62  \%d — Alt+D → Distributions block
-        _T,           # C63
+        _T,           # C60
+        amt,          # C61  Line_Amount (= Invoice_Amount)
+        _T,           # C62
+        _ALTD,        # C63  \%d — Alt+D → Distributions block
         _T,           # C64
-        amt,          # C65  Dist_Amount (= Invoice_Amount)
-        _T,           # C66
-        gldt,         # C67  GL_Date
-        _T,           # C68
-        dist,         # C69  Distribution_Account
-        _T,           # C70
-        _CTRLS,       # C71  \^s — Ctrl+S save
-        _CTRLF4,      # C72  \^{F4} — clear record
-        _ALTKEY,      # C73  \% — Alt → activate menu
-        _DOWN,        # C74  \{DOWN}
+        _T,           # C65
+        amt,          # C66  Dist_Amount (= Invoice_Amount)
+        _T,           # C67
+        gldt,         # C68  GL_Date
+        _T,           # C69
+        dist,         # C70  Distribution_Account
+        _T,           # C71
+        _CTRLS,       # C72  \^s — Ctrl+S save
+        _CTRLF4,      # C73  \^{F4} — clear record
+        _ALTKEY,      # C74  \% — Alt → activate menu
         _DOWN,        # C75  \{DOWN}
         _DOWN,        # C76  \{DOWN}
-        _DOWN,        # C77  \{DOWN} — navigate to menu item
-        _ENTER,       # C78  \{ENTER} — select menu item
-        _SHTAB,       # C79  \+{TAB}
+        _DOWN,        # C77  \{DOWN}
+        _DOWN,        # C78  \{DOWN} — navigate to menu item
+        _ENTER,       # C79  \{ENTER} — select menu item
         _SHTAB,       # C80  \+{TAB}
-        _SHTAB,       # C81  \+{TAB} — ready for next invoice
+        _SHTAB,       # C81  \+{TAB}
+        _SHTAB,       # C82  \+{TAB} — ready for next invoice
     ]
 
 
@@ -223,53 +226,54 @@ TEMPLATE_ACTIONS = (
     ("tab",    1),                           # C10
     ("field",  "Supplier_Num"),              # C11
     ("tab",    1),                           # C12
-    ("text",   "Provisional"),               # C13  Invoice batch type
-    ("tab",    1),                           # C14
-    ("field",  "Invoice_Date"),              # C15
-    ("tab",    1),                           # C16
-    ("field",  "Invoice_Num"),               # C17
-    ("tab",    2),                           # C18–C19
-    ("field",  "Invoice_Amount"),            # C20
-    ("tab",    7),                           # C21–C27
-    ("field",  "Description"),               # C28
-    ("tab",    3),                           # C29–C31
-    ("text",   "IMMEDIATE"),                 # C32  Pay Terms (fixed)
-    ("tab",    1),                           # C33
-    ("text",   "CHECK"),                     # C34  Payment Method (fixed)
-    ("tab",    17),                          # C35–C51
-    ("field",  "Auth_Ref_No"),               # C52
-    ("tab",    1),                           # C53
-    ("field",  "Administrative_Code"),       # C54
-    ("tab",    1),                           # C55
-    ("key",    "enter"),                     # C56  close modal
+    ("key",    "enter"),                     # C13  dismiss prepayment alert (if any)
+    ("text",   "Provisional"),               # C14  Supplier Site / batch type
+    ("tab",    1),                           # C15
+    ("field",  "Invoice_Date"),              # C16
+    ("tab",    1),                           # C17
+    ("field",  "Invoice_Num"),               # C18
+    ("tab",    2),                           # C19–C20
+    ("field",  "Invoice_Amount"),            # C21
+    ("tab",    7),                           # C22–C28
+    ("field",  "Description"),               # C29
+    ("tab",    3),                           # C30–C32
+    ("text",   "IMMEDIATE"),                 # C33  Pay Terms (fixed)
+    ("tab",    1),                           # C34
+    ("text",   "CHECK"),                     # C35  Payment Method (fixed)
+    ("tab",    17),                          # C36–C52
+    ("field",  "Auth_Ref_No"),               # C53
+    ("tab",    1),                           # C54
+    ("field",  "Administrative_Code"),       # C55
+    ("tab",    1),                           # C56
+    ("key",    "enter"),                     # C57  close modal
     # ── Lines block (Alt+2+Esc) ────────────────────────────────────────────
-    ("hotkey", ["alt"], "2"),                # C57a Alt+2 → Lines
-    ("key",    "escape"),                    # C57b Esc
+    ("hotkey", ["alt"], "2"),                # C58a Alt+2 → Lines
+    ("key",    "escape"),                    # C58b Esc
     ("delay",  500),                         # wait for Lines block to open
-    ("tab",    2),                           # C58–C59
-    ("field",  "Invoice_Amount"),            # C60  Line Amount
-    ("tab",    1),                           # C61
+    ("tab",    2),                           # C59–C60
+    ("field",  "Invoice_Amount"),            # C61  Line Amount
+    ("tab",    1),                           # C62
     # ── Distributions block (Alt+D) ────────────────────────────────────────
-    ("hotkey", ["alt"], "d"),                # C62  Alt+D → Distributions
-    ("tab",    2),                           # C63–C64
-    ("field",  "Invoice_Amount"),            # C65  Dist Amount
-    ("tab",    1),                           # C66
-    ("field",  "GL_Date"),                   # C67
-    ("tab",    1),                           # C68
-    ("field",  "Distribution_Account"),      # C69
-    ("tab",    1),                           # C70
+    ("hotkey", ["alt"], "d"),                # C63  Alt+D → Distributions
+    ("tab",    2),                           # C64–C65
+    ("field",  "Invoice_Amount"),            # C66  Dist Amount
+    ("tab",    1),                           # C67
+    ("field",  "GL_Date"),                   # C68
+    ("tab",    1),                           # C69
+    ("field",  "Distribution_Account"),      # C70
+    ("tab",    1),                           # C71
     # ── Save and advance to next invoice ──────────────────────────────────
-    ("hotkey", ["ctrl"], "s"),               # C71  Ctrl+S save
-    ("hotkey", ["ctrl"], "f4"),              # C72  Ctrl+F4 clear record
-    ("key",    "alt"),                       # C73  Alt → activate menu
-    ("key",    "down"),                      # C74  ↓
+    ("hotkey", ["ctrl"], "s"),               # C72  Ctrl+S save
+    ("hotkey", ["ctrl"], "f4"),              # C73  Ctrl+F4 clear record
+    ("key",    "alt"),                       # C74  Alt → activate menu
     ("key",    "down"),                      # C75  ↓
     ("key",    "down"),                      # C76  ↓
-    ("key",    "down"),                      # C77  ↓ (4th menu item)
-    ("key",    "enter"),                     # C78  select menu item
-    ("hotkey", ["shift"], "tab"),            # C79  ⇧Tab
+    ("key",    "down"),                      # C77  ↓
+    ("key",    "down"),                      # C78  ↓ (4th menu item)
+    ("key",    "enter"),                     # C79  select menu item
     ("hotkey", ["shift"], "tab"),            # C80  ⇧Tab
-    ("hotkey", ["shift"], "tab"),            # C81  ⇧Tab → ready for next invoice
+    ("hotkey", ["shift"], "tab"),            # C81  ⇧Tab
+    ("hotkey", ["shift"], "tab"),            # C82  ⇧Tab → ready for next invoice
 )
 
 # ── Imprest TEST template — identical to TEMPLATE_ACTIONS except Lines navigation
@@ -288,6 +292,7 @@ TEMPLATE_ACTIONS_PGDN = (
     ("tab",    1),
     ("field",  "Supplier_Num"),
     ("tab",    1),
+    ("key",    "enter"),                     # dismiss prepayment alert (if any)
     ("text",   "Provisional"),
     ("tab",    1),
     ("field",  "Invoice_Date"),
@@ -1069,9 +1074,12 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
                     return False
                 if not _wait_after_action(inter_action_delay):
                     return False
-            # Check for LOV popups after tabbing (e.g. Supplier Site LOV)
-            if not _mid_row_popup_check(sender, popup_fn):
-                return False
+            # NOTE: no popup check here.  When a Supplier Site (or similar) LOV
+            # opens after a Tab, the *next* action in the template types the
+            # required value directly into the LOV Find field.  The popup check
+            # that fires after that text/field action then dismisses the LOV with
+            # Down+Enter so the correct entry is accepted.  Dismissing here (before
+            # the value is typed) would select the wrong default entry.
 
         elif kind == "key":
             vk = _SI_VK_MAP.get(action[1], 0)
