@@ -93,7 +93,7 @@ class LoaderThread(QThread):
         self._form_first_data_row = 0
 
     def configure(self, grid_data, start_row, end_row, target_hwnd, target_title,
-                  speed_delay=0.1, wait_hourglass=False,
+                  speed_delay=0.01, wait_hourglass=False,
                   key_columns=None, selected_columns=None, delay_columns=None,
                   form_mode=False, load_mode="per_cell", end_of_row_action="none",
                   window_delay=0.1, save_interval=50, db_settings=None,
@@ -695,10 +695,9 @@ class LoaderThread(QThread):
                     self.loading_complete.emit(False, "Lost focus on target window - stopped.")
                     return
 
-                if self.load_mode in ("imprest_surrender", "imprest_test"):
+                if self.load_mode == "imprest_surrender":
                     from kdl.engine.imprest_surrender_engine import (
                         COLUMNS, execute_row_for_loader,
-                        TEMPLATE_ACTIONS, TEMPLATE_ACTIONS_PGDN,
                     )
                     row_dict = {
                         col: (str(row_data[i]).strip()
@@ -725,14 +724,14 @@ class LoaderThread(QThread):
                         )
                         row_dict = {
                             "Supplier_Num":         _d[10] if len(_d) > 10 else "",
-                            "Invoice_Date":         _d[14] if len(_d) > 14 else "",
-                            "Invoice_Num":          _d[16] if len(_d) > 16 else "",
-                            "Invoice_Amount":       _d[19] if len(_d) > 19 else "",
-                            "Description":          _d[27] if len(_d) > 27 else "",
-                            "Payment_Method":       _d[33] if len(_d) > 33 else "",
+                            "Invoice_Date":         _d[15] if len(_d) > 15 else "",
+                            "Invoice_Num":          _d[17] if len(_d) > 17 else "",
+                            "Invoice_Amount":       _d[20] if len(_d) > 20 else "",
+                            "Description":          _d[28] if len(_d) > 28 else "",
+                            "Payment_Method":       _d[34] if len(_d) > 34 else "",
                             "Terms_Date":           "",
-                            "Auth_Ref_No":          _d[51] if len(_d) > 51 else "",
-                            "Administrative_Code":  _d[53] if len(_d) > 53 else "",
+                            "Auth_Ref_No":          _d[52] if len(_d) > 52 else "",
+                            "Administrative_Code":  _d[54] if len(_d) > 54 else "",
                             "GL_Date":              _d[save_idx - 4] if save_idx >= 4 else "",
                             "Distribution_Account": _d[save_idx - 2] if save_idx >= 2 else "",
                         }
@@ -820,12 +819,8 @@ class LoaderThread(QThread):
                         self._check_pause()
                         return not self._is_stop_requested()
 
-                    actions = (TEMPLATE_ACTIONS_PGDN
-                               if self.load_mode == "imprest_test"
-                               else TEMPLATE_ACTIONS)
                     ok = execute_row_for_loader(
                         self.sender, row_dict, self._is_stop_requested,
-                        actions=actions,
                         inter_action_delay=self.sender.speed_delay,
                         is_last_row=(row_idx == self.end_row),
                         popup_fn=_imprest_popup_fn)

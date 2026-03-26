@@ -3,7 +3,6 @@ NT DL Multipurpose Tool load settings dialog.
 """
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,12 +15,11 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
-    QScrollArea,
     QVBoxLayout,
-    QWidget,
 )
 
 from kdl import __display_name__
+from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import TEXT_MUTED, accent_button_qss, dialog_qss
 from kdl.window.window_manager import WindowManager
 
@@ -48,7 +46,6 @@ LOAD_MODES = [
     ("Per Row", "per_row"),
     ("Per Row (Fast Send)", "fast_send"),
     ("Imprest  (Alt+2 / Alt+D)", "imprest_surrender"),
-    ("Imprest Test  (Shift+PgDn / Alt+D)", "imprest_test"),
 ]
 
 
@@ -93,24 +90,31 @@ class LoadSettingsDialog(QDialog):
                 self.app_combo.setCurrentText("Oracle EBS R12")
 
     def _build_ui(self):
-        dialog_layout = QVBoxLayout(self)
-        dialog_layout.setContentsMargins(0, 0, 0, 0)
-        dialog_layout.setSpacing(0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        dialog_layout.addWidget(scroll)
-
-        scroll_widget = QWidget()
-        scroll.setWidget(scroll_widget)
-        outer = QVBoxLayout(scroll_widget)
+        outer = QVBoxLayout(self)
         outer.setSpacing(6)
         outer.setContentsMargins(8, 8, 8, 8)
 
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+
         title = QLabel("Load Settings")
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
-        outer.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addWidget(
+            create_hint_button(
+                "1. Select the target window.\n"
+                "2. Pick the load mode that matches your sheet.\n"
+                "3. Choose rows to load.\n"
+                "4. Adjust delays only when needed.\n"
+                "5. Click Start.\n\n"
+                "Load Control waits for app readiness after sends, tabs, saves, and row navigation.\n"
+                "Pause on popup lets you dismiss a popup and continue manually.\n"
+                "Stop on popup is best for unsupervised runs.",
+                label="i",
+            )
+        )
+        title_row.addStretch()
+        outer.addLayout(title_row)
 
         body = QGridLayout()
         body.setHorizontalSpacing(8)
@@ -158,24 +162,21 @@ class LoadSettingsDialog(QDialog):
         self.radio_fast_send.setToolTip(LOAD_MODES[2][0])
         self.radio_imprest = QRadioButton("Imprest")
         self.radio_imprest.setToolTip(LOAD_MODES[3][0])
-        self.radio_imprest_test = QRadioButton("Imprest Test")
-        self.radio_imprest_test.setToolTip(LOAD_MODES[4][0])
         self.radio_per_row.setChecked(True)
 
         mg.addWidget(self.radio_per_cell, 0, 0)
         mg.addWidget(self.radio_per_row, 0, 1)
         mg.addWidget(self.radio_fast_send, 1, 0)
         mg.addWidget(self.radio_imprest, 1, 1)
-        mg.addWidget(self.radio_imprest_test, 2, 0, 1, 2)
 
-        mg.addWidget(QLabel("After each row:"), 3, 0)
+        mg.addWidget(QLabel("After each row:"), 2, 0)
         self.eor_combo = QComboBox()
         for text, _ in END_OF_ROW_ACTIONS:
             self.eor_combo.addItem(text)
         self.eor_combo.setMinimumContentsLength(18)
         self.eor_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.eor_combo.setMinimumHeight(28)
-        mg.addWidget(self.eor_combo, 3, 1)
+        mg.addWidget(self.eor_combo, 2, 1)
 
         self._save_int_lbl = QLabel("Save every:")
         self.save_interval_input = QLineEdit("50")
@@ -189,14 +190,13 @@ class LoadSettingsDialog(QDialog):
         save_row.addWidget(self.save_interval_input)
         save_row.addWidget(self._save_int_suffix)
         save_row.addStretch()
-        mg.addLayout(save_row, 4, 0, 1, 2)
+        mg.addLayout(save_row, 3, 0, 1, 2)
         self._save_int_widgets = [self._save_int_lbl, self.save_interval_input, self._save_int_suffix]
 
         self.radio_per_cell.toggled.connect(self._update_mode_controls)
         self.radio_per_row.toggled.connect(self._update_mode_controls)
         self.radio_fast_send.toggled.connect(self._update_mode_controls)
         self.radio_imprest.toggled.connect(self._update_mode_controls)
-        self.radio_imprest_test.toggled.connect(self._update_mode_controls)
         self.eor_combo.currentIndexChanged.connect(self._update_save_interval_visibility)
         body.addWidget(mode_group, 0, 1)
 
@@ -234,7 +234,7 @@ class LoadSettingsDialog(QDialog):
         dg.setVerticalSpacing(6)
 
         dg.addWidget(QLabel("Cell delay:"), 0, 0)
-        self.cell_delay_input = QLineEdit("0.12")
+        self.cell_delay_input = QLineEdit("0.01")
         self.cell_delay_input.setFixedWidth(60)
         self.cell_delay_input.setFixedHeight(28)
         self.cell_delay_input.setAlignment(Qt.AlignCenter)
@@ -316,24 +316,21 @@ class LoadSettingsDialog(QDialog):
         self._update_mode_controls()
 
     def _fit_to_screen(self):
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if not screen:
-            return
-        geo = screen.availableGeometry()
-        max_w = max(720, geo.width() - 48)
-        max_h = max(470, geo.height() - 64)
-        preferred_w = 820 if geo.width() >= 1440 else 760
-        hint = self.sizeHint()
-        target_w = min(max(self.minimumWidth(), hint.width()), min(preferred_w, max_w))
-        target_h = min(max(470, hint.height()), max_h)
-        self.setMaximumSize(max_w, max_h)
-        self.resize(target_w, target_h)
+        fit_dialog_to_screen(
+            self,
+            min_width=760,
+            min_height=500,
+            preferred_width=960,
+            wide_width=1100,
+            margin_width=64,
+            margin_height=72,
+            extra_hint_width=40,
+            extra_hint_height=28,
+        )
 
     def _selected_load_mode(self) -> str:
         if self.radio_imprest.isChecked():
             return "imprest_surrender"
-        if self.radio_imprest_test.isChecked():
-            return "imprest_test"
         if self.radio_fast_send.isChecked():
             return "fast_send"
         if self.radio_per_row.isChecked():
@@ -344,9 +341,9 @@ class LoadSettingsDialog(QDialog):
         is_form_mode = self.radio_per_row.isChecked() or self.radio_fast_send.isChecked()
         self.eor_combo.setEnabled(is_form_mode)
 
-        if self.radio_imprest.isChecked() or self.radio_imprest_test.isChecked():
+        if self.radio_imprest.isChecked():
             self.eor_combo.setCurrentIndex(0)
-            self.cell_delay_input.setText("0.05")
+            self.cell_delay_input.setText("0.01")
         elif self.radio_fast_send.isChecked():
             self.eor_combo.setCurrentIndex(2)
             self.save_interval_input.setText("50")
@@ -354,10 +351,10 @@ class LoadSettingsDialog(QDialog):
         elif self.radio_per_row.isChecked():
             if self.eor_combo.currentIndex() == 0:
                 self.eor_combo.setCurrentIndex(2)
-            self.cell_delay_input.setText("0.20")
+            self.cell_delay_input.setText("0.01")
         else:
             self.eor_combo.setCurrentIndex(0)
-            self.cell_delay_input.setText("0.20")
+            self.cell_delay_input.setText("0.01")
 
         self._update_save_interval_visibility()
 
@@ -447,7 +444,7 @@ class LoadSettingsDialog(QDialog):
         try:
             cell_delay = float(self.cell_delay_input.text())
         except ValueError:
-            cell_delay = 0.12
+            cell_delay = 0.01
 
         try:
             window_delay = float(self.window_delay_input.text())
@@ -491,7 +488,7 @@ class LoadSettingsDialog(QDialog):
             "speed_delay": cell_delay,
             "window_delay": window_delay,
             "load_mode": load_mode,
-            "form_mode": load_mode in ("per_row", "fast_send"),
+            "form_mode": load_mode in ("per_row", "fast_send", "imprest_surrender"),
             "end_of_row_action": end_of_row_action,
             "save_interval": save_interval,
             "validate_before_load": self.validate_check.isChecked(),

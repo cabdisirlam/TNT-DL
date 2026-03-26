@@ -5,12 +5,13 @@ Edit and manage shortcut commands and their keystroke equivalents.
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QHeaderView, QMessageBox, QLabel, QScrollArea, QWidget,
+    QPushButton, QHeaderView, QMessageBox, QLabel,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QGuiApplication
+from PySide6.QtGui import QFont
 
 from kdl import __display_name__
+from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.engine.keystroke_parser import DEFAULT_SHORTCUTS
 from kdl.styles import dialog_qss, accent_button_qss, TEXT_MUTED
 
@@ -33,26 +34,26 @@ class ShortcutsDialog(QDialog):
         self._fit_to_screen()
 
     def _build_ui(self):
-        dialog_layout = QVBoxLayout(self)
-        dialog_layout.setContentsMargins(0, 0, 0, 0)
-        dialog_layout.setSpacing(0)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        dialog_layout.addWidget(scroll)
-
-        scroll_widget = QWidget()
-        scroll.setWidget(scroll_widget)
-        layout = QVBoxLayout(scroll_widget)
-
-        info_label = QLabel(
-            "Edit shortcuts below. Use * prefix for shortcut names.\n"
-            "Default standard uses \\{TAB} for Tab (e.g., *S, *DN, \\{TAB}). "
-            "Plain tab is accepted and Convert Macros will normalize it."
+        info_row = QHBoxLayout()
+        info_row.setSpacing(8)
+        info_label = QLabel("Edit shortcut names, keystrokes, and descriptions below.")
+        info_label.setStyleSheet(f"color: {TEXT_MUTED};")
+        info_label.setWordWrap(True)
+        info_row.addWidget(info_label, 1)
+        info_row.addWidget(
+            create_hint_button(
+                "Use * as the shortcut prefix.\n"
+                "The standard tab token is \\{TAB}.\n"
+                "Examples: *S, *DN, \\{TAB}.\n"
+                "Plain tab is accepted and Convert Macros will normalize it.",
+                label="i",
+            )
         )
-        info_label.setStyleSheet(f"color: {TEXT_MUTED}; margin-bottom: 8px;")
-        layout.addWidget(info_label)
+        layout.addLayout(info_row)
 
         # Table
         self.table = QTableWidget()
@@ -155,14 +156,14 @@ class ShortcutsDialog(QDialog):
         return self.shortcuts
 
     def _fit_to_screen(self):
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if not screen:
-            return
-        geo = screen.availableGeometry()
-        max_w = max(380, geo.width() - 24)
-        max_h = max(320, geo.height() - 24)
-        self.setMaximumSize(max_w, max_h)
-        hint = self.sizeHint()
-        target_w = min(max(self.minimumWidth(), hint.width()), max_w)
-        target_h = min(max(self.minimumHeight(), hint.height()), max_h)
-        self.resize(target_w, target_h)
+        fit_dialog_to_screen(
+            self,
+            min_width=640,
+            min_height=420,
+            preferred_width=900,
+            wide_width=1040,
+            margin_width=72,
+            margin_height=72,
+            extra_hint_width=36,
+            extra_hint_height=28,
+        )

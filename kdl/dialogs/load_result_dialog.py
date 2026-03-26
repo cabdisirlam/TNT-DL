@@ -3,7 +3,6 @@ Professional load result dialog for success, stop, and error outcomes.
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -11,11 +10,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QFrame,
     QDialogButtonBox,
-    QScrollArea,
     QStyle,
     QSizePolicy,
-    QWidget,
 )
+from kdl.dialogs.dialog_sizing import fit_dialog_to_screen
 from kdl.styles import load_result_qss, ACCENT
 
 
@@ -131,18 +129,7 @@ class LoadResultDialog(QDialog):
         palette = self._status_palette()
         summary, kv_pairs = self._parse_message()
 
-        dialog_layout = QVBoxLayout(self)
-        dialog_layout.setContentsMargins(0, 0, 0, 0)
-        dialog_layout.setSpacing(0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        dialog_layout.addWidget(scroll)
-
-        scroll_widget = QWidget()
-        scroll.setWidget(scroll_widget)
-        root = QVBoxLayout(scroll_widget)
+        root = QVBoxLayout(self)
         root.setContentsMargins(14, 12, 14, 10)
         root.setSpacing(10)
 
@@ -237,14 +224,14 @@ class LoadResultDialog(QDialog):
         self.setStyleSheet(load_result_qss(palette["accent"], palette["panel"], dark=get_dark_mode()))
 
     def _fit_to_screen(self):
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if not screen:
-            return
-        geo = screen.availableGeometry()
-        max_w = max(320, geo.width() - 24)
-        max_h = max(260, geo.height() - 24)
-        self.setMaximumSize(max_w, max_h)
-        hint = self.sizeHint()
-        target_w = min(max(self.minimumWidth(), hint.width()), max_w)
-        target_h = min(max(240, hint.height()), max_h)
-        self.resize(target_w, target_h)
+        fit_dialog_to_screen(
+            self,
+            min_width=460,
+            min_height=260,
+            preferred_width=640,
+            wide_width=760,
+            margin_width=72,
+            margin_height=72,
+            extra_hint_width=28,
+            extra_hint_height=24,
+        )

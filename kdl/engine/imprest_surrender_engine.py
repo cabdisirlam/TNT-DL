@@ -16,14 +16,14 @@ Columns (A–K):
 
 Keystroke template (per row) — 82-cell DL grid (C1–C82):
   Requires "Use Alternate Method for processing Macros" in DL Load Settings.
-  \\+{PGDN} = Shift+PageDown = Next Block (General→Lines, Lines→Distributions).
-  \\d500    = 500 ms delay (DL built-in) — inserted after each \\+{PGDN} for stability.
+  \\%2\\{ESC} = Alt+2, then Esc = jump to the Lines block.
+  \\%d        = Alt+D = jump to the Distributions block.
   \\{ENTER} = close modal / confirm / dismiss prepayment alert.
   \\{BACKSPACE} = clear pre-filled field.
   Macro flow:
     General fields → \\{ENTER} (dismiss prepayment alert if any) → "Provisional"
-    → \\{ENTER} (close modal) → \\+{PGDN} (→Lines block) → \\d500
-    → Tab to Amount → enter amount → \\+{PGDN} (→Distributions block) → \\d500
+    → \\{ENTER} (close modal) → \\%2\\{ESC} (→Lines block)
+    → Tab to Amount → enter amount → \\%d (→Distributions block)
     → Tab to Amount → enter amount → GL Date → Dist Account → Save → Down
 """
 
@@ -82,7 +82,6 @@ _T       = "{Tab}"
 _BS      = "\\{BACKSPACE}"
 _ENTER   = "\\{ENTER}"
 _ALT2ESC = "\\%2\\{ESC}"   # Alt+2 + Esc  → Lines block
-_PGDN    = "\\+{PgDn}"      # Shift+PgDn   → Lines block (Test variant)
 _ALTD    = "\\%d"           # Alt+D        → Distributions block
 _CTRLS   = "\\^s"           # Ctrl+S       → save
 _CTRLF4  = "\\^{F4}"        # Ctrl+F4      → clear record
@@ -90,7 +89,7 @@ _ALTKEY  = "\\%"            # Alt alone    → activate menu
 _DOWN    = "\\{DOWN}"       # Down arrow
 _SHTAB   = "\\+{TAB}"       # Shift+Tab
 
-# ── Imprest: 81-cell DataLoad grid row ────────────────────────────────────────
+# ── Imprest: 82-cell DataLoad grid row ────────────────────────────────────────
 # Navigation: \%2\{ESC} (Alt+2+Esc) → Lines,  \%d (Alt+D) → Distributions.
 # Post-save: \^{F4} + Alt + 4×Down + Enter + 3×Shift+Tab → ready for next row.
 # REQUIRES: "Use Alternate Method for processing Macros" ticked in DL settings.
@@ -103,12 +102,13 @@ def build_keystroke_row(row: dict) -> list:
       → Alt+D (Distributions) → Tab×2 → Amount → GL_Date → Account
       → Ctrl+S → Ctrl+F4 → Alt → Down×4 → Enter → Shift+Tab×3
     """
+    row = _normalize_invoice_row(row)
     sup   = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
     inum  = row.get("Invoice_Num", "")
     amt   = row.get("Invoice_Amount", "")
     desc  = row.get("Description", "")
-    pmeth = row.get("Payment_Method", "")
+    pmeth = row.get("Payment_Method", "") or "CHECK"
     gldt  = row.get("GL_Date", "")
     auth  = row.get("Auth_Ref_No", "")
     admc  = row.get("Administrative_Code", "")
@@ -276,9 +276,8 @@ TEMPLATE_ACTIONS = (
     ("hotkey", ["shift"], "tab"),            # C82  ⇧Tab → ready for next invoice
 )
 
-# ── Imprest TEST template — identical to TEMPLATE_ACTIONS except Lines navigation
+# Legacy alternate navigation template kept for reference only.
 # Uses Shift+PageDown instead of Alt+2+Esc to jump to the Lines block.
-# Swap in the "Imprest Test" load mode to test this navigation path.
 TEMPLATE_ACTIONS_PGDN = (
     # ── General block ──────────────────────────────────────────────────────
     ("tab",    2),
@@ -382,10 +381,10 @@ def read_invoice_rows(filepath: str) -> tuple:
             continue
         if len(row_values) < len(COLUMNS):
             continue
-        row_dict = {
-            col: (str(row_values[i]).strip() if row_values[i] is not None else "")
+        row_dict = _normalize_invoice_row({
+            col: row_values[i] if i < len(row_values) else ""
             for i, col in enumerate(COLUMNS)
-        }
+        })
         # Skip rows where Supplier_Num is empty
         if not row_dict["Supplier_Num"]:
             continue
@@ -413,10 +412,10 @@ def _read_invoice_rows_csv(filepath: str) -> tuple:
             continue
         if len(row_values) < len(COLUMNS):
             continue
-        row_dict = {
-            col: row_values[i].strip()
+        row_dict = _normalize_invoice_row({
+            col: row_values[i] if i < len(row_values) else ""
             for i, col in enumerate(COLUMNS)
-        }
+        })
         if not row_dict["Supplier_Num"]:
             continue
         rows.append(row_dict)
@@ -561,6 +560,20 @@ def _fmt_ifmis_date(v) -> str:
         return _dt.strptime(s[:10], "%Y-%m-%d").strftime("%d-%b-%Y").upper()
     except ValueError:
         return s
+
+
+def _normalize_invoice_row(row: dict) -> dict:
+    """Normalize invoice values before exporting or sending them."""
+    normalized = {}
+    for col in COLUMNS:
+        value = row.get(col, "") if isinstance(row, dict) else ""
+        if col in {"Invoice_Date", "Terms_Date", "GL_Date"}:
+            normalized[col] = _fmt_ifmis_date(value)
+        else:
+            normalized[col] = "" if value is None else str(value).strip()
+    if not normalized.get("Payment_Method"):
+        normalized["Payment_Method"] = "CHECK"
+    return normalized
 
 
 def import_ifmis_export(filepath: str) -> tuple:
@@ -798,7 +811,7 @@ def export_prefilled_template(filepath: str, rows: list) -> str:
 
 def _build_dl_keystroke_row(row: dict) -> list:
     """
-    Build an 81-cell DataLoad-format (backslash-macro) row for direct use in DataLoad.
+    Build an 82-cell DataLoad-format (backslash-macro) row for direct use in DataLoad.
     Mirrors build_keystroke_row but uses \\{TAB} instead of {Tab} for DL compatibility.
     """
     _DT  = "\\{TAB}"
@@ -812,12 +825,13 @@ def _build_dl_keystroke_row(row: dict) -> list:
     _DN  = "\\{DOWN}"
     _SHT = "\\+{TAB}"
 
+    row = _normalize_invoice_row(row)
     sup   = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
     inum  = row.get("Invoice_Num", "")
     amt   = row.get("Invoice_Amount", "")
     desc  = row.get("Description", "")
-    pmeth = row.get("Payment_Method", "")
+    pmeth = row.get("Payment_Method", "") or "CHECK"
     gldt  = row.get("GL_Date", "")
     auth  = row.get("Auth_Ref_No", "")
     admc  = row.get("Administrative_Code", "")
@@ -827,25 +841,25 @@ def _build_dl_keystroke_row(row: dict) -> list:
         # C1–C10
         _DT, _DT, _BS, _DT, "Standard", _DT, _BS, _DT, _BS, _DT,
         # C11–C20
-        sup, _DT, "Provisional", _DT, idate, _DT, inum, _DT, _DT, amt,
+        sup, _DT, _ENT, "Provisional", _DT, idate, _DT, inum, _DT, _DT,
         # C21–C30
-        _DT, _DT, _DT, _DT, _DT, _DT, _DT, desc, _DT, _DT,
+        amt, _DT, _DT, _DT, _DT, _DT, _DT, _DT, desc, _DT,
         # C31–C40
-        _DT, "IMMEDIATE", _DT, pmeth, _DT, _DT, _DT, _DT, _DT, _DT,
+        _DT, _DT, "IMMEDIATE", _DT, pmeth, _DT, _DT, _DT, _DT, _DT,
         # C41–C50
         _DT, _DT, _DT, _DT, _DT, _DT, _DT, _DT, _DT, _DT,
         # C51–C60
-        _DT, auth, _DT, admc, _DT, _ENT, _A2E, _DT, _DT, amt,
+        _DT, _DT, auth, _DT, admc, _DT, _ENT, _A2E, _DT, _DT,
         # C61–C70
-        _DT, _AD, _DT, _DT, amt, _DT, gldt, _DT, dist, _DT,
-        # C71–C81
-        _CS, _CF4, _ALT, _DN, _DN, _DN, _DN, _ENT, _SHT, _SHT, _SHT,
+        amt, _DT, _AD, _DT, _DT, amt, _DT, gldt, _DT, dist,
+        # C71–C82
+        _DT, _CS, _CF4, _ALT, _DN, _DN, _DN, _DN, _ENT, _SHT, _SHT, _SHT,
     ]
 
 
 def export_keystroke_file(filepath: str, rows: list) -> str:
     """
-    Export an 81-column DataLoad keystroke grid to filepath.
+    Export an 82-column DataLoad keystroke grid to filepath.
     Load directly in DataLoad (Per Cell mode, 'Use Alternate Method' ticked)
     as a fallback if SendInput mode fails.
     Returns an error string, or "" on success.
@@ -868,7 +882,7 @@ def export_keystroke_file(filepath: str, rows: list) -> str:
         BLUE      = "0070C0"
         WHITE_TXT = "FFFFFF"
         GREY_BG   = "F2F2F2"
-        ncols     = 81
+        ncols     = 82
 
         # ── Row 1: title ──────────────────────────────────────────────────────
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
@@ -881,7 +895,7 @@ def export_keystroke_file(filepath: str, rows: list) -> str:
         title.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[1].height = 18
 
-        # ── Row 2: column headers C1–C81 ─────────────────────────────────────
+        # ── Row 2: column headers C1–C82 ─────────────────────────────────────
         for ci in range(1, ncols + 1):
             cell = ws.cell(row=2, column=ci, value=f"C{ci}")
             cell.font      = Font(bold=True, color=WHITE_TXT, size=9)
@@ -901,11 +915,11 @@ def export_keystroke_file(filepath: str, rows: list) -> str:
             ws.row_dimensions[ri].height = 14
 
         # ── Column widths: narrow for macro cols, wider for data cols ─────────
-        # Data is at C11 (sup), C15 (idate), C17 (inum), C20 (amt),
-        # C28 (desc), C34 (pmeth), C52 (auth), C54 (admc), C60 (amt),
-        # C65 (amt), C67 (gldt), C69 (dist)
-        data_cols = {11: 12, 15: 12, 17: 12, 20: 12, 28: 28,
-                     34: 12, 52: 8, 54: 14, 60: 10, 65: 10, 67: 12, 69: 52}
+        # Data is at C11 (sup), C16 (idate), C18 (inum), C21 (amt),
+        # C29 (desc), C35 (pmeth), C53 (auth), C55 (admc), C61 (amt),
+        # C66 (amt), C68 (gldt), C70 (dist)
+        data_cols = {11: 12, 16: 12, 18: 12, 21: 12, 29: 28,
+                     35: 12, 53: 8, 55: 14, 61: 10, 66: 10, 68: 12, 70: 52}
         for ci in range(1, ncols + 1):
             ws.column_dimensions[get_column_letter(ci)].width = (
                 data_cols.get(ci, 10))
@@ -950,7 +964,7 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
     blue = "0070C0"
     white_text = "FFFFFF"
     grey_bg = "F2F2F2"
-    ncols = 81
+    ncols = 82
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
     title = ws.cell(
@@ -985,17 +999,17 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
 
     data_cols = {
         11: 12,
-        15: 12,
-        17: 12,
-        20: 12,
-        28: 28,
-        34: 12,
-        52: 8,
-        54: 14,
-        60: 10,
-        65: 10,
-        67: 12,
-        69: 52,
+        16: 12,
+        18: 12,
+        21: 12,
+        29: 28,
+        35: 12,
+        53: 8,
+        55: 14,
+        61: 10,
+        66: 10,
+        68: 12,
+        70: 52,
     }
     for ci in range(1, ncols + 1):
         ws.column_dimensions[get_column_letter(ci)].width = data_cols.get(ci, 10)
@@ -1011,7 +1025,7 @@ def build_row_summary(row: dict) -> str:
             f"Amt {row.get('Invoice_Amount', '?')} | {desc}")
 
 
-_INTER_ACTION_DELAY = 0.2   # 200 ms between actions — matches DataLoad's default cell timing
+_INTER_ACTION_DELAY = 0.01   # Default non-fast-send delay between actions
 
 
 def _mid_row_popup_check(sender, popup_fn) -> bool:
@@ -1034,7 +1048,7 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
                            inter_action_delay=None, is_last_row=False) -> bool:
     """
     Execute the AP invoice template for one row using an existing DataSender.
-    Used by the main LoaderThread when load_mode is 'imprest_surrender' or 'imprest_test'.
+    Used by the main LoaderThread when load_mode is 'imprest_surrender'.
       sender              – a configured DataSender instance (use_fast_send=True)
       row_dict            – {col_name: value} for the 11 AP invoice columns
       is_stop_requested   – callable() -> bool
@@ -1042,7 +1056,7 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
       popup_fn            – optional callable(popup_title: str) -> bool
                             called when a blocking popup is detected mid-row
       inter_action_delay  – delay in seconds between keystrokes; defaults to
-                            _INTER_ACTION_DELAY (0.2) when None
+                            _INTER_ACTION_DELAY (0.01) when None
       is_last_row         – when True, adds a 500 ms settle delay before the
                             Ctrl+S save to ensure the last row is fully saved
     """
@@ -1050,6 +1064,7 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
         actions = TEMPLATE_ACTIONS
     if inter_action_delay is None:
         inter_action_delay = _INTER_ACTION_DELAY
+    row_dict = _normalize_invoice_row(row_dict)
 
     from kdl.engine.data_sender import _SI_VK_MAP
     vk_tab = _SI_VK_MAP.get("tab", 0x09)

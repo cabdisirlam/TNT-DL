@@ -9,10 +9,9 @@ from typing import Dict, List
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
     QLineEdit, QCheckBox, QMessageBox, QDialogButtonBox, QGridLayout,
-    QScrollArea, QWidget,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
+from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import dialog_qss
 
 
@@ -45,26 +44,23 @@ class DatabaseSetupDialog(QDialog):
         self._fit_to_screen()
 
     def _build_ui(self):
-        dialog_layout = QVBoxLayout(self)
-        dialog_layout.setContentsMargins(0, 0, 0, 0)
-        dialog_layout.setSpacing(0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        dialog_layout.addWidget(scroll)
-
-        scroll_widget = QWidget()
-        scroll.setWidget(scroll_widget)
-        layout = QVBoxLayout(scroll_widget)
+        layout = QVBoxLayout(self)
         layout.setSpacing(8)
+        layout.setContentsMargins(14, 14, 14, 14)
 
-        note = QLabel(
-            "NT_DL currently loads data through IFMIS/Oracle front-end automation.\n"
-            "Direct Oracle DB loading is disabled in this build for safety and consistency."
-        )
+        note_row = QHBoxLayout()
+        note_row.setSpacing(8)
+        note = QLabel("UI automation remains the active loading path in this build.")
         note.setWordWrap(True)
-        layout.addWidget(note)
+        note_row.addWidget(note, 1)
+        note_row.addWidget(
+            create_hint_button(
+                "NT_DL currently loads data through IFMIS/Oracle front-end automation.\n"
+                "Direct Oracle DB loading is disabled in this build for safety and consistency.",
+                label="i",
+            )
+        )
+        layout.addLayout(note_row)
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Mode:"))
@@ -142,17 +138,17 @@ class DatabaseSetupDialog(QDialog):
         layout.addWidget(buttons)
 
     def _fit_to_screen(self):
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if not screen:
-            return
-        geo = screen.availableGeometry()
-        max_w = max(360, geo.width() - 24)
-        max_h = max(320, geo.height() - 24)
-        self.setMaximumSize(max_w, max_h)
-        hint = self.sizeHint()
-        target_w = min(max(self.minimumWidth(), hint.width()), max_w)
-        target_h = min(max(360, hint.height()), max_h)
-        self.resize(target_w, target_h)
+        fit_dialog_to_screen(
+            self,
+            min_width=560,
+            min_height=420,
+            preferred_width=720,
+            wide_width=840,
+            margin_width=72,
+            margin_height=72,
+            extra_hint_width=32,
+            extra_hint_height=32,
+        )
 
     def _load_mode(self):
         idx = 0

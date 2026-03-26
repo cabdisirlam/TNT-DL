@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import accent_button_qss, dialog_qss
 
 
@@ -329,28 +329,24 @@ class StatementConverterDialog(QDialog):
             pass
 
     def _build_ui(self):
-        dialog_layout = QVBoxLayout(self)
-        dialog_layout.setContentsMargins(0, 0, 0, 0)
-        dialog_layout.setSpacing(0)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        dialog_layout.addWidget(scroll)
-
-        scroll_widget = QWidget()
-        scroll.setWidget(scroll_widget)
-        layout = QVBoxLayout(scroll_widget)
-        layout.setSpacing(14)
-        layout.setContentsMargins(18, 18, 18, 18)
-
-        intro = QLabel(
-            "Choose the source workbook, select the sheets to convert, then review "
-            "the summary before loading the output into the grid."
-        )
+        intro_row = QHBoxLayout()
+        intro_row.setSpacing(8)
+        intro = QLabel("Convert bank statement sheets and load the cleaned output into the grid.")
         intro.setObjectName("DialogIntro")
         intro.setWordWrap(True)
-        layout.addWidget(intro)
+        intro_row.addWidget(intro, 1)
+        intro_row.addWidget(
+            create_hint_button(
+                "Choose the source workbook, select the sheets to convert, then review "
+                "the summary before loading the output into the grid.",
+                label="i",
+            )
+        )
+        layout.addLayout(intro_row)
 
         file_group = QGroupBox("Source Workbook")
         file_layout = QHBoxLayout(file_group)
@@ -417,7 +413,7 @@ class StatementConverterDialog(QDialog):
         result_layout = QVBoxLayout(result_group)
         self._result_text = QTextEdit()
         self._result_text.setReadOnly(True)
-        self._result_text.setFixedHeight(136)
+        self._result_text.setFixedHeight(128)
         self._result_text.setPlaceholderText("Conversion summary will appear here...")
         result_layout.addWidget(self._result_text)
         layout.addWidget(result_group)
@@ -630,12 +626,14 @@ class StatementConverterDialog(QDialog):
         super().closeEvent(event)
 
     def _fit_to_screen(self):
-        from PySide6.QtGui import QGuiApplication
-
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen:
-            ag = screen.availableGeometry()
-            self.resize(
-                min(self.sizeHint().width() + 40, ag.width() - 80),
-                min(self.sizeHint().height() + 40, ag.height() - 80),
-            )
+        fit_dialog_to_screen(
+            self,
+            min_width=760,
+            min_height=540,
+            preferred_width=940,
+            wide_width=1080,
+            margin_width=72,
+            margin_height=80,
+            extra_hint_width=40,
+            extra_hint_height=40,
+        )

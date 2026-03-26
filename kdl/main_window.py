@@ -21,6 +21,7 @@ from PySide6.QtGui import QAction, QFont, QKeySequence, QColor, QIcon, QGuiAppli
 from kdl.spreadsheet_widget import SpreadsheetWidget
 from kdl.config_store import load_settings, save_settings
 from kdl import __display_name__, __version__
+from kdl.dialogs.dialog_sizing import fit_dialog_to_screen
 from kdl.dialogs.load_settings_dialog import LoadSettingsDialog, END_OF_ROW_ACTIONS, LOAD_MODES
 from kdl.dialogs.shortcuts_dialog import ShortcutsDialog
 from kdl.dialogs.macro_recorder_dialog import MacroRecorderDialog
@@ -49,8 +50,9 @@ COMMAND_GROUPS = [
     "Other",
 ]
 
-LOAD_DEFAULTS_VERSION = 6
-VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send", "imprest_surrender", "imprest_test"}
+LOAD_DEFAULTS_VERSION = 8
+VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send", "imprest_surrender"}
+LEGACY_DEFAULT_SPEED_DELAYS = {0.05, 0.1, 0.12, 0.2}
 TABLE_FORMAT_HEADERS = [
     "Line",
     "Type",
@@ -63,6 +65,24 @@ TABLE_FORMAT_HEADERS = [
 CELL_FORMAT_KEY_COLUMNS = {0, 1, 2, 3, 5, 7, 9, 11, 13, 14, 15}
 DATE_TEXT_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{4}$")
 AMOUNT_TEXT_RE = re.compile(r"^-?\d[\d,]*(?:\.\d+)?$")
+
+
+def _normalize_load_mode(mode: str) -> str:
+    normalized = str(mode or "").strip().lower()
+    if normalized == "imprest_test":
+        return "imprest_surrender"
+    return normalized if normalized in VALID_LOAD_MODES else "per_cell"
+
+
+def _normalize_default_speed_delay(delay, load_mode: str) -> float:
+    try:
+        speed_delay = float(delay)
+    except Exception:
+        speed_delay = 0.01
+    normalized_mode = _normalize_load_mode(load_mode)
+    if normalized_mode != "fast_send" and round(speed_delay, 4) in LEGACY_DEFAULT_SPEED_DELAYS:
+        return 0.01
+    return max(0.0, min(2.0, speed_delay))
 
 
 class LoadProgressOverlay(QWidget):
@@ -261,7 +281,7 @@ class MainWindow(QMainWindow):
         self._find_scope = "all"
 
         # Global load defaults (used to prefill Start Load popup)
-        self._default_speed_delay = 0.1
+        self._default_speed_delay = 0.01
         self._default_window_delay = 0.05
         self._default_wait_hourglass = True
         self._default_load_control = False
@@ -407,32 +427,33 @@ class MainWindow(QMainWindow):
         load_defaults = settings.get("load_defaults", {})
         db = settings.get("database", {})
         ui = settings.get("ui", {})
-        migrated_defaults = False
 
         try:
             defaults_version = int(load_defaults.get("defaults_version", 0))
         except Exception:
             defaults_version = 0
 
-        if defaults_version < LOAD_DEFAULTS_VERSION:
-            # Migrate old installs to the new IFMIS-friendly defaults once.
-            self._default_speed_delay = 0.1
-            self._default_window_delay = 0.05
-            self._default_wait_hourglass = True
-            migrated_defaults = True
-        else:
-            try:
-                self._default_speed_delay = float(
-                    load_defaults.get("speed_delay", self._default_speed_delay)
-                )
-            except Exception:
-                pass
-            try:
-                self._default_window_delay = float(
-                    load_defaults.get("window_delay", self._default_window_delay)
-                )
-            except Exception:
-                pass
+        needs_defaults_upgrade = defaults_version < LOAD_DEFAULTS_VERSION
+
+        try:
+            saved_speed_delay = float(
+                load_defaults.get("speed_delay", self._default_speed_delay)
+            )
+        except Exception:
+            saved_speed_delay = self._default_speed_delay
+        saved_load_mode = load_defaults.get("load_mode", "")
+        normalized_speed_delay = _normalize_default_speed_delay(
+            saved_speed_delay,
+            saved_load_mode,
+        )
+        self._default_speed_delay = normalized_speed_delay
+
+        try:
+            self._default_window_delay = float(
+                load_defaults.get("window_delay", self._default_window_delay)
+            )
+        except Exception:
+            pass
 
         self._default_wait_hourglass = bool(
             load_defaults.get("wait_hourglass", self._default_wait_hourglass)
@@ -441,12 +462,8 @@ class MainWindow(QMainWindow):
             load_defaults.get("load_control", self._default_load_control)
         )
         self._default_form_mode = bool(load_defaults.get("form_mode", self._default_form_mode))
-        saved_mode = str(load_defaults.get("load_mode", "")).strip().lower()
-        if saved_mode in VALID_LOAD_MODES:
-            self._default_load_mode = saved_mode
-        else:
-            self._default_load_mode = "per_cell"
-        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_test")
+        self._default_load_mode = _normalize_load_mode(saved_load_mode)
+        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender")
 
         self._default_validate_before_load = bool(
             load_defaults.get("validate_before_load", self._default_validate_before_load)
@@ -458,10 +475,6 @@ class MainWindow(QMainWindow):
             load_defaults.get("popup_behavior", self._default_popup_behavior)
         ).strip().lower()
         self._default_popup_behavior = popup_behavior if popup_behavior in {"pause", "stop"} else "pause"
-        if migrated_defaults:
-            self._default_load_mode = "per_cell"
-            self._default_form_mode = False
-            self._default_end_of_row_action = "none"
 
         self._protect_load_enabled = bool(ui.get("protect_load_enabled", self._protect_load_enabled))
         self._show_progress_bar = bool(ui.get("show_progress_bar", self._show_progress_bar))
@@ -481,7 +494,7 @@ class MainWindow(QMainWindow):
                 "active_profile": db.get("active_profile", ""),
                 "profiles": clean_profiles,
             }
-        if migrated_defaults:
+        if needs_defaults_upgrade or normalized_speed_delay != saved_speed_delay:
             self._persist_settings()
 
     def _persist_settings(self):
@@ -1407,7 +1420,7 @@ class MainWindow(QMainWindow):
         """Set default delays used by the Start Load popup."""
         dialog = QDialog(self)
         dialog.setWindowTitle("Delays & Timeouts")
-        dialog.setFixedWidth(360)
+        dialog.setMinimumWidth(460)
         dialog.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
         layout = QVBoxLayout(dialog)
@@ -1431,6 +1444,17 @@ class MainWindow(QMainWindow):
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
+        fit_dialog_to_screen(
+            dialog,
+            min_width=460,
+            min_height=180,
+            preferred_width=540,
+            wide_width=620,
+            margin_width=72,
+            margin_height=72,
+            extra_hint_width=24,
+            extra_hint_height=20,
+        )
 
         if dialog.exec() != QDialog.Accepted:
             return
@@ -1453,7 +1477,7 @@ class MainWindow(QMainWindow):
         """Set default load options used by the Start Load popup."""
         dialog = QDialog(self)
         dialog.setWindowTitle("Options")
-        dialog.setFixedWidth(500)
+        dialog.setMinimumWidth(620)
         dialog.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
         layout = QVBoxLayout(dialog)
@@ -1499,14 +1523,25 @@ class MainWindow(QMainWindow):
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
+        fit_dialog_to_screen(
+            dialog,
+            min_width=620,
+            min_height=260,
+            preferred_width=720,
+            wide_width=840,
+            margin_width=72,
+            margin_height=72,
+            extra_hint_width=28,
+            extra_hint_height=24,
+        )
 
         if dialog.exec() != QDialog.Accepted:
             return
 
-        chosen_mode = mode_combo.currentData() or "per_cell"
+        chosen_mode = _normalize_load_mode(mode_combo.currentData() or "per_cell")
         self._default_wait_hourglass = wait_check.isChecked()
-        self._default_load_mode = chosen_mode if chosen_mode in VALID_LOAD_MODES else "per_cell"
-        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_test")
+        self._default_load_mode = chosen_mode
+        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender")
         self._default_validate_before_load = validate_check.isChecked()
         self._compact_mode_enabled = compact_check.isChecked()
         self._default_end_of_row_action = eor_combo.currentData()
@@ -1913,8 +1948,6 @@ class MainWindow(QMainWindow):
         dialog.load_control_check.setChecked(self._default_load_control)
         if self._default_load_mode == "imprest_surrender":
             dialog.radio_imprest.setChecked(True)
-        elif self._default_load_mode == "imprest_test":
-            dialog.radio_imprest_test.setChecked(True)
         elif self._default_load_mode == "per_row":
             dialog.radio_per_row.setChecked(True)
         elif self._default_load_mode == "fast_send":
@@ -2071,11 +2104,9 @@ class MainWindow(QMainWindow):
         self._default_window_delay = settings.get("window_delay", self._default_window_delay)
         self._default_wait_hourglass = settings.get("wait_hourglass", self._default_wait_hourglass)
         self._default_load_control = settings.get("load_control", self._default_load_control)
-        chosen_mode = str(settings.get("load_mode", "")).strip().lower()
-        if chosen_mode not in VALID_LOAD_MODES:
-            chosen_mode = "per_cell"
+        chosen_mode = _normalize_load_mode(settings.get("load_mode", ""))
         self._default_load_mode = chosen_mode
-        self._default_form_mode = chosen_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_test")
+        self._default_form_mode = chosen_mode in ("per_row", "fast_send", "imprest_surrender")
         self._default_validate_before_load = settings.get(
             "validate_before_load", self._default_validate_before_load
         )
@@ -2105,9 +2136,7 @@ class MainWindow(QMainWindow):
                 )
                 return
 
-        load_mode = str(settings.get("load_mode", "")).strip().lower()
-        if load_mode not in VALID_LOAD_MODES:
-            load_mode = "per_cell"
+        load_mode = _normalize_load_mode(settings.get("load_mode", ""))
 
 
 
@@ -2142,6 +2171,8 @@ class MainWindow(QMainWindow):
             mode_label = {
                 "per_cell": "Per Cell",
                 "per_row": "Per Row",
+                "fast_send": "Fast Send",
+                "imprest_surrender": "Imprest",
             }.get(load_mode, "Per Cell")
             reply = QMessageBox.question(
                 self,
@@ -2196,18 +2227,18 @@ class MainWindow(QMainWindow):
             end_row=to_row,
             target_hwnd=target_hwnd,
             target_title=target_title,
-            speed_delay=settings.get("speed_delay", 0.1),
-            window_delay=settings.get("window_delay", 0.1),
+            speed_delay=settings.get("speed_delay", 0.01),
+            window_delay=settings.get("window_delay", 0.05),
             wait_hourglass=settings.get("wait_hourglass", False),
             key_columns=list(self.spreadsheet.key_columns),
             selected_columns=list(selected_cols) if selected_cols else None,
             delay_columns=list(delay_cols),
-            form_mode=load_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_test"),
+            form_mode=load_mode in ("per_row", "fast_send", "imprest_surrender"),
             load_mode=load_mode,
             end_of_row_action=settings.get("end_of_row_action", "none"),
             save_interval=settings.get("save_interval", 50),
             db_settings=self._db_settings,
-            use_fast_send=load_mode in ("fast_send", "imprest_surrender", "imprest_test"),
+            use_fast_send=load_mode in ("fast_send", "imprest_surrender"),
             popup_stop_on_error=settings.get("popup_behavior", "pause") == "stop",
             load_control=settings.get("load_control", False),
         )
@@ -2267,7 +2298,6 @@ class MainWindow(QMainWindow):
             "per_row":           "Per Row",
             "fast_send":         "Fast Send",
             "imprest_surrender": "Imprest",
-            "imprest_test":      "Imprest Test",
         }.get(load_mode, "Per Cell")
         self._load_overlay.set_mode_label(mode_label)
         self.status_label.setText(f"Loading ({mode_label})... Switch to target window!")
@@ -2391,6 +2421,17 @@ class MainWindow(QMainWindow):
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
         layout.addWidget(btns)
+        fit_dialog_to_screen(
+            dlg,
+            min_width=560,
+            min_height=420,
+            preferred_width=660,
+            wide_width=760,
+            margin_width=72,
+            margin_height=72,
+            extra_hint_width=28,
+            extra_hint_height=24,
+        )
 
         result = dlg.exec()
 
@@ -2722,6 +2763,17 @@ class MainWindow(QMainWindow):
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
         layout.addWidget(btns)
+        fit_dialog_to_screen(
+            dlg,
+            min_width=560,
+            min_height=420,
+            preferred_width=660,
+            wide_width=760,
+            margin_width=72,
+            margin_height=72,
+            extra_hint_width=28,
+            extra_hint_height=24,
+        )
 
         if dlg.exec() != QDialog.Accepted:
             return

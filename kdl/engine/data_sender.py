@@ -111,7 +111,7 @@ class DataSender:
     def __init__(self):
         self.target_hwnd: Optional[int] = None
         self.target_title: str = ""
-        self.speed_delay: float = 0.1  # Delay between actions in seconds
+        self.speed_delay: float = 0.01  # Default non-fast-send delay between actions
         self.window_delay: float = 0.1  # Delay after activating target window
         self.wait_for_hourglass: bool = False
         self.hourglass_timeout: float = 30.0  # Max wait time for hourglass

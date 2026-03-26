@@ -8,7 +8,7 @@ from typing import List, Optional, Set
 
 import pyautogui
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QTextCursor, QGuiApplication
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -20,11 +20,10 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
-    QScrollArea,
     QVBoxLayout,
-    QWidget,
 )
 
+from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.dialogs.load_result_dialog import LoadResultDialog
 from kdl.styles import dialog_qss
 
@@ -94,25 +93,25 @@ class MacroRecorderDialog(QDialog):
         self._fit_to_screen()
 
     def _build_ui(self):
-        dialog_layout = QVBoxLayout(self)
-        dialog_layout.setContentsMargins(0, 0, 0, 0)
-        dialog_layout.setSpacing(0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        dialog_layout.addWidget(scroll)
-
-        scroll_widget = QWidget()
-        scroll.setWidget(scroll_widget)
-        layout = QVBoxLayout(scroll_widget)
+        layout = QVBoxLayout(self)
         layout.setSpacing(8)
+        layout.setContentsMargins(14, 14, 14, 14)
 
-        title = QLabel(
-            "Record keyboard actions, then insert as App Format macro (e.g. tab, *S, *DN, \\r)."
-        )
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        title = QLabel("Record keyboard actions and insert them as an app-format macro.")
         title.setWordWrap(True)
-        layout.addWidget(title)
+        title_row.addWidget(title, 1)
+        title_row.addWidget(
+            create_hint_button(
+                "Examples: tab, *S, *DN, \\r.\n"
+                "Press F8 to stop while recording.\n"
+                "Use the mouse capture buttons to insert left/right click coordinates.\n"
+                "Saved shortcuts only work for keystroke macros that start with \\.",
+                label="i",
+            )
+        )
+        layout.addLayout(title_row)
 
         btn_row = QHBoxLayout()
         self.start_btn = QPushButton("Start Recording")
@@ -184,17 +183,17 @@ class MacroRecorderDialog(QDialog):
         layout.addWidget(buttons)
 
     def _fit_to_screen(self):
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if not screen:
-            return
-        geo = screen.availableGeometry()
-        max_w = max(360, geo.width() - 24)
-        max_h = max(320, geo.height() - 24)
-        self.setMaximumSize(max_w, max_h)
-        hint = self.sizeHint()
-        target_w = min(max(self.minimumWidth(), hint.width()), max_w)
-        target_h = min(max(360, hint.height()), max_h)
-        self.resize(target_w, target_h)
+        fit_dialog_to_screen(
+            self,
+            min_width=560,
+            min_height=420,
+            preferred_width=720,
+            wide_width=860,
+            margin_width=72,
+            margin_height=72,
+            extra_hint_width=32,
+            extra_hint_height=28,
+        )
 
     def _start_recording(self):
         if self._recording:

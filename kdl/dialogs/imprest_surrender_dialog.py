@@ -20,12 +20,11 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QTextEdit,
     QVBoxLayout,
-    QWidget,
 )
 
+from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import TEXT_MUTED, accent_button_qss, dialog_qss
 
 
@@ -57,41 +56,43 @@ class ImprestSurrenderDialog(QDialog):
         self._fit_to_screen()
 
     def _build_ui(self):
-        dialog_layout = QVBoxLayout(self)
-        dialog_layout.setContentsMargins(0, 0, 0, 0)
-        dialog_layout.setSpacing(0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        dialog_layout.addWidget(scroll)
-
-        scroll_widget = QWidget()
-        scroll.setWidget(scroll_widget)
-        layout = QVBoxLayout(scroll_widget)
+        layout = QVBoxLayout(self)
         layout.setSpacing(12)
-        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        intro = QLabel(
-            "Create a ready-to-load Imprest workbook in three steps: import the IFMIS "
-            "export, open the completed template, then review the invoice rows."
-        )
+        intro_row = QHBoxLayout()
+        intro_row.setSpacing(8)
+        intro = QLabel("Build and review the Imprest workbook, then send the rows to the grid.")
         intro.setObjectName("DialogIntro")
         intro.setWordWrap(True)
-        layout.addWidget(intro)
+        intro_row.addWidget(intro, 1)
+        intro_row.addWidget(
+            create_hint_button(
+                "Create a ready-to-load Imprest workbook in three steps: import the IFMIS "
+                "export, open the completed template, then review the invoice rows.",
+                label="i",
+            )
+        )
+        layout.addLayout(intro_row)
 
         import_group = QGroupBox("Step 1 - Import IFMIS Export")
         import_layout = QVBoxLayout(import_group)
         import_layout.setSpacing(8)
 
-        import_desc = QLabel(
-            "Start with the IFMIS AP export. TNT DL fills the known fields and marks "
-            "the three values you still need to complete: Auth Ref, Admin Code, and "
-            "Distribution Account."
+        import_note_row = QHBoxLayout()
+        import_note_row.setSpacing(8)
+        import_note = QLabel("Import the IFMIS AP export to create the prefilled template.")
+        import_note.setObjectName("DialogHint")
+        import_note.setWordWrap(True)
+        import_note_row.addWidget(import_note, 1)
+        import_note_row.addWidget(
+            create_hint_button(
+                "TNT DL fills the known fields and marks the three values you still "
+                "need to complete: Auth Ref, Admin Code, and Distribution Account.",
+                label="i",
+            )
         )
-        import_desc.setObjectName("DialogHint")
-        import_desc.setWordWrap(True)
-        import_layout.addWidget(import_desc)
+        import_layout.addLayout(import_note_row)
 
         self._import_ifmis_btn = QPushButton("Import IFMIS File...")
         self._import_ifmis_btn.setMinimumWidth(180)
@@ -144,14 +145,6 @@ class ImprestSurrenderDialog(QDialog):
         )
         preview_layout.addWidget(self._preview)
         layout.addWidget(preview_group)
-
-        hint = QLabel(
-            "Next: load the rows into the grid, press F5, choose Imprest Surrender "
-            "mode, then start the load."
-        )
-        hint.setObjectName("DialogHint")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(10)
@@ -331,12 +324,14 @@ class ImprestSurrenderDialog(QDialog):
         self.accept()
 
     def _fit_to_screen(self):
-        from PySide6.QtGui import QGuiApplication
-
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen:
-            ag = screen.availableGeometry()
-            self.resize(
-                min(max(640, self.sizeHint().width() + 32), ag.width() - 80),
-                min(max(520, self.sizeHint().height() + 28), ag.height() - 80),
-            )
+        fit_dialog_to_screen(
+            self,
+            min_width=760,
+            min_height=540,
+            preferred_width=940,
+            wide_width=1080,
+            margin_width=72,
+            margin_height=80,
+            extra_hint_width=40,
+            extra_hint_height=28,
+        )
