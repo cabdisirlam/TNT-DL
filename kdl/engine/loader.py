@@ -93,7 +93,7 @@ class LoaderThread(QThread):
         self._form_first_data_row = 0
 
     def configure(self, grid_data, start_row, end_row, target_hwnd, target_title,
-                  speed_delay=0.01, wait_hourglass=False,
+                  speed_delay=0.2, wait_hourglass=False,
                   key_columns=None, selected_columns=None, delay_columns=None,
                   form_mode=False, load_mode="per_cell", end_of_row_action="none",
                   window_delay=0.1, save_interval=50, db_settings=None,

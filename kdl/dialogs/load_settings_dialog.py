@@ -234,7 +234,7 @@ class LoadSettingsDialog(QDialog):
         dg.setVerticalSpacing(6)
 
         dg.addWidget(QLabel("Cell delay:"), 0, 0)
-        self.cell_delay_input = QLineEdit("0.01")
+        self.cell_delay_input = QLineEdit("0.2")
         self.cell_delay_input.setFixedWidth(60)
         self.cell_delay_input.setFixedHeight(28)
         self.cell_delay_input.setAlignment(Qt.AlignCenter)
@@ -345,7 +345,7 @@ class LoadSettingsDialog(QDialog):
 
         if self.radio_imprest.isChecked():
             self.eor_combo.setCurrentIndex(0)
-            self.cell_delay_input.setText("0.01")
+            self.cell_delay_input.setText("0.2")
         elif self.radio_fast_send.isChecked():
             self.eor_combo.setCurrentIndex(2)
             self.save_interval_input.setText("50")
@@ -353,10 +353,10 @@ class LoadSettingsDialog(QDialog):
         elif self.radio_per_row.isChecked():
             if self.eor_combo.currentIndex() == 0:
                 self.eor_combo.setCurrentIndex(2)
-            self.cell_delay_input.setText("0.01")
+            self.cell_delay_input.setText("0.2")
         else:
             self.eor_combo.setCurrentIndex(0)
-            self.cell_delay_input.setText("0.01")
+            self.cell_delay_input.setText("0.2")
 
         self._update_save_interval_visibility()
 
@@ -446,7 +446,7 @@ class LoadSettingsDialog(QDialog):
         try:
             cell_delay = float(self.cell_delay_input.text())
         except ValueError:
-            cell_delay = 0.01
+            cell_delay = 0.2
 
         try:
             window_delay = float(self.window_delay_input.text())

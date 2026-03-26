@@ -1025,7 +1025,7 @@ def build_row_summary(row: dict) -> str:
             f"Amt {row.get('Invoice_Amount', '?')} | {desc}")
 
 
-_INTER_ACTION_DELAY = 0.01   # Default non-fast-send delay between actions
+_INTER_ACTION_DELAY = 0.2   # Default non-fast-send delay between actions
 
 
 def _mid_row_popup_check(sender, popup_fn) -> bool:
@@ -1056,7 +1056,7 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
       popup_fn            – optional callable(popup_title: str) -> bool
                             called when a blocking popup is detected mid-row
       inter_action_delay  – delay in seconds between keystrokes; defaults to
-                            _INTER_ACTION_DELAY (0.01) when None
+                            _INTER_ACTION_DELAY (0.2) when None
       is_last_row         – when True, adds a 500 ms settle delay before the
                             Ctrl+S save to ensure the last row is fully saved
     """

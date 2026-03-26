@@ -50,9 +50,9 @@ COMMAND_GROUPS = [
     "Other",
 ]
 
-LOAD_DEFAULTS_VERSION = 8
+LOAD_DEFAULTS_VERSION = 9
 VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send", "imprest_surrender"}
-LEGACY_DEFAULT_SPEED_DELAYS = {0.05, 0.1, 0.12, 0.2}
+LEGACY_DEFAULT_SPEED_DELAYS = {0.01, 0.05, 0.1, 0.12}
 TABLE_FORMAT_HEADERS = [
     "Line",
     "Type",
@@ -75,13 +75,14 @@ def _normalize_load_mode(mode: str) -> str:
 
 
 def _normalize_default_speed_delay(delay, load_mode: str) -> float:
+    normalized_mode = _normalize_load_mode(load_mode)
+    default_speed_delay = 0.05 if normalized_mode == "fast_send" else 0.2
     try:
         speed_delay = float(delay)
     except Exception:
-        speed_delay = 0.01
-    normalized_mode = _normalize_load_mode(load_mode)
+        speed_delay = default_speed_delay
     if normalized_mode != "fast_send" and round(speed_delay, 4) in LEGACY_DEFAULT_SPEED_DELAYS:
-        return 0.01
+        return 0.2
     return max(0.0, min(2.0, speed_delay))
 
 
@@ -281,7 +282,7 @@ class MainWindow(QMainWindow):
         self._find_scope = "all"
 
         # Global load defaults (used to prefill Start Load popup)
-        self._default_speed_delay = 0.01
+        self._default_speed_delay = 0.2
         self._default_window_delay = 0.05
         self._default_wait_hourglass = True
         self._default_load_control = False
@@ -2227,7 +2228,7 @@ class MainWindow(QMainWindow):
             end_row=to_row,
             target_hwnd=target_hwnd,
             target_title=target_title,
-            speed_delay=settings.get("speed_delay", 0.01),
+            speed_delay=settings.get("speed_delay", 0.2),
             window_delay=settings.get("window_delay", 0.05),
             wait_hourglass=settings.get("wait_hourglass", False),
             key_columns=list(self.spreadsheet.key_columns),
