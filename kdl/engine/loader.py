@@ -655,6 +655,13 @@ class LoaderThread(QThread):
             self.loading_complete.emit(False, "Failed to activate target window")
             return
 
+        # Fast-send mode emits signals at a throttled interval to avoid flooding
+        # the Qt main-thread event queue with thousands of queued signals, which
+        # would make the overlay appear frozen and stay visible after loading.
+        _is_fast = self.sender.fast_send_row_mode
+        _FAST_OVERLAY_INTERVAL = 0.15   # seconds between overlay refreshes
+        _last_overlay_update = 0.0
+
         for row_idx in range(self.start_row, self.end_row + 1):
             if self._is_stop_requested():
                 break
@@ -666,13 +673,17 @@ class LoaderThread(QThread):
 
             row_data = self.grid_data[row_idx]
             row_had_activity = False
-            self.row_started.emit(row_idx)
             elapsed = self._format_elapsed(started_at)
             eta = self._format_eta(started_at, rows_processed, total_rows)
-            self.progress_updated.emit(
-                rows_processed, total_rows,
-                f"Loading row {row_idx + 1}... ({rows_processed}/{total_rows}) | Elapsed: {elapsed} | ETA: {eta}"
-            )
+            _now = time.time()
+            _emit_overlay = not _is_fast or (_now - _last_overlay_update) >= _FAST_OVERLAY_INTERVAL
+            if _emit_overlay:
+                _last_overlay_update = _now
+                self.row_started.emit(row_idx)
+                self.progress_updated.emit(
+                    rows_processed, total_rows,
+                    f"Loading row {row_idx + 1}... ({rows_processed}/{total_rows}) | Elapsed: {elapsed} | ETA: {eta}"
+                )
 
             if self._check_blocking_popup(rows_processed, total_rows):
                 if self._is_stop_requested():
@@ -865,7 +876,10 @@ class LoaderThread(QThread):
                             pending_tab_after_receipt = False
 
                         success = self._send_cell_with_retry(parsed)
-                        self.cell_processed.emit(row_idx, col_idx, success)
+                        # In fast-send mode skip per-cell signals for successes to
+                        # prevent the Qt event-queue backlog that freezes the overlay.
+                        if not _is_fast or not success:
+                            self.cell_processed.emit(row_idx, col_idx, success)
                         if not success:
                             self._handle_send_failure(row_idx, col_idx, rows_processed, total_rows)
                             break
@@ -945,12 +959,22 @@ class LoaderThread(QThread):
             rows_processed += 1
             elapsed = self._format_elapsed(started_at)
             eta = self._format_eta(started_at, rows_processed, total_rows)
+            _now = time.time()
+            if not _is_fast or (_now - _last_overlay_update) >= _FAST_OVERLAY_INTERVAL:
+                _last_overlay_update = _now
+                self.progress_updated.emit(
+                    rows_processed, total_rows,
+                    f"Loaded {rows_processed}/{total_rows} row(s) | Elapsed: {elapsed} | ETA: {eta}"
+                )
+
+        # Done UI mode – in fast send, emit one final progress signal so the
+        # overlay displays the true final row count before it is hidden.
+        if _is_fast:
+            elapsed = self._format_elapsed(started_at)
             self.progress_updated.emit(
                 rows_processed, total_rows,
-                f"Loaded {rows_processed}/{total_rows} row(s) | Elapsed: {elapsed} | ETA: {eta}"
+                f"Loaded {rows_processed}/{total_rows} row(s) | Elapsed: {elapsed} | ETA: --"
             )
-
-        # Done UI mode
         elapsed = self._format_elapsed(started_at)
         if self._stop_requested:
             stop_rows = min(total_rows, rows_processed + (1 if partial_row_loaded else 0))

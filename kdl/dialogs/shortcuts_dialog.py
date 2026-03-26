@@ -5,7 +5,7 @@ Edit and manage shortcut commands and their keystroke equivalents.
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QHeaderView, QMessageBox, QLabel
+    QPushButton, QHeaderView, QMessageBox, QLabel, QScrollArea, QWidget,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QGuiApplication
@@ -33,7 +33,18 @@ class ShortcutsDialog(QDialog):
         self._fit_to_screen()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        dialog_layout.addWidget(scroll)
+
+        scroll_widget = QWidget()
+        scroll.setWidget(scroll_widget)
+        layout = QVBoxLayout(scroll_widget)
 
         info_label = QLabel(
             "Edit shortcuts below. Use * prefix for shortcut names.\n"

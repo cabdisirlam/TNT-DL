@@ -3,6 +3,7 @@ Bank Statement Converter Dialog.
 Lets the user pick an Excel file, choose sheets, and run the conversion.
 """
 
+import csv
 import os
 import zipfile
 import xml.etree.ElementTree as ET
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -60,6 +62,12 @@ class _SheetLoaderWorker(QThread):
     def run(self):
         try:
             ext = os.path.splitext(self.filepath)[1].lower()
+
+            # ── CSV: single implicit sheet ──
+            if ext == ".csv":
+                name = os.path.splitext(os.path.basename(self.filepath))[0]
+                self.sheets_ready.emit([name])
+                return
 
             # ── Fast path: xlsx / xlsm via zipfile (no workbook load) ──
             if ext in (".xlsx", ".xlsm"):
@@ -159,6 +167,38 @@ class _ConverterWorker(QThread):
 
             source_ext = os.path.splitext(self.filepath)[1].lower()
             load_path = self.filepath
+
+            if source_ext == ".csv":
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                sheet_name = os.path.splitext(os.path.basename(self.filepath))[0]
+                ws.title = sheet_name
+                with open(self.filepath, newline="", encoding="utf-8-sig") as f:
+                    for row_vals in csv.reader(f):
+                        ws.append(row_vals)
+                # Use the CSV sheet name for conversion
+                self.sheet_names = [sheet_name]
+                multi = False
+                all_output_data = []
+                all_audit_rows = []
+                all_messages = []
+                any_success = False
+                result = convert_statement(wb, sheet_name, skip_contra=self.skip_contra)
+                if result.success:
+                    any_success = True
+                    all_output_data.extend(result.output_data)
+                    all_messages.append(result.message)
+                else:
+                    all_messages.append(f"FAILED\n{result.message}")
+                self.result = ConversionResult(
+                    success=any_success,
+                    message="\n".join(all_messages),
+                    output_data=all_output_data,
+                )
+                if any_success:
+                    self.wb = wb
+                return
+
             if source_ext == ".xls":
                 try:
                     import pythoncom
@@ -289,7 +329,18 @@ class StatementConverterDialog(QDialog):
             pass
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        dialog_layout.addWidget(scroll)
+
+        scroll_widget = QWidget()
+        scroll.setWidget(scroll_widget)
+        layout = QVBoxLayout(scroll_widget)
         layout.setSpacing(14)
         layout.setContentsMargins(18, 18, 18, 18)
 
@@ -394,7 +445,7 @@ class StatementConverterDialog(QDialog):
             self,
             "Select Excel File",
             _default_browse_dir(),
-            "Excel Files (*.xlsx *.xls *.xlsm);;All Files (*)",
+            "All Supported (*.xlsx *.xls *.xlsm *.csv);;Excel Files (*.xlsx *.xls *.xlsm);;CSV Files (*.csv);;All Files (*)",
         )
         if not path:
             return

@@ -11,8 +11,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QFrame,
     QDialogButtonBox,
+    QScrollArea,
     QStyle,
     QSizePolicy,
+    QWidget,
 )
 from kdl.styles import load_result_qss, ACCENT
 
@@ -129,7 +131,18 @@ class LoadResultDialog(QDialog):
         palette = self._status_palette()
         summary, kv_pairs = self._parse_message()
 
-        root = QVBoxLayout(self)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        dialog_layout.addWidget(scroll)
+
+        scroll_widget = QWidget()
+        scroll.setWidget(scroll_widget)
+        root = QVBoxLayout(scroll_widget)
         root.setContentsMargins(14, 12, 14, 10)
         root.setSpacing(10)
 

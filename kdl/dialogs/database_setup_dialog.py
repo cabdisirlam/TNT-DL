@@ -8,7 +8,8 @@ from typing import Dict, List
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
-    QLineEdit, QCheckBox, QMessageBox, QDialogButtonBox, QGridLayout
+    QLineEdit, QCheckBox, QMessageBox, QDialogButtonBox, QGridLayout,
+    QScrollArea, QWidget,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
@@ -44,7 +45,18 @@ class DatabaseSetupDialog(QDialog):
         self._fit_to_screen()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        dialog_layout.addWidget(scroll)
+
+        scroll_widget = QWidget()
+        scroll.setWidget(scroll_widget)
+        layout = QVBoxLayout(scroll_widget)
         layout.setSpacing(8)
 
         note = QLabel(

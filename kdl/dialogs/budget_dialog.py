@@ -6,6 +6,7 @@ processor engine on the selected sheets, and saves the formatted
 output workbook as budget.xlsx.
 """
 
+import csv
 import os
 import xml.etree.ElementTree as ET
 import zipfile
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -66,6 +68,10 @@ class _SheetLoaderWorker(QThread):
     def run(self):
         try:
             ext = os.path.splitext(self.filepath)[1].lower()
+            if ext == ".csv":
+                name = os.path.splitext(os.path.basename(self.filepath))[0]
+                self.sheets_ready.emit([name])
+                return
             if ext in (".xlsx", ".xlsm"):
                 names = _fast_xlsx_sheet_names(self.filepath)
                 if names:
@@ -97,9 +103,20 @@ class _BudgetWorker(QThread):
     def run(self):
         try:
             import openpyxl
-            wb = openpyxl.load_workbook(
-                self.filepath, data_only=True, keep_links=False
-            )
+            source_ext = os.path.splitext(self.filepath)[1].lower()
+            if source_ext == ".csv":
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                sheet_name = os.path.splitext(os.path.basename(self.filepath))[0]
+                ws.title = sheet_name
+                with open(self.filepath, newline="", encoding="utf-8-sig") as f:
+                    for row_vals in csv.reader(f):
+                        ws.append(row_vals)
+                self.sheet_names = [sheet_name]
+            else:
+                wb = openpyxl.load_workbook(
+                    self.filepath, data_only=True, keep_links=False
+                )
             from kdl.engine.budget_processor import process_budget_sheets
             result = process_budget_sheets(wb, self.sheet_names)
             wb.close()
@@ -136,7 +153,18 @@ class BudgetDialog(QDialog):
 
     # ------------------------------------------------------------------
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        dialog_layout.addWidget(scroll)
+
+        scroll_widget = QWidget()
+        scroll.setWidget(scroll_widget)
+        layout = QVBoxLayout(scroll_widget)
         layout.setSpacing(14)
         layout.setContentsMargins(18, 18, 18, 18)
 
@@ -235,7 +263,7 @@ class BudgetDialog(QDialog):
             self,
             "Select IFMIS Budget Excel File",
             _default_dir(),
-            "Excel Files (*.xlsx *.xlsm *.xls);;All Files (*)",
+            "All Supported (*.xlsx *.xlsm *.xls *.csv);;Excel Files (*.xlsx *.xlsm *.xls);;CSV Files (*.csv);;All Files (*)",
         )
         if not path:
             return

@@ -342,9 +342,17 @@ TEMPLATE_ACTIONS_PGDN = (
 def read_invoice_rows(filepath: str) -> tuple:
     """
     Read invoice rows from the Data_Entry sheet (or first sheet) of filepath.
-    Data rows start at row 4 (rows 1–3 are title / headers / hints).
+    Supports .xlsx, .xls, and .csv files.
+    Data rows start at row 4 (rows 1–3 are title / headers / hints) for Excel,
+    or row 2 for CSV (row 1 = headers).
     Returns (rows: list[dict], error: str).
     """
+    import os
+    ext = os.path.splitext(filepath)[1].lower()
+
+    if ext == ".csv":
+        return _read_invoice_rows_csv(filepath)
+
     try:
         import openpyxl
     except ImportError:
@@ -374,6 +382,36 @@ def read_invoice_rows(filepath: str) -> tuple:
             for i, col in enumerate(COLUMNS)
         }
         # Skip rows where Supplier_Num is empty
+        if not row_dict["Supplier_Num"]:
+            continue
+        rows.append(row_dict)
+
+    return rows, ""
+
+
+def _read_invoice_rows_csv(filepath: str) -> tuple:
+    """Read invoice rows from a CSV file. First row is headers, data from row 2."""
+    import csv
+    try:
+        with open(filepath, newline="", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            all_rows = list(reader)
+    except Exception as exc:
+        return [], f"Cannot open CSV file: {exc}"
+
+    if len(all_rows) < 2:
+        return [], "CSV file has no data rows."
+
+    rows = []
+    for row_values in all_rows[1:]:
+        if all(not v.strip() for v in row_values):
+            continue
+        if len(row_values) < len(COLUMNS):
+            continue
+        row_dict = {
+            col: row_values[i].strip()
+            for i, col in enumerate(COLUMNS)
+        }
         if not row_dict["Supplier_Num"]:
             continue
         rows.append(row_dict)
@@ -522,7 +560,8 @@ def _fmt_ifmis_date(v) -> str:
 
 def import_ifmis_export(filepath: str) -> tuple:
     """
-    Read an IFMIS-exported AP invoice Excel and map to our 11-column format.
+    Read an IFMIS-exported AP invoice file and map to our 11-column format.
+    Supports .xlsx, .xls, and .csv files.
     Only rows where the 'Type' column equals 'Prepayment' are imported.
 
     Returns (rows: list[dict], skipped: int, error: str).
@@ -530,17 +569,30 @@ def import_ifmis_export(filepath: str) -> tuple:
       skipped — number of non-Prepayment rows ignored.
       error   — non-empty string if the file could not be read.
     """
+    import os as _os
+    ext = _os.path.splitext(filepath)[1].lower()
+
     try:
         import openpyxl
     except ImportError:
         return [], 0, "openpyxl is not installed."
 
-    try:
-        wb = openpyxl.load_workbook(filepath, data_only=True)
-    except Exception as exc:
-        return [], 0, f"Cannot open file: {exc}"
-
-    ws = wb.active
+    if ext == ".csv":
+        import csv
+        try:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            with open(filepath, newline="", encoding="utf-8-sig") as f:
+                for row_vals in csv.reader(f):
+                    ws.append(row_vals)
+        except Exception as exc:
+            return [], 0, f"Cannot open CSV file: {exc}"
+    else:
+        try:
+            wb = openpyxl.load_workbook(filepath, data_only=True)
+        except Exception as exc:
+            return [], 0, f"Cannot open file: {exc}"
+        ws = wb.active
 
     # ── Build header index (0-based) ──────────────────────────────────────────
     headers = [str(ws.cell(1, c).value or "").strip().lower()
@@ -1017,6 +1069,9 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
                     return False
                 if not _wait_after_action(inter_action_delay):
                     return False
+            # Check for LOV popups after tabbing (e.g. Supplier Site LOV)
+            if not _mid_row_popup_check(sender, popup_fn):
+                return False
 
         elif kind == "key":
             vk = _SI_VK_MAP.get(action[1], 0)

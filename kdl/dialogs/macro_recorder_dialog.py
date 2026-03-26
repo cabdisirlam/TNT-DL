@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from kdl.dialogs.load_result_dialog import LoadResultDialog
@@ -92,7 +94,18 @@ class MacroRecorderDialog(QDialog):
         self._fit_to_screen()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        dialog_layout.addWidget(scroll)
+
+        scroll_widget = QWidget()
+        scroll.setWidget(scroll_widget)
+        layout = QVBoxLayout(scroll_widget)
         layout.setSpacing(8)
 
         title = QLabel(

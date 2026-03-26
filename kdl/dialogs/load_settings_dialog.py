@@ -16,7 +16,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from kdl import __display_name__
@@ -91,7 +93,18 @@ class LoadSettingsDialog(QDialog):
                 self.app_combo.setCurrentText("Oracle EBS R12")
 
     def _build_ui(self):
-        outer = QVBoxLayout(self)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        dialog_layout.addWidget(scroll)
+
+        scroll_widget = QWidget()
+        scroll.setWidget(scroll_widget)
+        outer = QVBoxLayout(scroll_widget)
         outer.setSpacing(6)
         outer.setContentsMargins(8, 8, 8, 8)
 

@@ -20,8 +20,10 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from kdl.styles import TEXT_MUTED, accent_button_qss, dialog_qss
@@ -55,7 +57,18 @@ class ImprestSurrenderDialog(QDialog):
         self._fit_to_screen()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        dialog_layout.addWidget(scroll)
+
+        scroll_widget = QWidget()
+        scroll.setWidget(scroll_widget)
+        layout = QVBoxLayout(scroll_widget)
         layout.setSpacing(12)
         layout.setContentsMargins(18, 18, 18, 18)
 
@@ -184,7 +197,7 @@ class ImprestSurrenderDialog(QDialog):
             self,
             "Open IFMIS Export",
             _default_dir(),
-            "Excel Files (*.xlsx *.xls)",
+            "All Supported (*.xlsx *.xls *.csv);;Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)",
         )
         if not src:
             return
@@ -232,7 +245,7 @@ class ImprestSurrenderDialog(QDialog):
             self,
             "Open Completed Template",
             _default_dir(),
-            "Excel Files (*.xlsx *.xls)",
+            "All Supported (*.xlsx *.xls *.csv);;Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)",
         )
         if not path:
             return

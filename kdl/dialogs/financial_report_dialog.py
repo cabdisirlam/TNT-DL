@@ -6,6 +6,7 @@ and produces a formatted 5-sheet Excel workbook (Notes, Performance, Position,
 Net Assets, Cash Flow).
 """
 
+import csv
 import os
 import xml.etree.ElementTree as ET
 import zipfile
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -66,6 +68,12 @@ class _SheetLoaderWorker(QThread):
     def run(self):
         try:
             ext = os.path.splitext(self.filepath)[1].lower()
+
+            # ── CSV: single implicit sheet ──
+            if ext == ".csv":
+                name = os.path.splitext(os.path.basename(self.filepath))[0]
+                self.sheets_ready.emit([name])
+                return
 
             # ── Fast path: xlsx/xlsm via zipfile ──
             if ext in (".xlsx", ".xlsm"):
@@ -124,6 +132,24 @@ class _ReportWorker(QThread):
 
             source_ext = os.path.splitext(self.filepath)[1].lower()
             load_path = self.filepath
+
+            # ── CSV: load into openpyxl workbook ──
+            if source_ext == ".csv":
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                sheet_name = os.path.splitext(os.path.basename(self.filepath))[0]
+                ws.title = sheet_name
+                with open(self.filepath, newline="", encoding="utf-8-sig") as f:
+                    for row_vals in csv.reader(f):
+                        ws.append(row_vals)
+                self.sheet_name = sheet_name
+                from kdl.engine.ifmis_report import generate_ifmis_report
+                result = generate_ifmis_report(ws)
+                wb.close()
+                self.success = result.success
+                self.message = result.message
+                self.wb_out  = result.workbook
+                return
 
             # ── Convert legacy .xls to temp .xlsx via win32com ──
             if source_ext == ".xls":
@@ -214,7 +240,18 @@ class FinancialReportDialog(QDialog):
 
     # ------------------------------------------------------------------
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        dialog_layout.addWidget(scroll)
+
+        scroll_widget = QWidget()
+        scroll.setWidget(scroll_widget)
+        layout = QVBoxLayout(scroll_widget)
         layout.setSpacing(14)
         layout.setContentsMargins(18, 18, 18, 18)
 
@@ -296,7 +333,7 @@ class FinancialReportDialog(QDialog):
             self,
             "Select Notes Excel File",
             _default_dir(),
-            "Excel Files (*.xlsx *.xlsm *.xls);;All Files (*)",
+            "All Supported (*.xlsx *.xlsm *.xls *.csv);;Excel Files (*.xlsx *.xlsm *.xls);;CSV Files (*.csv);;All Files (*)",
         )
         if not path:
             return
