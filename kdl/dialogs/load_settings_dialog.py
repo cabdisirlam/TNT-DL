@@ -287,25 +287,27 @@ class LoadSettingsDialog(QDialog):
         body.addWidget(popup_group, 2, 0, 1, 2)
 
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
         btn_row.addStretch()
+        button_height = 40
 
         help_btn = QPushButton("Help")
-        help_btn.setFixedWidth(78)
+        help_btn.setFixedSize(110, button_height)
         help_btn.clicked.connect(self._show_help)
-        btn_row.addWidget(help_btn)
+        btn_row.addWidget(help_btn, 0, Qt.AlignVCenter)
 
         cancel_btn = QPushButton("Close")
-        cancel_btn.setFixedWidth(78)
+        cancel_btn.setFixedSize(110, button_height)
         cancel_btn.clicked.connect(self.reject)
-        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(cancel_btn, 0, Qt.AlignVCenter)
 
         start_btn = QPushButton("Start")
         start_btn.setDefault(True)
-        start_btn.setFixedSize(92, 30)
+        start_btn.setFixedSize(146, button_height)
         from kdl.config_store import get_dark_mode
         start_btn.setStyleSheet(accent_button_qss(dark=get_dark_mode()))
         start_btn.clicked.connect(self._start_loading)
-        btn_row.addWidget(start_btn)
+        btn_row.addWidget(start_btn, 0, Qt.AlignVCenter)
         outer.addLayout(btn_row)
 
         tip = QLabel("Tip: Press ESC twice quickly to stop loading")
