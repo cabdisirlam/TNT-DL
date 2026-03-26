@@ -126,6 +126,7 @@ class LoaderThread(QThread):
         self.db_settings = db_settings or {}
         self._popup_stop_on_error = bool(popup_stop_on_error)
         self.sender.use_fast_send = bool(use_fast_send)
+        self.sender.fast_send_row_mode = (self.load_mode == "fast_send")
 
         self._stop_requested = False
         self._pause_requested = False
@@ -854,9 +855,13 @@ class LoaderThread(QThread):
                         # Receipt flow: after sending type-ahead 'r' in Type column,
                         # move to the next field just before next cell send.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
-                            pyautogui.press('tab')
-                            if not self._wait_after_ui_action(self.sender.speed_delay):
-                                break
+                            if self.sender.fast_send_row_mode:
+                                self.sender._si_send_vk(0x09)  # VK_TAB
+                                time.sleep(0.002)
+                            else:
+                                pyautogui.press('tab')
+                                if not self._wait_after_ui_action(self.sender.speed_delay):
+                                    break
                             pending_tab_after_receipt = False
 
                         success = self._send_cell_with_retry(parsed)
@@ -882,9 +887,13 @@ class LoaderThread(QThread):
 
                         # Auto-Tab only between plain data fields.
                         if i in data_positions and data_positions and i != data_positions[-1]:
-                            pyautogui.press('tab')
-                            if not self._wait_after_ui_action(self.sender.speed_delay):
-                                break
+                            if self.sender.fast_send_row_mode:
+                                self.sender._si_send_vk(0x09)  # VK_TAB
+                                time.sleep(0.002)
+                            else:
+                                pyautogui.press('tab')
+                                if not self._wait_after_ui_action(self.sender.speed_delay):
+                                    break
 
                 if not self._stop_requested and row_had_activity:
                     if not self._perform_end_of_row_action(rows_processed, is_last_row=(row_idx == self.end_row)):

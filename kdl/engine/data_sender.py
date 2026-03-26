@@ -119,6 +119,7 @@ class DataSender:
         self.pause_requested_cb: Optional[Callable[[], bool]] = None
         self.last_error: str = ""
         self.use_fast_send: bool = False
+        self.fast_send_row_mode: bool = False  # True = minimal per-cell delay, full delay at row end only
         self.load_control: bool = False   # Adaptive: skip fixed delay, wait for app readiness
         self._clipboard_session_active = False
         self._clipboard_session_value: Optional[str] = None
@@ -504,7 +505,14 @@ class DataSender:
             if not self._si_send_unicode(safe):
                 # Fallback to clipboard if SendInput fails
                 return self._send_data(text)
-            _delay = 0.008 if self.load_control else self.speed_delay
+            # In fast_send_row_mode, use minimal 2ms settle per cell;
+            # the full delay is applied once at end-of-row instead.
+            if self.fast_send_row_mode:
+                _delay = 0.002
+            elif self.load_control:
+                _delay = 0.008
+            else:
+                _delay = self.speed_delay
             if not self._sleep_interruptible(_delay):
                 self.last_error = "send_data_fast interrupted"
                 return False
@@ -534,7 +542,14 @@ class DataSender:
                 elif action_type == "type":
                     if not self._si_send_unicode(action.get("text", "")):
                         return False
-                _delay = 0.008 if self.load_control else self.speed_delay
+                # In fast_send_row_mode, use minimal 2ms settle per cell;
+                # the full delay is applied once at end-of-row instead.
+                if self.fast_send_row_mode:
+                    _delay = 0.002
+                elif self.load_control:
+                    _delay = 0.008
+                else:
+                    _delay = self.speed_delay
                 if not self._sleep_interruptible(_delay):
                     self.last_error = "send_keystroke_fast interrupted"
                     return False
