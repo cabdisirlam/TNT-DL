@@ -223,55 +223,62 @@ class KeystrokeParser:
             if char in MODIFIER_MAP:
                 modifier = MODIFIER_MAP[char]
                 i += 1
-                if i < len(seq):
-                    # Check if next is a group (parentheses)
-                    if seq[i] == "(":
-                        # Find closing paren
-                        end = seq.find(")", i)
-                        if end != -1:
-                            group = seq[i + 1:end]
-                            for ch in group:
-                                result.key_actions.append({
-                                    "type": "hotkey",
-                                    "modifiers": [modifier],
-                                    "key": ch.lower(),
-                                })
-                            i = end + 1
-                        else:
-                            # Unmatched ( — treat rest as data
+                if i >= len(seq):
+                    # Standalone modifiers like \%, \^, \+ mean press Alt/Ctrl/Shift.
+                    result.key_actions.append({
+                        "type": "key",
+                        "key": modifier,
+                    })
+                    continue
+
+                # Check if next is a group (parentheses)
+                if seq[i] == "(":
+                    # Find closing paren
+                    end = seq.find(")", i)
+                    if end != -1:
+                        group = seq[i + 1:end]
+                        for ch in group:
                             result.key_actions.append({
-                                "type": "type",
-                                "text": seq[i:],
+                                "type": "hotkey",
+                                "modifiers": [modifier],
+                                "key": ch.lower(),
                             })
-                            i = len(seq)
-                    elif seq[i] == "{":
-                        # Modifier + special key like %{F4}
-                        end = seq.find("}", i)
-                        if end != -1:
-                            key_spec = seq[i + 1:end]
-                            key_name, count = self._parse_key_spec(key_spec)
-                            for _ in range(count):
-                                result.key_actions.append({
-                                    "type": "hotkey",
-                                    "modifiers": [modifier],
-                                    "key": key_name,
-                                })
-                            i = end + 1
-                        else:
-                            # Unmatched { — treat rest as data
-                            result.key_actions.append({
-                                "type": "type",
-                                "text": seq[i:],
-                            })
-                            i = len(seq)
+                        i = end + 1
                     else:
-                        # Modifier + single character
+                        # Unmatched ( — treat rest as data
                         result.key_actions.append({
-                            "type": "hotkey",
-                            "modifiers": [modifier],
-                            "key": seq[i].lower(),
+                            "type": "type",
+                            "text": seq[i:],
                         })
-                        i += 1
+                        i = len(seq)
+                elif seq[i] == "{":
+                    # Modifier + special key like %{F4}
+                    end = seq.find("}", i)
+                    if end != -1:
+                        key_spec = seq[i + 1:end]
+                        key_name, count = self._parse_key_spec(key_spec)
+                        for _ in range(count):
+                            result.key_actions.append({
+                                "type": "hotkey",
+                                "modifiers": [modifier],
+                                "key": key_name,
+                            })
+                        i = end + 1
+                    else:
+                        # Unmatched { — treat rest as data
+                        result.key_actions.append({
+                            "type": "type",
+                            "text": seq[i:],
+                        })
+                        i = len(seq)
+                else:
+                    # Modifier + single character
+                    result.key_actions.append({
+                        "type": "hotkey",
+                        "modifiers": [modifier],
+                        "key": seq[i].lower(),
+                    })
+                    i += 1
 
             # Special key in braces: {TAB}, {ENTER}, {LEFT 5}
             elif char == "{":

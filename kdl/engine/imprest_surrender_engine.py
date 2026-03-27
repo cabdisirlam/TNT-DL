@@ -92,117 +92,6 @@ _ALTKEY  = "\\%"            # Alt alone    → activate menu
 _DOWN    = "\\{DOWN}"       # Down arrow
 _SHTAB   = "\\+{TAB}"       # Shift+Tab
 
-# ── Imprest: 82-cell DataLoad grid row ────────────────────────────────────────
-# Navigation: \%2\{ESC} (Alt+2+Esc) → Lines,  \%d (Alt+D) → Distributions.
-# Post-save: \^{F4} + Alt + 4×Down + Enter + 3×Shift+Tab → ready for next row.
-# REQUIRES: "Use Alternate Method for processing Macros" ticked in DL settings.
-def build_keystroke_row(row: dict) -> list:
-    """
-    Convert one invoice row-dict into an 82-cell DataLoad grid row.
-    Matches the full working macro exactly:
-      General fields → Enter (dismiss prepayment alert) → "Provisional"
-      → Alt+2+Esc (Lines) → Tab×2 → Amount
-      → Alt+D (Distributions) → Tab×2 → Amount → GL_Date → Account
-      → Ctrl+S → Ctrl+F4 → Alt → Down×4 → Enter → Shift+Tab×3
-    """
-    row = _normalize_invoice_row(row)
-    sup   = row.get("Supplier_Num", "")
-    idate = row.get("Invoice_Date", "")
-    inum  = row.get("Invoice_Num", "")
-    amt   = row.get("Invoice_Amount", "")
-    desc  = row.get("Description", "")
-    pmeth = row.get("Payment_Method", "") or "CHECK"
-    gldt  = row.get("GL_Date", "")
-    auth  = row.get("Auth_Ref_No", "")
-    admc  = row.get("Administrative_Code", "")
-    dist  = row.get("Distribution_Account", "")
-
-    return [
-        _T,           # C1
-        _T,           # C2
-        _BS,          # C3   clear pre-filled field
-        _T,           # C4
-        "Standard",   # C5   Invoice Type (fixed)
-        _T,           # C6
-        _BS,          # C7   clear pre-filled field
-        _T,           # C8
-        _BS,          # C9   clear pre-filled field
-        _T,           # C10
-        sup,          # C11  Supplier_Num
-        _T,           # C12
-        _ENTER,       # C13  dismiss prepayment alert if present (harmless otherwise)
-        "Provisional",# C14  Supplier Site / batch type (fixed)
-        _T,           # C15
-        idate,        # C16  Invoice_Date
-        _T,           # C17
-        inum,         # C18  Invoice_Num
-        _T,           # C19
-        _T,           # C20
-        amt,          # C21  Invoice_Amount
-        _T,           # C22
-        _T,           # C23
-        _T,           # C24
-        _T,           # C25
-        _T,           # C26
-        _T,           # C27
-        _T,           # C28
-        desc,         # C29  Description
-        _T,           # C30
-        _T,           # C31
-        _T,           # C32
-        "IMMEDIATE",  # C33  Pay Terms (fixed)
-        _T,           # C34
-        pmeth,        # C35  Payment_Method
-        _T,           # C36
-        _T,           # C37
-        _T,           # C38
-        _T,           # C39
-        _T,           # C40
-        _T,           # C41
-        _T,           # C42
-        _T,           # C43
-        _T,           # C44
-        _T,           # C45
-        _T,           # C46
-        _T,           # C47
-        _T,           # C48
-        _T,           # C49
-        _T,           # C50
-        _T,           # C51
-        _T,           # C52
-        auth,         # C53  Auth_Ref_No
-        _T,           # C54
-        admc,         # C55  Administrative_Code
-        _T,           # C56
-        _ENTER,       # C57  \{ENTER} — close modal
-        _ALT2ESC,     # C58  \%2\{ESC} — Alt+2+Esc → Lines block
-        _T,           # C59
-        _T,           # C60
-        amt,          # C61  Line_Amount (= Invoice_Amount)
-        _T,           # C62
-        _ALTD,        # C63  \%d — Alt+D → Distributions block
-        _T,           # C64
-        _T,           # C65
-        amt,          # C66  Dist_Amount (= Invoice_Amount)
-        _T,           # C67
-        gldt,         # C68  GL_Date
-        _T,           # C69
-        dist,         # C70  Distribution_Account
-        _T,           # C71
-        _CTRLS,       # C72  \^s — Ctrl+S save
-        _CTRLF4,      # C73  \^{F4} — clear record
-        _ALTKEY,      # C74  \% — Alt → activate menu
-        _DOWN,        # C75  \{DOWN}
-        _DOWN,        # C76  \{DOWN}
-        _DOWN,        # C77  \{DOWN}
-        _DOWN,        # C78  \{DOWN} — navigate to menu item
-        _ENTER,       # C79  \{ENTER} — select menu item
-        _SHTAB,       # C80  \+{TAB}
-        _SHTAB,       # C81  \+{TAB}
-        _SHTAB,       # C82  \+{TAB} — ready for next invoice
-    ]
-
-
 # ── Template action sequence ──────────────────────────────────────────────────
 # Action tuples:
 #   ("tab",    n)            press Tab n times via SendInput
@@ -211,73 +100,6 @@ def build_keystroke_row(row: dict) -> list:
 #   ("delay",  ms)           sleep ms milliseconds (interruptible)
 #   ("field",  col_name)     inject field value via SendInput unicode
 #   ("text",   value)        type a fixed literal string via SendInput unicode
-
-# Single imprest template — mirrors build_keystroke_row exactly.
-# Navigation: Alt+2+Esc → Lines,  Alt+D → Distributions.
-# Post-save: Ctrl+F4 + Alt + Down×4 + Enter + Shift+Tab×3 → ready for next.
-# 500 ms delay after Alt+2+Esc for Lines block to open.
-TEMPLATE_ACTIONS = (
-    # ── General block ──────────────────────────────────────────────────────
-    ("tab",    2),                           # C1–C2
-    ("key",    "backspace"),                 # C3   clear pre-filled
-    ("tab",    1),                           # C4
-    ("text",   "Standard"),                  # C5   Invoice Type
-    ("tab",    1),                           # C6
-    ("key",    "backspace"),                 # C7   clear pre-filled
-    ("tab",    1),                           # C8
-    ("key",    "backspace"),                 # C9   clear pre-filled
-    ("tab",    1),                           # C10
-    ("field",  "Supplier_Num"),              # C11
-    ("tab",    1),                           # C12
-    ("key",    "enter"),                     # C13  dismiss prepayment alert (if any)
-    ("text",   "Provisional"),               # C14  Supplier Site / batch type
-    ("tab",    1),                           # C15
-    ("field",  "Invoice_Date"),              # C16
-    ("tab",    1),                           # C17
-    ("field",  "Invoice_Num"),               # C18
-    ("tab",    2),                           # C19–C20
-    ("field",  "Invoice_Amount"),            # C21
-    ("tab",    7),                           # C22–C28
-    ("field",  "Description"),               # C29
-    ("tab",    3),                           # C30–C32
-    ("text",   "IMMEDIATE"),                 # C33  Pay Terms (fixed)
-    ("tab",    1),                           # C34
-    ("text",   "CHECK"),                     # C35  Payment Method (fixed)
-    ("tab",    17),                          # C36–C52
-    ("field",  "Auth_Ref_No"),               # C53
-    ("tab",    1),                           # C54
-    ("field",  "Administrative_Code"),       # C55
-    ("tab",    1),                           # C56
-    ("key",    "enter"),                     # C57  close modal
-    # ── Lines block (Alt+2+Esc) ────────────────────────────────────────────
-    ("hotkey", ["alt"], "2"),                # C58a Alt+2 → Lines
-    ("key",    "escape"),                    # C58b Esc
-    ("delay",  500),                         # wait for Lines block to open
-    ("tab",    2),                           # C59–C60
-    ("field",  "Invoice_Amount"),            # C61  Line Amount
-    ("tab",    1),                           # C62
-    # ── Distributions block (Alt+D) ────────────────────────────────────────
-    ("hotkey", ["alt"], "d"),                # C63  Alt+D → Distributions
-    ("tab",    2),                           # C64–C65
-    ("field",  "Invoice_Amount"),            # C66  Dist Amount
-    ("tab",    1),                           # C67
-    ("field",  "GL_Date"),                   # C68
-    ("tab",    1),                           # C69
-    ("field",  "Distribution_Account"),      # C70
-    ("tab",    1),                           # C71
-    # ── Save and advance to next invoice ──────────────────────────────────
-    ("hotkey", ["ctrl"], "s"),               # C72  Ctrl+S save
-    ("hotkey", ["ctrl"], "f4"),              # C73  Ctrl+F4 clear record
-    ("key",    "alt"),                       # C74  Alt → activate menu
-    ("key",    "down"),                      # C75  ↓
-    ("key",    "down"),                      # C76  ↓
-    ("key",    "down"),                      # C77  ↓
-    ("key",    "down"),                      # C78  ↓ (4th menu item)
-    ("key",    "enter"),                     # C79  select menu item
-    ("hotkey", ["shift"], "tab"),            # C80  ⇧Tab
-    ("hotkey", ["shift"], "tab"),            # C81  ⇧Tab
-    ("hotkey", ["shift"], "tab"),            # C82  ⇧Tab → ready for next invoice
-)
 
 # Legacy alternate navigation template kept for reference only.
 # Uses Shift+PageDown instead of Alt+2+Esc to jump to the Lines block.
@@ -424,8 +246,8 @@ TEMPLATE_ACTIONS = (
     ("field", "Distribution_Account"),
     ("tab", 1),
     ("hotkey", ["ctrl"], "s"),
+    ("delay", 500),              # settle: let IFMIS commit the save before clearing
     ("hotkey", ["ctrl"], "f4"),
-    ("delay", 500),
     ("hotkey", ["alt"], "c"),
     ("hotkey", ["alt"], "u"),
     ("hotkey", ["alt"], "k"),
@@ -433,7 +255,6 @@ TEMPLATE_ACTIONS = (
     ("key", "down"),
     ("key", "down"),
     ("key", "enter"),
-    ("delay", 500),
     ("field", "Old_Imprest_No"),
     ("tab", 7),
     ("field", "Application_Amount"),
@@ -446,17 +267,14 @@ TEMPLATE_ACTIONS = (
     ("field", "GL_Date"),
     ("tab", 1),
     ("hotkey", ["ctrl"], "s"),
-    ("delay", 700),
+    ("delay", 500),              # settle: let IFMIS commit before navigation
     ("hotkey", ["ctrl"], "f4"),
-    ("delay", 700),
     ("key", "alt"),
-    ("delay", 250),
     ("key", "down"),
     ("key", "down"),
     ("key", "down"),
     ("key", "down"),
     ("key", "enter"),
-    ("delay", 350),
     ("hotkey", ["shift"], "tab"),
     ("hotkey", ["shift"], "tab"),
     ("hotkey", ["shift"], "tab"),
@@ -1408,6 +1226,14 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
                 return False
             if not _wait_after_action(inter_action_delay):
                 return False
+            # After a Ctrl+S, check for any dialog IFMIS may have raised
+            # (validation error, confirmation, etc.) and dismiss it before
+            # the next action fires.  Per-cell mode gets this for free via
+            # _check_blocking_popup at the top of each cell loop; TEMPLATE_ACTIONS
+            # needs it explicitly.
+            if action[1] == ["ctrl"] and action[2] == "s":
+                if not _mid_row_popup_check(sender, popup_fn):
+                    return False
 
         elif kind == "delay":
             if not sender._sleep_interruptible(action[1] / 1000.0):
