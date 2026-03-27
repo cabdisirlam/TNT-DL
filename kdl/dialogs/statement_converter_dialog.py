@@ -324,32 +324,6 @@ class StatementConverterDialog(QDialog):
         self._build_ui()
         self._fit_to_screen()
 
-    def _release_sheet_loader(self, *, wait: bool = False):
-        loader = self._sheet_loader
-        self._sheet_loader = None
-        if loader is None:
-            return
-        try:
-            if wait and loader.isRunning():
-                loader.quit()
-                loader.wait()
-        except RuntimeError:
-            return
-        try:
-            loader.deleteLater()
-        except RuntimeError:
-            pass
-
-    def _on_sheet_loader_finished(self):
-        sender = self.sender()
-        if sender is not None and sender is self._sheet_loader:
-            self._sheet_loader = None
-        try:
-            if sender is not None:
-                sender.deleteLater()
-        except RuntimeError:
-            pass
-
     def _release_worker(self):
         worker = self._worker
         self._worker = None
@@ -486,7 +460,11 @@ class StatementConverterDialog(QDialog):
         self._start_sheet_loader(path)
 
     def _start_sheet_loader(self, filepath: str):
-        self._release_sheet_loader(wait=True)
+        # Cancel any in-progress loader
+        if self._sheet_loader is not None and self._sheet_loader.isRunning():
+            self._sheet_loader.quit()
+            self._sheet_loader.wait()
+        self._sheet_loader = None
 
         # Clear previous state
         for cb in self._sheet_checks:
@@ -502,7 +480,7 @@ class StatementConverterDialog(QDialog):
         loader = _SheetLoaderWorker(filepath)
         loader.sheets_ready.connect(self._on_sheets_ready)
         loader.load_error.connect(self._on_sheets_error)
-        loader.finished.connect(self._on_sheet_loader_finished)
+        loader.finished.connect(loader.deleteLater)
         self._sheet_loader = loader
         loader.start()
 
@@ -656,7 +634,6 @@ class StatementConverterDialog(QDialog):
             )
             event.ignore()
             return
-        self._release_sheet_loader(wait=False)
         self._release_worker()
         super().closeEvent(event)
 

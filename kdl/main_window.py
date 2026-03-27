@@ -3109,7 +3109,7 @@ class MainWindow(QMainWindow):
             if token in {"tab", r"\{tab}"}:
                 tab_hits += 1
         has_code = any(token in {"trfd", "trfc"} for token in vals)
-        has_tail_macro = any(token in {"*s", "*sv", r"\*s", r"\*sv", "*dn", "*nx"} for token in vals)
+        has_tail_macro = any(token in {"*s", "*sv", "*dn", "*nx"} for token in vals)
         return tab_hits >= 3 and has_code and has_tail_macro
 
     @staticmethod
@@ -3120,7 +3120,7 @@ class MainWindow(QMainWindow):
         if low in {
             "tab", r"\{tab}", "dn", "down", "up", "left", "right", "enter", "esc", "escape",
             r"\r", r"\n",
-            "*s", "*sv", r"\*s", r"\*sv", "*sp", "*dn", "*nx", "*nr", "*pv", "*up", "*cl", "*nb",
+            "*s", "*sv", "*sp", "*dn", "*nx", "*nr", "*pv", "*up", "*cl", "*nb",
         }:
             return True
         if low.startswith("*"):
