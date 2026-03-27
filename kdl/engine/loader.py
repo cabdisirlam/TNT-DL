@@ -734,6 +734,7 @@ class LoaderThread(QThread):
                             "Administrative_Code":  _d[54] if len(_d) > 54 else "",
                             "GL_Date":              _d[save_idx - 4] if save_idx >= 4 else "",
                             "Distribution_Account": _d[save_idx - 2] if save_idx >= 2 else "",
+                            "Old_Imprest_No":       _d[80] if len(_d) > 80 else "",
                         }
                         sup = row_dict.get("Supplier_Num", "")
                         self.progress_updated.emit(

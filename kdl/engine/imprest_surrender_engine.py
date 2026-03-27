@@ -46,6 +46,7 @@ COLUMNS = [
     "Auth_Ref_No",
     "Administrative_Code",
     "Distribution_Account",
+    "Old_Imprest_No",
 ]
 
 COLUMN_HINTS = {
@@ -60,6 +61,7 @@ COLUMN_HINTS = {
     "Auth_Ref_No":         "e.g. CFO",
     "Administrative_Code": "e.g. 5322000201",
     "Distribution_Account":"Full SCOA e.g. 0-5322-0000000000-00001001-...",
+    "Old_Imprest_No":      "Imported old imprest no e.g. IMP5711075",
 }
 
 COLUMN_SAMPLE = {
@@ -74,6 +76,7 @@ COLUMN_SAMPLE = {
     "Auth_Ref_No":         "CFO",
     "Administrative_Code": "5322000201",
     "Distribution_Account":"0-5322-0000000000-00001001-0000000000-6580101-53100001-000",
+    "Old_Imprest_No":      "IMP5711075",
 }
 
 # ── Keystroke grid row builder ────────────────────────────────────────────────
@@ -343,6 +346,117 @@ TEMPLATE_ACTIONS_PGDN = (
 
 # ── Excel I/O ─────────────────────────────────────────────────────────────────
 
+def build_keystroke_row(row: dict) -> list:
+    """Updated 109-cell DataLoad grid row for Imprest surrender application."""
+    row = _normalize_invoice_row(row)
+    sup = row.get("Supplier_Num", "")
+    idate = row.get("Invoice_Date", "")
+    inum = row.get("Invoice_Num", "")
+    amt = row.get("Invoice_Amount", "")
+    apply_amt = (amt or "").replace(",", "")
+    desc = row.get("Description", "")
+    pmeth = row.get("Payment_Method", "") or "CHECK"
+    gldt = row.get("GL_Date", "")
+    auth = row.get("Auth_Ref_No", "")
+    admc = row.get("Administrative_Code", "")
+    dist = row.get("Distribution_Account", "")
+    old_imp = row.get("Old_Imprest_No", "")
+
+    return [
+        _T, _T, _BS, _T, "Standard", _T, _BS, _T, _BS, _T,
+        sup, _T, _ENTER, "Provisional", _T, idate, _T, inum, _T, _T,
+        amt, _T, _T, _T, _T, _T, _T, _T, desc, _T,
+        _T, _T, "IMMEDIATE", _T, pmeth, _T, _T, _T, _T, _T,
+        _T, _T, _T, _T, _T, _T, _T, _T, _T, _T,
+        _T, _T, auth, _T, admc, _T, _ENTER, _ALT2ESC, _T, _T,
+        apply_amt, _T, _ALTD, _T, _T, apply_amt, _T, gldt, _T, dist,
+        _T, _CTRLS, _CTRLF4, "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}",
+        old_imp, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
+        "\\{TAB}", "\\{ENTER}", "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", _CTRLS, _CTRLF4,
+        "\\%", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
+    ]
+
+
+TEMPLATE_ACTIONS = (
+    ("tab", 2),
+    ("key", "backspace"),
+    ("tab", 1),
+    ("text", "Standard"),
+    ("tab", 1),
+    ("key", "backspace"),
+    ("tab", 1),
+    ("key", "backspace"),
+    ("tab", 1),
+    ("field", "Supplier_Num"),
+    ("tab", 1),
+    ("key", "enter"),
+    ("text", "Provisional"),
+    ("tab", 1),
+    ("field", "Invoice_Date"),
+    ("tab", 1),
+    ("field", "Invoice_Num"),
+    ("tab", 2),
+    ("field", "Invoice_Amount"),
+    ("tab", 7),
+    ("field", "Description"),
+    ("tab", 3),
+    ("text", "IMMEDIATE"),
+    ("tab", 1),
+    ("text", "CHECK"),
+    ("tab", 17),
+    ("field", "Auth_Ref_No"),
+    ("tab", 1),
+    ("field", "Administrative_Code"),
+    ("tab", 1),
+    ("key", "enter"),
+    ("hotkey", ["alt"], "2"),
+    ("key", "escape"),
+    ("delay", 500),
+    ("tab", 2),
+    ("field", "Application_Amount"),
+    ("tab", 1),
+    ("hotkey", ["alt"], "d"),
+    ("tab", 2),
+    ("field", "Application_Amount"),
+    ("tab", 1),
+    ("field", "GL_Date"),
+    ("tab", 1),
+    ("field", "Distribution_Account"),
+    ("tab", 1),
+    ("hotkey", ["ctrl"], "s"),
+    ("hotkey", ["ctrl"], "f4"),
+    ("hotkey", ["alt"], "c"),
+    ("hotkey", ["alt"], "u"),
+    ("hotkey", ["alt"], "k"),
+    ("hotkey", ["alt"], "v"),
+    ("key", "down"),
+    ("key", "down"),
+    ("key", "enter"),
+    ("field", "Old_Imprest_No"),
+    ("tab", 7),
+    ("field", "Application_Amount"),
+    ("tab", 2),
+    ("key", "enter"),
+    ("key", "space"),
+    ("tab", 1),
+    ("field", "Application_Amount"),
+    ("tab", 1),
+    ("field", "GL_Date"),
+    ("tab", 1),
+    ("hotkey", ["ctrl"], "s"),
+    ("hotkey", ["ctrl"], "f4"),
+    ("key", "alt"),
+    ("key", "down"),
+    ("key", "down"),
+    ("key", "down"),
+    ("key", "down"),
+    ("key", "enter"),
+    ("hotkey", ["shift"], "tab"),
+    ("hotkey", ["shift"], "tab"),
+    ("hotkey", ["shift"], "tab"),
+)
+
+
 def read_invoice_rows(filepath: str) -> tuple:
     """
     Read invoice rows from the Data_Entry sheet (or first sheet) of filepath.
@@ -363,34 +477,41 @@ def read_invoice_rows(filepath: str) -> tuple:
         return [], "openpyxl is not installed."
 
     try:
-        wb = openpyxl.load_workbook(filepath, data_only=True)
+        wb = openpyxl.load_workbook(
+            filepath,
+            data_only=True,
+            read_only=True,
+            keep_links=False,
+        )
     except Exception as exc:
         return [], f"Cannot open file: {exc}"
 
-    # Prefer a sheet named Data_Entry (or containing "data"/"entry"), else first sheet
-    sheet_name = wb.sheetnames[0]
-    for name in wb.sheetnames:
-        if any(k in name.lower() for k in ("data", "entry", "invoice")):
-            sheet_name = name
-            break
+    try:
+        # Prefer a sheet named Data_Entry (or containing "data"/"entry"), else first sheet
+        sheet_name = wb.sheetnames[0]
+        for name in wb.sheetnames:
+            if any(k in name.lower() for k in ("data", "entry", "invoice")):
+                sheet_name = name
+                break
 
-    ws = wb[sheet_name]
-    rows = []
-    for row_values in ws.iter_rows(min_row=5, values_only=True):
-        if all(v is None or str(v).strip() == "" for v in row_values):
-            continue
-        if len(row_values) < len(COLUMNS):
-            continue
-        row_dict = _normalize_invoice_row({
-            col: row_values[i] if i < len(row_values) else ""
-            for i, col in enumerate(COLUMNS)
-        })
-        # Skip rows where Supplier_Num is empty
-        if not row_dict["Supplier_Num"]:
-            continue
-        rows.append(row_dict)
+        ws = wb[sheet_name]
+        rows = []
+        for row_values in ws.iter_rows(min_row=5, values_only=True):
+            if not row_values or all(v is None or str(v).strip() == "" for v in row_values):
+                continue
+            row_dict = _normalize_invoice_row({
+                col: row_values[i] if i < len(row_values) else ""
+                for i, col in enumerate(COLUMNS)
+            })
+            if not row_dict["Supplier_Num"]:
+                continue
+            rows.append(row_dict)
 
-    return rows, ""
+        return rows, ""
+    finally:
+        close_wb = getattr(wb, "close", None)
+        if callable(close_wb):
+            close_wb()
 
 
 def _read_invoice_rows_csv(filepath: str) -> tuple:
@@ -409,8 +530,6 @@ def _read_invoice_rows_csv(filepath: str) -> tuple:
     rows = []
     for row_values in all_rows[1:]:
         if all(not v.strip() for v in row_values):
-            continue
-        if len(row_values) < len(COLUMNS):
             continue
         row_dict = _normalize_invoice_row({
             col: row_values[i] if i < len(row_values) else ""
@@ -514,7 +633,7 @@ def export_template(filepath: str) -> str:
             ws.row_dimensions[ri].height = 15
 
         # ── Column widths ─────────────────────────────────────────────────────
-        col_widths = [14, 14, 14, 14, 30, 16, 14, 14, 12, 18, 68]
+        col_widths = [14, 14, 14, 14, 30, 16, 14, 14, 12, 18, 68, 18]
         for ci, w in enumerate(col_widths, start=1):
             ws.column_dimensions[get_column_letter(ci)].width = w
 
@@ -683,6 +802,121 @@ def import_ifmis_export(filepath: str) -> tuple:
     return rows, skipped, ""
 
 
+def import_ifmis_export(filepath: str) -> tuple:
+    """
+    Optimized IFMIS import for large workbooks.
+
+    Returns (rows: list[dict], skipped: int, error: str).
+    """
+    import os as _os
+
+    ext = _os.path.splitext(filepath)[1].lower()
+
+    try:
+        import openpyxl
+    except ImportError:
+        return [], 0, "openpyxl is not installed."
+
+    if ext == ".csv":
+        import csv
+        try:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            with open(filepath, newline="", encoding="utf-8-sig") as f:
+                for row_vals in csv.reader(f):
+                    ws.append(row_vals)
+        except Exception as exc:
+            return [], 0, f"Cannot open CSV file: {exc}"
+    else:
+        try:
+            wb = openpyxl.load_workbook(
+                filepath,
+                data_only=True,
+                read_only=True,
+                keep_links=False,
+            )
+        except Exception as exc:
+            return [], 0, f"Cannot open file: {exc}"
+
+    try:
+        ws = wb.active
+        headers = [
+            str(value or "").strip().lower()
+            for value in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
+        ]
+
+        def _find(fragment):
+            for i, header in enumerate(headers):
+                if fragment in header:
+                    return i
+            return -1
+
+        col_type = _find("type")
+        field_cols = {field: _find(frag) for frag, field in _IFMIS_COL_MAP.items()}
+
+        def _raw_val(row_values, col_idx):
+            if col_idx < 0 or col_idx >= len(row_values):
+                return None
+            return row_values[col_idx]
+
+        def _text_val(row_values, col_idx):
+            value = _raw_val(row_values, col_idx)
+            return "" if value is None else str(value).strip()
+
+        def _amount_val(row_values, col_idx):
+            value = _raw_val(row_values, col_idx)
+            if value is None:
+                return ""
+            try:
+                amount = float(value)
+                return f"{amount:,.2f}" if amount != int(amount) else f"{int(amount):,}"
+            except (TypeError, ValueError):
+                return str(value).strip()
+
+        rows = []
+        skipped = 0
+
+        for row_values in ws.iter_rows(min_row=2, values_only=True):
+            if not row_values or all(v is None or str(v).strip() == "" for v in row_values):
+                continue
+
+            if col_type >= 0:
+                row_type = _text_val(row_values, col_type).lower()
+                if row_type and row_type != "prepayment":
+                    skipped += 1
+                    continue
+
+            supplier = _text_val(row_values, field_cols.get("Supplier_Num", -1))
+            if not supplier:
+                continue
+
+            rows.append(
+                {
+                    "Supplier_Num": supplier,
+                    "Invoice_Date": "",
+                    "Invoice_Num": _text_val(row_values, field_cols.get("Invoice_Num", -1)),
+                    "Invoice_Amount": _amount_val(
+                        row_values,
+                        field_cols.get("Invoice_Amount", -1),
+                    ),
+                    "Description": _text_val(row_values, field_cols.get("Description", -1)),
+                    "Payment_Method": "CHECK",
+                    "Terms_Date": "",
+                    "GL_Date": "",
+                    "Auth_Ref_No": "",
+                    "Administrative_Code": "",
+                    "Distribution_Account": "",
+                    "Old_Imprest_No": _text_val(row_values, field_cols.get("Invoice_Num", -1)),
+                }
+            )
+
+        return rows, skipped, ""
+    finally:
+        close_wb = getattr(wb, "close", None)
+        if callable(close_wb):
+            close_wb()
+
+
 def export_prefilled_template(filepath: str, rows: list) -> str:
     """
     Export the 11-column template pre-filled with `rows` data.
@@ -796,7 +1030,7 @@ def export_prefilled_template(filepath: str, rows: list) -> str:
             ws.row_dimensions[ri].height = 15
 
         # ── Column widths ─────────────────────────────────────────────────────
-        col_widths = [14, 14, 14, 14, 30, 16, 14, 14, 12, 18, 68]
+        col_widths = [14, 14, 14, 14, 30, 16, 14, 14, 12, 18, 68, 18]
         for ci, w in enumerate(col_widths, start=1):
             ws.column_dimensions[get_column_letter(ci)].width = w
 
@@ -854,6 +1088,37 @@ def _build_dl_keystroke_row(row: dict) -> list:
         amt, _DT, _AD, _DT, _DT, amt, _DT, gldt, _DT, dist,
         # C71–C82
         _DT, _CS, _CF4, _ALT, _DN, _DN, _DN, _DN, _ENT, _SHT, _SHT, _SHT,
+    ]
+
+
+def _build_dl_keystroke_row(row: dict) -> list:
+    """Updated 109-cell backslash-macro row for DataLoad export."""
+    row = _normalize_invoice_row(row)
+    sup = row.get("Supplier_Num", "")
+    idate = row.get("Invoice_Date", "")
+    inum = row.get("Invoice_Num", "")
+    amt = row.get("Invoice_Amount", "")
+    apply_amt = (amt or "").replace(",", "")
+    desc = row.get("Description", "")
+    pmeth = row.get("Payment_Method", "") or "CHECK"
+    gldt = row.get("GL_Date", "")
+    auth = row.get("Auth_Ref_No", "")
+    admc = row.get("Administrative_Code", "")
+    dist = row.get("Distribution_Account", "")
+    old_imp = row.get("Old_Imprest_No", "")
+
+    return [
+        "\\{TAB}", "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}", "Standard", "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}",
+        sup, "\\{TAB}", "\\{ENTER}", "Provisional", "\\{TAB}", idate, "\\{TAB}", inum, "\\{TAB}", "\\{TAB}",
+        amt, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", desc, "\\{TAB}",
+        "\\{TAB}", "\\{TAB}", "IMMEDIATE", "\\{TAB}", pmeth, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
+        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
+        "\\{TAB}", "\\{TAB}", auth, "\\{TAB}", admc, "\\{TAB}", "\\{ENTER}", "\\%2\\{ESC}", "\\{TAB}", "\\{TAB}",
+        apply_amt, "\\{TAB}", "\\%d", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", dist,
+        "\\{TAB}", "\\^s", "\\^{F4}", "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}",
+        old_imp, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
+        "\\{TAB}", "\\{ENTER}", "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", "\\^s", "\\^{F4}",
+        "\\%", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
     ]
 
 
@@ -944,9 +1209,14 @@ def export_keystroke_sheet_to_workbook(source_path: str, save_path: str, rows: l
     except ImportError:
         return "openpyxl is not installed."
 
+    wb = None
     try:
         keep_vba = source_path.lower().endswith(".xlsm") or save_path.lower().endswith(".xlsm")
-        wb = openpyxl.load_workbook(source_path, keep_vba=keep_vba)
+        wb = openpyxl.load_workbook(
+            source_path,
+            keep_vba=keep_vba,
+            keep_links=False,
+        )
         if "DL_Keystrokes" in wb.sheetnames:
             del wb["DL_Keystrokes"]
         ws = wb.create_sheet("DL_Keystrokes")
@@ -955,6 +1225,11 @@ def export_keystroke_sheet_to_workbook(source_path: str, save_path: str, rows: l
         return ""
     except Exception as exc:
         return f"Export failed: {exc}"
+    finally:
+        if wb is not None:
+            close_wb = getattr(wb, "close", None)
+            if callable(close_wb):
+                close_wb()
 
 
 def _write_keystroke_sheet(ws, rows: list) -> None:
@@ -964,7 +1239,16 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
     blue = "0070C0"
     white_text = "FFFFFF"
     grey_bg = "F2F2F2"
-    ncols = 82
+    ncols = 109
+    title_font = Font(bold=True, size=10, color=white_text)
+    header_font = Font(bold=True, color=white_text, size=9)
+    body_font = Font(size=9)
+    blue_fill = PatternFill(fill_type="solid", fgColor=blue)
+    odd_fill = PatternFill(fill_type="solid", fgColor=grey_bg)
+    even_fill = PatternFill(fill_type="solid", fgColor="FFFFFF")
+    title_alignment = Alignment(horizontal="center", vertical="center")
+    header_alignment = Alignment(horizontal="center")
+    body_alignment = Alignment(horizontal="left")
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
     title = ws.cell(
@@ -975,26 +1259,26 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
             "| Load in Per Cell mode  |  'Use Alternate Method' must be ticked in DL settings"
         ),
     )
-    title.font = Font(bold=True, size=10, color=white_text)
-    title.fill = PatternFill(fill_type="solid", fgColor=blue)
-    title.alignment = Alignment(horizontal="center", vertical="center")
+    title.font = title_font
+    title.fill = blue_fill
+    title.alignment = title_alignment
     ws.row_dimensions[1].height = 18
 
     for ci in range(1, ncols + 1):
         cell = ws.cell(row=2, column=ci, value=f"C{ci}")
-        cell.font = Font(bold=True, color=white_text, size=9)
-        cell.fill = PatternFill(fill_type="solid", fgColor=blue)
-        cell.alignment = Alignment(horizontal="center")
+        cell.font = header_font
+        cell.fill = blue_fill
+        cell.alignment = header_alignment
     ws.row_dimensions[2].height = 15
 
     for ri, row_dict in enumerate(rows, start=3):
-        bg = grey_bg if ri % 2 == 1 else "FFFFFF"
+        fill = odd_fill if ri % 2 == 1 else even_fill
         ks_row = _build_dl_keystroke_row(row_dict)
         for ci, val in enumerate(ks_row, start=1):
             cell = ws.cell(row=ri, column=ci, value=val)
-            cell.font = Font(size=9)
-            cell.fill = PatternFill(fill_type="solid", fgColor=bg)
-            cell.alignment = Alignment(horizontal="left")
+            cell.font = body_font
+            cell.fill = fill
+            cell.alignment = body_alignment
         ws.row_dimensions[ri].height = 14
 
     data_cols = {
@@ -1010,6 +1294,10 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
         66: 10,
         68: 12,
         70: 52,
+        81: 14,
+        89: 10,
+        95: 10,
+        97: 12,
     }
     for ci in range(1, ncols + 1):
         ws.column_dimensions[get_column_letter(ci)].width = data_cols.get(ci, 10)
@@ -1065,6 +1353,7 @@ def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,
     if inter_action_delay is None:
         inter_action_delay = _INTER_ACTION_DELAY
     row_dict = _normalize_invoice_row(row_dict)
+    row_dict["Application_Amount"] = (row_dict.get("Invoice_Amount", "") or "").replace(",", "")
 
     from kdl.engine.data_sender import _SI_VK_MAP
     vk_tab = _SI_VK_MAP.get("tab", 0x09)

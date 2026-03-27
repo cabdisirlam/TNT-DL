@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -382,7 +384,14 @@ class StatementConverterDialog(QDialog):
         self._sheet_check_layout = QGridLayout(self._sheet_check_container)
         self._sheet_check_layout.setSpacing(8)
         self._sheet_check_layout.setContentsMargins(4, 2, 4, 2)
-        sheet_outer.addWidget(self._sheet_check_container)
+        self._sheet_scroll = QScrollArea()
+        self._sheet_scroll.setWidgetResizable(True)
+        self._sheet_scroll.setFrameShape(QFrame.NoFrame)
+        self._sheet_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._sheet_scroll.setMinimumHeight(96)
+        self._sheet_scroll.setMaximumHeight(220)
+        self._sheet_scroll.setWidget(self._sheet_check_container)
+        sheet_outer.addWidget(self._sheet_scroll)
         layout.addWidget(sheet_group)
 
         options_group = QGroupBox("Conversion Options")
@@ -485,6 +494,7 @@ class StatementConverterDialog(QDialog):
             self._sheet_check_layout.addWidget(cb, row, col)
             self._sheet_checks.append(cb)
         self._update_convert_btn()
+        QTimer.singleShot(0, self._fit_to_screen)
         if sum(1 for cb in self._sheet_checks if cb.isChecked()) == 1:
             QTimer.singleShot(0, self._run_conversion)
 

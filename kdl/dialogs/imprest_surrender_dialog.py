@@ -10,7 +10,7 @@ Workflow:
 
 import os
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -33,6 +33,65 @@ def _default_dir() -> str:
     return downloads if os.path.isdir(downloads) else os.path.expanduser("~")
 
 
+_PREVIEW_ROW_LIMIT = 250
+
+
+class _ImprestImportWorker(QThread):
+    def __init__(self, source_path: str, dest_path: str):
+        super().__init__()
+        self.source_path = source_path
+        self.dest_path = dest_path
+        self.rows: list = []
+        self.skipped = 0
+        self.blank_names = ""
+        self.read_error = ""
+        self.export_error = ""
+
+    def run(self):
+        from kdl.engine.imprest_surrender_engine import (
+            IFMIS_BLANK_COLS,
+            export_prefilled_template,
+            import_ifmis_export,
+        )
+
+        self.blank_names = ", ".join(sorted(IFMIS_BLANK_COLS))
+        self.rows, self.skipped, self.read_error = import_ifmis_export(self.source_path)
+        if self.read_error or not self.rows:
+            return
+        self.export_error = export_prefilled_template(self.dest_path, self.rows)
+
+
+class _ImprestReadWorker(QThread):
+    def __init__(self, filepath: str):
+        super().__init__()
+        self.filepath = filepath
+        self.rows: list = []
+        self.error = ""
+
+    def run(self):
+        from kdl.engine.imprest_surrender_engine import read_invoice_rows
+
+        self.rows, self.error = read_invoice_rows(self.filepath)
+
+
+class _ImprestExportWorker(QThread):
+    def __init__(self, source_path: str, save_path: str, rows: list):
+        super().__init__()
+        self.source_path = source_path
+        self.save_path = save_path
+        self.rows = rows
+        self.error = ""
+
+    def run(self):
+        from kdl.engine.imprest_surrender_engine import export_keystroke_sheet_to_workbook
+
+        self.error = export_keystroke_sheet_to_workbook(
+            self.source_path,
+            self.save_path,
+            self.rows,
+        )
+
+
 class ImprestSurrenderDialog(QDialog):
     """Convert a completed AP Imprest Surrender workbook into grid rows."""
 
@@ -51,9 +110,20 @@ class ImprestSurrenderDialog(QDialog):
 
         self._rows: list = []
         self._filepath: str = ""
+        self._worker: QThread | None = None
 
         self._build_ui()
         self._fit_to_screen()
+
+    def _release_worker(self):
+        worker = self._worker
+        self._worker = None
+        if worker is None:
+            return
+        try:
+            worker.deleteLater()
+        except Exception:
+            pass
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -173,19 +243,158 @@ class ImprestSurrenderDialog(QDialog):
         self._load_btn.setMinimumHeight(38)
         self._load_btn.setEnabled(False)
         self._load_btn.setStyleSheet(accent_button_qss(dark=get_dark_mode()))
-        self._load_btn.setToolTip("Load the raw invoice values into columns A:K of the grid.")
+        self._load_btn.setToolTip("Load the raw invoice values into columns A:L of the grid.")
         self._load_btn.clicked.connect(self._load_into_grid)
         button_row.addWidget(self._load_btn)
         button_row.addStretch()
         layout.addLayout(button_row)
 
-    def _import_ifmis(self):
-        from kdl.engine.imprest_surrender_engine import (
-            IFMIS_BLANK_COLS,
-            export_prefilled_template,
-            import_ifmis_export,
-        )
+    def _set_busy(self, busy: bool):
+        self._import_ifmis_btn.setEnabled(not busy)
+        self._browse_btn.setEnabled(not busy)
+        has_rows = bool(self._rows)
+        self._ks_btn.setEnabled(not busy and has_rows)
+        self._load_btn.setEnabled(not busy and has_rows)
 
+    def _set_preview_rows(self, rows: list):
+        from kdl.engine.imprest_surrender_engine import build_row_summary
+
+        preview_count = min(len(rows), _PREVIEW_ROW_LIMIT)
+        lines = [
+            f"Row {index}: {build_row_summary(rows[index - 1])}"
+            for index in range(1, preview_count + 1)
+        ]
+        if len(rows) > preview_count:
+            lines.extend(
+                [
+                    "",
+                    f"... showing first {preview_count:,} of {len(rows):,} row(s).",
+                ]
+            )
+        self._preview.setPlainText("\n".join(lines))
+
+    def _start_import(self, source_path: str, dest_path: str):
+        self._set_busy(True)
+        self._import_ifmis_btn.setText("Importing...")
+        self._import_status.setText("Reading IFMIS export...")
+        self._import_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+
+        worker = _ImprestImportWorker(source_path, dest_path)
+        self._worker = worker
+        worker.finished.connect(self._on_import_finished)
+        worker.start()
+
+    def _on_import_finished(self):
+        worker = self._worker
+        if not isinstance(worker, _ImprestImportWorker):
+            return
+
+        self._import_ifmis_btn.setText("Import IFMIS File...")
+        self._set_busy(False)
+
+        if worker.read_error:
+            self._import_status.setText(f"Error: {worker.read_error}")
+            self._import_status.setStyleSheet("color: #d9534f; font-size: 12px;")
+            self._release_worker()
+            return
+
+        if not worker.rows:
+            self._import_status.setText("No Prepayment rows found in the IFMIS export.")
+            self._import_status.setStyleSheet("color: #e8a900; font-size: 12px;")
+            self._release_worker()
+            return
+
+        if worker.export_error:
+            self._import_status.setText(f"Export error: {worker.export_error}")
+            self._import_status.setStyleSheet("color: #d9534f; font-size: 12px;")
+            self._release_worker()
+            return
+
+        message = (
+            f"{len(worker.rows):,} row(s) imported"
+            f"{f', {worker.skipped:,} non-Prepayment row(s) skipped' if worker.skipped else ''}.\n"
+            f"Template saved. Fill the amber columns ({worker.blank_names}), then open it below."
+        )
+        self._import_status.setText(message)
+        self._import_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
+        self._release_worker()
+
+    def _start_read_rows(self, path: str):
+        self._rows = []
+        self._preview.clear()
+        self._set_busy(True)
+        self._browse_btn.setText("Reading...")
+        self._upload_status.setText("Reading workbook...")
+        self._upload_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+
+        worker = _ImprestReadWorker(path)
+        self._worker = worker
+        worker.finished.connect(self._on_read_rows_finished)
+        worker.start()
+
+    def _on_read_rows_finished(self):
+        worker = self._worker
+        if not isinstance(worker, _ImprestReadWorker):
+            return
+
+        self._browse_btn.setText("Browse...")
+        self._rows = worker.rows
+        self._set_busy(False)
+
+        if worker.error:
+            self._upload_status.setText(f"Error: {worker.error}")
+            self._upload_status.setStyleSheet("color: #d9534f; font-size: 12px;")
+            self._release_worker()
+            return
+
+        if not worker.rows:
+            self._upload_status.setText(
+                "No invoice rows found. Confirm that the data starts on row 5."
+            )
+            self._upload_status.setStyleSheet("color: #e8a900; font-size: 12px;")
+            self._release_worker()
+            return
+
+        self._upload_status.setText(
+            f"Ready: {len(worker.rows):,} invoice row(s) loaded from the template."
+        )
+        self._upload_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
+        self._set_preview_rows(worker.rows)
+        self._release_worker()
+
+    def _start_export(self, path: str):
+        self._set_busy(True)
+        self._ks_btn.setText("Exporting...")
+        self._upload_status.setText(
+            f"Building DL_Keystrokes sheet for {len(self._rows):,} row(s)..."
+        )
+        self._upload_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+
+        worker = _ImprestExportWorker(self._filepath, path, list(self._rows))
+        self._worker = worker
+        worker.finished.connect(self._on_export_finished)
+        worker.start()
+
+    def _on_export_finished(self):
+        worker = self._worker
+        if not isinstance(worker, _ImprestExportWorker):
+            return
+
+        self._ks_btn.setText("Export DataLoad File...")
+        self._set_busy(False)
+
+        if worker.error:
+            self._release_worker()
+            QMessageBox.critical(self, "Export Error", worker.error)
+            return
+
+        self._upload_status.setText(
+            f"Workbook saved with DL_Keystrokes sheet: {os.path.basename(worker.save_path)}"
+        )
+        self._upload_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
+        self._release_worker()
+
+    def _import_ifmis(self):
         src, _ = QFileDialog.getOpenFileName(
             self,
             "Open IFMIS Export",
@@ -193,20 +402,6 @@ class ImprestSurrenderDialog(QDialog):
             "All Supported (*.xlsx *.xls *.csv);;Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)",
         )
         if not src:
-            return
-
-        self._import_status.setText("Reading IFMIS export...")
-        self._import_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-
-        rows, skipped, err = import_ifmis_export(src)
-        if err:
-            self._import_status.setText(f"Error: {err}")
-            self._import_status.setStyleSheet("color: #d9534f; font-size: 12px;")
-            return
-
-        if not rows:
-            self._import_status.setText("No Prepayment rows found in the IFMIS export.")
-            self._import_status.setStyleSheet("color: #e8a900; font-size: 12px;")
             return
 
         dest, _ = QFileDialog.getSaveFileName(
@@ -218,20 +413,7 @@ class ImprestSurrenderDialog(QDialog):
         if not dest:
             return
 
-        err = export_prefilled_template(dest, rows)
-        if err:
-            self._import_status.setText(f"Export error: {err}")
-            self._import_status.setStyleSheet("color: #d9534f; font-size: 12px;")
-            return
-
-        blank_names = ", ".join(sorted(IFMIS_BLANK_COLS))
-        message = (
-            f"{len(rows)} row(s) imported"
-            f"{f', {skipped} non-Prepayment row(s) skipped' if skipped else ''}.\n"
-            f"Template saved. Fill the amber columns ({blank_names}), then open it below."
-        )
-        self._import_status.setText(message)
-        self._import_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
+        self._start_import(src, dest)
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -244,47 +426,12 @@ class ImprestSurrenderDialog(QDialog):
             return
         self._path_edit.setText(path)
         self._filepath = path
-        self._read_rows(path)
-
-    def _read_rows(self, path: str):
-        from kdl.engine.imprest_surrender_engine import build_row_summary, read_invoice_rows
-
-        self._rows = []
-        self._preview.clear()
-        self._load_btn.setEnabled(False)
-        self._ks_btn.setEnabled(False)
-        self._upload_status.setText("Reading workbook...")
-        self._upload_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-
-        rows, err = read_invoice_rows(path)
-
-        if err:
-            self._upload_status.setText(f"Error: {err}")
-            self._upload_status.setStyleSheet("color: #d9534f; font-size: 12px;")
-            return
-
-        if not rows:
-            self._upload_status.setText(
-                "No invoice rows found. Confirm that the data starts on row 5."
-            )
-            self._upload_status.setStyleSheet("color: #e8a900; font-size: 12px;")
-            return
-
-        self._rows = rows
-        self._upload_status.setText(f"Ready: {len(rows)} invoice row(s) loaded from the template.")
-        self._upload_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
-
-        lines = [f"Row {index}: {build_row_summary(row)}" for index, row in enumerate(rows, 1)]
-        self._preview.setPlainText("\n".join(lines))
-        self._load_btn.setEnabled(True)
-        self._ks_btn.setEnabled(True)
+        self._start_read_rows(path)
 
     def _export_keystrokes(self):
         if not self._rows or not self._filepath:
             QMessageBox.warning(self, "No Data", "Open a completed template first.")
             return
-
-        from kdl.engine.imprest_surrender_engine import export_keystroke_sheet_to_workbook
 
         source_dir = os.path.dirname(self._filepath) or _default_dir()
         source_name, source_ext = os.path.splitext(os.path.basename(self._filepath))
@@ -303,14 +450,7 @@ class ImprestSurrenderDialog(QDialog):
         if not path:
             return
 
-        err = export_keystroke_sheet_to_workbook(self._filepath, path, self._rows)
-        if err:
-            QMessageBox.critical(self, "Export Error", err)
-        else:
-            self._upload_status.setText(
-                f"Workbook saved with DL_Keystrokes sheet: {os.path.basename(path)}"
-            )
-            self._upload_status.setStyleSheet("color: #5cb85c; font-size: 12px;")
+        self._start_export(path)
 
     def _load_into_grid(self):
         if not self._rows:
@@ -335,3 +475,15 @@ class ImprestSurrenderDialog(QDialog):
             extra_hint_width=40,
             extra_hint_height=28,
         )
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.warning(
+                self,
+                "Operation In Progress",
+                "Wait for the current Imprest action to finish before closing this window.",
+            )
+            event.ignore()
+            return
+        self._release_worker()
+        super().closeEvent(event)
