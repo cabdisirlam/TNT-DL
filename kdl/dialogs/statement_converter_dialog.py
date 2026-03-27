@@ -30,7 +30,11 @@ from PySide6.QtWidgets import (
 
 from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import accent_button_qss, dialog_qss, themed_button_qss
-from kdl.tabular_import import detect_source_format
+from kdl.tabular_import import (
+    detect_source_format,
+    list_legacy_xls_sheet_names,
+    load_workbook_from_source,
+)
 
 
 def _default_browse_dir() -> str:
@@ -143,13 +147,13 @@ def _build_workbook_from_html(filepath: str):
 
     wb = openpyxl.Workbook()
     base_name = os.path.splitext(os.path.basename(filepath))[0]
-
+    ws = wb.active
+    ws.title = _sheet_safe_name(base_name, "Sheet1")
     for idx, rows in enumerate(tables, start=1):
-        ws = wb.active if idx == 1 else wb.create_sheet()
-        suffix = f"_{idx}" if len(tables) > 1 else ""
-        ws.title = _sheet_safe_name(f"{base_name}{suffix}", f"Table_{idx}")
         for row_vals in rows:
             ws.append(row_vals)
+        if idx < len(tables):
+            ws.append([])
 
     return wb
 
@@ -180,11 +184,7 @@ class _SheetLoaderWorker(QThread):
                 if not tables:
                     raise RuntimeError("No HTML tables found in the selected file.")
                 base_name = os.path.splitext(os.path.basename(self.filepath))[0]
-                names = []
-                for idx, _rows in enumerate(tables, start=1):
-                    suffix = f"_{idx}" if len(tables) > 1 else ""
-                    names.append(_sheet_safe_name(f"{base_name}{suffix}", f"Table_{idx}"))
-                self.sheets_ready.emit(names)
+                self.sheets_ready.emit([_sheet_safe_name(base_name, "Sheet1")])
                 return
 
             # ── Fast path: xlsx / xlsm via zipfile (no workbook load) ──
@@ -194,53 +194,9 @@ class _SheetLoaderWorker(QThread):
                     self.sheets_ready.emit(names)
                     return
 
-            # ── .xls: try xlrd first (lightweight) ──
             if ext == ".xls":
-                try:
-                    import xlrd
-                    wb = xlrd.open_workbook(self.filepath, on_demand=True)
-                    try:
-                        names = wb.sheet_names()
-                    finally:
-                        release = getattr(wb, "release_resources", None)
-                        if callable(release):
-                            release()
-                    self.sheets_ready.emit(list(names))
-                    return
-                except Exception:
-                    pass
-
-                # Fallback for .xls: win32com
-                excel = workbook = None
-                try:
-                    import win32com.client
-                    excel = win32com.client.DispatchEx("Excel.Application")
-                    excel.Visible = False
-                    excel.DisplayAlerts = False
-                    workbook = excel.Workbooks.Open(
-                        os.path.abspath(self.filepath),
-                        UpdateLinks=0,
-                        ReadOnly=True,
-                    )
-                    names = [sheet.Name for sheet in workbook.Worksheets]
-                    self.sheets_ready.emit(names)
-                    return
-                except Exception as exc:
-                    raise RuntimeError(
-                        "Could not read this .xls workbook. Open it in Excel and save as "
-                        ".xlsx, or make sure Excel is installed for legacy .xls support."
-                    ) from exc
-                finally:
-                    if workbook is not None:
-                        try:
-                            workbook.Close(False)
-                        except Exception:
-                            pass
-                    if excel is not None:
-                        try:
-                            excel.Quit()
-                        except Exception:
-                            pass
+                self.sheets_ready.emit(list_legacy_xls_sheet_names(self.filepath))
+                return
 
             # ── Fallback: openpyxl read-only (slower but universal) ──
             import openpyxl
@@ -267,13 +223,8 @@ class _ConverterWorker(QThread):
         self.error_message = ""
 
     def run(self):
-        tmp_path = None
-        excel_app = None
-        excel_wb = None
-        pythoncom = None
         try:
             import openpyxl
-            import tempfile
             from kdl.engine.statement_converter import (
                 AUDIT_DETAIL_FIRST_ROW,
                 ConversionResult,
@@ -285,7 +236,6 @@ class _ConverterWorker(QThread):
 
             source_ext = os.path.splitext(self.filepath)[1].lower()
             source_kind = detect_source_format(self.filepath)
-            load_path = self.filepath
 
             if source_kind in ("csv", "html"):
                 if source_kind == "csv":
@@ -325,51 +275,10 @@ class _ConverterWorker(QThread):
                     self.wb = wb
                 return
 
-            if source_ext == ".xls":
-                try:
-                    import pythoncom
-                    import win32com.client
-
-                    pythoncom.CoInitialize()
-                    excel_app = win32com.client.DispatchEx("Excel.Application")
-                    excel_app.Visible = False
-                    excel_app.DisplayAlerts = False
-                    excel_wb = excel_app.Workbooks.Open(
-                        os.path.abspath(self.filepath),
-                        UpdateLinks=0,
-                        ReadOnly=True,
-                    )
-                    fd, tmp_path = tempfile.mkstemp(suffix=".xlsx")
-                    os.close(fd)
-                    os.unlink(tmp_path)
-                    excel_wb.SaveAs(tmp_path, 51)
-                    load_path = tmp_path
-                except Exception as exc:
-                    self.error_message = (
-                        "Could not convert this legacy .xls workbook for processing. "
-                        "Open it in Excel and save it as .xlsx, or make sure Excel is installed."
-                    )
-                    raise RuntimeError(self.error_message) from exc
-                finally:
-                    if excel_wb is not None:
-                        try:
-                            excel_wb.Close(False)
-                        except Exception:
-                            pass
-                    if excel_app is not None:
-                        try:
-                            excel_app.Quit()
-                        except Exception:
-                            pass
-                    if pythoncom is not None:
-                        try:
-                            pythoncom.CoUninitialize()
-                        except Exception:
-                            pass
-
-            keep_vba = source_ext == ".xlsm" and os.path.splitext(load_path)[1].lower() == ".xlsm"
-            wb = openpyxl.load_workbook(
-                load_path,
+            keep_vba = source_ext == ".xlsm"
+            wb = load_workbook_from_source(
+                self.filepath,
+                sheet_names=self.sheet_names,
                 data_only=True,
                 keep_links=False,
                 keep_vba=keep_vba,
@@ -416,12 +325,6 @@ class _ConverterWorker(QThread):
         except Exception as exc:
             if not self.error_message:
                 self.error_message = str(exc)
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
 
 
 class StatementConverterDialog(QDialog):
@@ -501,8 +404,14 @@ class StatementConverterDialog(QDialog):
         browse_btn.setMinimumHeight(38)
         browse_btn.setStyleSheet(secondary_btn_qss)
         browse_btn.clicked.connect(self._browse_file)
+        clear_btn = QPushButton("Clear")
+        clear_btn.setMinimumWidth(96)
+        clear_btn.setMinimumHeight(38)
+        clear_btn.setStyleSheet(secondary_btn_qss)
+        clear_btn.clicked.connect(self._clear_selected_source)
         file_layout.addWidget(self._file_edit)
         file_layout.addWidget(browse_btn)
+        file_layout.addWidget(clear_btn)
         layout.addWidget(file_group)
 
         sheet_group = QGroupBox("Sheets")
@@ -608,17 +517,32 @@ class StatementConverterDialog(QDialog):
         )
         if not path:
             return
+        self._reset_source_state(clear_path=True)
         self._file_edit.setText(path)
         self._start_sheet_loader(path)
 
-    def _start_sheet_loader(self, filepath: str):
-        # Cancel any in-progress loader
-        if self._sheet_loader is not None and self._sheet_loader.isRunning():
-            self._sheet_loader.quit()
-            self._sheet_loader.wait()
-        self._sheet_loader = None
+    def _clear_selected_source(self):
+        self._reset_source_state(clear_path=True)
 
-        # Clear previous state
+    def _reset_source_state(self, clear_path: bool):
+        self._sheet_loader = None
+        self._worker = None
+        self._result = None
+        self._wb = None
+        for cb in self._sheet_checks:
+            self._sheet_check_layout.removeWidget(cb)
+            cb.deleteLater()
+        self._sheet_checks.clear()
+        self._convert_btn.setEnabled(False)
+        self._convert_btn.setText("Convert Workbook")
+        self._load_grid_btn.setEnabled(False)
+        self._result_text.clear()
+        if clear_path:
+            self._file_edit.clear()
+
+    def _start_sheet_loader(self, filepath: str):
+        self._sheet_loader = None
+        self._worker = None
         for cb in self._sheet_checks:
             self._sheet_check_layout.removeWidget(cb)
             cb.deleteLater()
@@ -637,6 +561,9 @@ class StatementConverterDialog(QDialog):
         loader.start()
 
     def _on_sheets_ready(self, sheet_names: list):
+        loader = self.sender()
+        if loader is not self._sheet_loader:
+            return
         self._result_text.clear()
         cols = 3
         for i, name in enumerate(sheet_names):
@@ -653,6 +580,9 @@ class StatementConverterDialog(QDialog):
             QTimer.singleShot(0, self._run_conversion)
 
     def _on_sheets_error(self, message: str):
+        loader = self.sender()
+        if loader is not self._sheet_loader:
+            return
         self._result_text.clear()
         QMessageBox.warning(self, "File Error", f"Could not open file:\n{message}")
 
@@ -691,8 +621,12 @@ class StatementConverterDialog(QDialog):
         self._worker.start()
 
     def _on_worker_finished(self):
-        worker = self._worker
-        if worker is None:
+        worker = self.sender()
+        if worker is not self._worker:
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
             return
 
         self._convert_btn.setEnabled(True)

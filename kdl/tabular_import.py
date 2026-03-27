@@ -1,10 +1,11 @@
-"""Helpers for importing CSV/HTML tabular files into openpyxl workbooks."""
+"""Helpers for importing CSV/HTML/XLS tabular files into openpyxl workbooks."""
 
 from __future__ import annotations
 
 import csv
 import os
 import tempfile
+from datetime import date, datetime
 from html.parser import HTMLParser
 
 
@@ -136,12 +137,7 @@ def list_source_sheet_names(filepath: str) -> list[str]:
         tables = load_html_tables(filepath)
         if not tables:
             raise RuntimeError("No HTML tables found in the selected file.")
-        base = _base_name(filepath)
-        names = []
-        for idx, _rows in enumerate(tables, start=1):
-            suffix = f"_{idx}" if len(tables) > 1 else ""
-            names.append(_sheet_safe_name(f"{base}{suffix}", f"Table_{idx}"))
-        return names
+        return [_sheet_safe_name(_base_name(filepath), "Sheet1")]
     raise ValueError(f"Unsupported tabular source: {filepath}")
 
 
@@ -162,16 +158,169 @@ def build_workbook_from_source(filepath: str):
         tables = load_html_tables(filepath)
         if not tables:
             raise RuntimeError("No HTML tables found in the selected file.")
-        names = list_source_sheet_names(filepath)
         wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = list_source_sheet_names(filepath)[0]
         for idx, rows in enumerate(tables):
-            ws = wb.active if idx == 0 else wb.create_sheet()
-            ws.title = names[idx]
             for row_vals in rows:
                 ws.append(row_vals)
+            if idx < len(tables) - 1:
+                ws.append([])
         return wb
 
     raise ValueError(f"Unsupported tabular source: {filepath}")
+
+
+def _iter_legacy_xls_connection_strings(filepath: str):
+    abs_path = os.path.abspath(filepath)
+    yield (
+        "Microsoft.ACE.OLEDB.12.0",
+        f'Provider=Microsoft.ACE.OLEDB.12.0;Data Source={abs_path};'
+        'Extended Properties="Excel 8.0;HDR=NO;IMEX=1";',
+    )
+    yield (
+        "Microsoft.Jet.OLEDB.4.0",
+        f'Provider=Microsoft.Jet.OLEDB.4.0;Data Source={abs_path};'
+        'Extended Properties="Excel 8.0;HDR=NO;IMEX=1";',
+    )
+
+
+def _open_legacy_xls_connection(filepath: str):
+    try:
+        import win32com.client
+    except ImportError as exc:
+        raise RuntimeError("pywin32 is required for legacy .xls support.") from exc
+
+    errors = []
+    for provider_name, conn_str in _iter_legacy_xls_connection_strings(filepath):
+        conn = None
+        try:
+            conn = win32com.client.Dispatch("ADODB.Connection")
+            conn.Open(conn_str)
+            return conn, provider_name
+        except Exception as exc:
+            errors.append(f"{provider_name}: {exc}")
+            if conn is not None:
+                try:
+                    conn.Close()
+                except Exception:
+                    pass
+
+    raise RuntimeError(
+        "Could not open this legacy .xls workbook via ACE/Jet. "
+        "Install the Microsoft Access Database Engine or open it in Excel and save as .xlsx."
+        + (f" Details: {' | '.join(errors)}" if errors else "")
+    )
+
+
+def _extract_ado_sheet_name(table_name: str) -> str:
+    name = str(table_name or "").strip()
+    if name.startswith("'") and name.endswith("'") and len(name) >= 2:
+        name = name[1:-1]
+    if name.endswith("$"):
+        name = name[:-1]
+    return name
+
+
+def _iter_legacy_xls_tables(conn):
+    recordset = None
+    try:
+        recordset = conn.OpenSchema(20)
+        while not recordset.EOF:
+            raw_name = recordset.Fields("TABLE_NAME").Value
+            table_type = str(recordset.Fields("TABLE_TYPE").Value or "").upper()
+            table_name = str(raw_name or "")
+            if (
+                table_type == "TABLE"
+                and "$" in table_name
+                and not table_name.startswith("_xlnm")
+            ):
+                yield table_name
+            recordset.MoveNext()
+    finally:
+        if recordset is not None:
+            try:
+                recordset.Close()
+            except Exception:
+                pass
+
+
+def list_legacy_xls_sheet_names(filepath: str) -> list[str]:
+    conn = None
+    try:
+        conn, _ = _open_legacy_xls_connection(filepath)
+        names = []
+        for table_name in _iter_legacy_xls_tables(conn):
+            name = _extract_ado_sheet_name(table_name)
+            if name:
+                names.append(name)
+        if not names:
+            raise RuntimeError("No worksheets were found in the selected .xls workbook.")
+        return names
+    finally:
+        if conn is not None:
+            try:
+                conn.Close()
+            except Exception:
+                pass
+
+
+def _ado_cell_value(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    return value
+
+
+def build_workbook_from_legacy_xls(filepath: str, sheet_names: list[str] | None = None):
+    import openpyxl
+    try:
+        import win32com.client
+    except ImportError as exc:
+        raise RuntimeError("pywin32 is required for legacy .xls support.") from exc
+
+    conn = None
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    wanted = {name.strip().lower() for name in (sheet_names or []) if str(name).strip()}
+    try:
+        conn, _ = _open_legacy_xls_connection(filepath)
+        for table_name in _iter_legacy_xls_tables(conn):
+            sheet_name = _extract_ado_sheet_name(table_name)
+            if not sheet_name:
+                continue
+            if wanted and sheet_name.strip().lower() not in wanted:
+                continue
+            ws = wb.create_sheet(title=_sheet_safe_name(sheet_name, "Sheet1"))
+            rs = None
+            try:
+                rs = win32com.client.Dispatch("ADODB.Recordset")
+                rs.Open(f"SELECT * FROM [{table_name}]", conn, 1, 1)
+                field_count = rs.Fields.Count
+                while not rs.EOF:
+                    row_vals = [_ado_cell_value(rs.Fields(i).Value) for i in range(field_count)]
+                    while row_vals and row_vals[-1] is None:
+                        row_vals.pop()
+                    ws.append(row_vals)
+                    rs.MoveNext()
+            finally:
+                if rs is not None:
+                    try:
+                        rs.Close()
+                    except Exception:
+                        pass
+        if not wb.sheetnames:
+            raise RuntimeError("No worksheets were found in the selected .xls workbook.")
+        return wb
+    finally:
+        if conn is not None:
+            try:
+                conn.Close()
+            except Exception:
+                pass
 
 
 def convert_legacy_xls_to_temp_xlsx(filepath: str) -> str:
@@ -223,3 +372,47 @@ def convert_legacy_xls_to_temp_xlsx(filepath: str) -> str:
                 pythoncom.CoUninitialize()
             except Exception:
                 pass
+
+
+def load_workbook_from_source(
+    filepath: str,
+    *,
+    sheet_names: list[str] | None = None,
+    data_only: bool = True,
+    read_only: bool = False,
+    keep_links: bool = False,
+    keep_vba: bool = False,
+):
+    import openpyxl
+
+    source_kind = detect_source_format(filepath)
+    if source_kind in ("csv", "html"):
+        return build_workbook_from_source(filepath)
+
+    if os.path.splitext(filepath)[1].lower() == ".xls":
+        try:
+            return build_workbook_from_legacy_xls(filepath, sheet_names=sheet_names)
+        except Exception:
+            tmp_path = convert_legacy_xls_to_temp_xlsx(filepath)
+            try:
+                wb = openpyxl.load_workbook(
+                    tmp_path,
+                    data_only=data_only,
+                    read_only=read_only,
+                    keep_links=keep_links,
+                    keep_vba=False,
+                )
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+            return wb
+
+    return openpyxl.load_workbook(
+        filepath,
+        data_only=data_only,
+        read_only=read_only,
+        keep_links=keep_links,
+        keep_vba=keep_vba,
+    )

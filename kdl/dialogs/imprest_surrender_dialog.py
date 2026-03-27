@@ -205,6 +205,12 @@ class ImprestSurrenderDialog(QDialog):
         self._browse_btn.setMinimumHeight(38)
         self._browse_btn.clicked.connect(self._browse_file)
         browse_row.addWidget(self._browse_btn)
+
+        clear_btn = QPushButton("Clear")
+        clear_btn.setMinimumWidth(96)
+        clear_btn.setMinimumHeight(38)
+        clear_btn.clicked.connect(self._clear_selected_template)
+        browse_row.addWidget(clear_btn)
         open_layout.addLayout(browse_row)
 
         self._upload_status = QLabel("")
@@ -351,6 +357,14 @@ class ImprestSurrenderDialog(QDialog):
         worker.finished.connect(self._on_read_rows_finished)
         worker.start()
 
+    def _clear_selected_template(self):
+        self._rows = []
+        self._filepath = ""
+        self._path_edit.clear()
+        self._preview.clear()
+        self._upload_status.clear()
+        self._set_busy(False)
+
     def _on_read_rows_finished(self):
         worker = self._worker
         if not isinstance(worker, _ImprestReadWorker):
@@ -443,6 +457,7 @@ class ImprestSurrenderDialog(QDialog):
         )
         if not path:
             return
+        self._clear_selected_template()
         self._path_edit.setText(path)
         self._filepath = path
         self._start_read_rows(path)
