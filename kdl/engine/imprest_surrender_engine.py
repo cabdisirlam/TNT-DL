@@ -256,7 +256,7 @@ TEMPLATE_ACTIONS = (
     ("key", "down"),
     ("key", "enter"),
     ("field", "Old_Imprest_No"),
-    ("tab", 7),
+    ("tab", 2),
     ("field", "Application_Amount"),
     ("tab", 2),
     ("key", "enter"),
