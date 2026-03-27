@@ -17,8 +17,7 @@ except ImportError:
     openpyxl = None
 
 # ── Constants ──────────────────────────────────────────────
-DN_PREFIX_CELL = r"\*s"
-OUTPUT_FIRST_ROW = 2
+OUTPUT_FIRST_ROW = 1
 AUDIT_DETAIL_HEADER_ROW = 9
 AUDIT_DETAIL_FIRST_ROW = 10
 
@@ -232,45 +231,29 @@ def _fmt_date(d: date) -> str:
 def _make_payment_row(doc_no, dt: date, amt: float) -> list:
     return [
         'tab',
-        'tab',
+        'Payment',
         'TRFD',
-        'tab',
         str(doc_no) if doc_no else '',
-        'tab',
         _fmt_date(dt),
-        'tab',
         _fmt_date(dt),
-        'tab',
         amt,
-        'tab',
-        DN_PREFIX_CELL,
-        '*DN',
     ]
 
 
 def _make_receipt_row(doc_no: str, dt: date, amt: float) -> list:
     return [
         'tab',
-        '*DN',
-        'r',
-        'tab',
+        'Receipt',
         'TRFC',
-        'tab',
         doc_no,
-        'tab',
         _fmt_date(dt),
-        'tab',
         _fmt_date(dt),
-        'tab',
         amt,
-        'tab',
-        DN_PREFIX_CELL,
-        '*DN',
     ]
 
 
 def _write_rows_to_sheet(ws_out: Worksheet, rows: list[list]):
-    """Write keystroke-format rows to ws_out starting at row 2, leaving row 1 blank."""
+    """Write table-format rows to ws_out starting at row 1, without headers."""
     for i, row_vals in enumerate(rows):
         for c, val in enumerate(row_vals, 1):
             ws_out.cell(row=i + OUTPUT_FIRST_ROW, column=c, value=val)
@@ -494,8 +477,8 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
 
     # 8) Sort combined rows by date in Python, then write to worksheet once
     def _sort_key(row_vals: list) -> date:
-        # Keystroke format: value date is column I (index 8), payment date fallback is G (index 6).
-        v = row_vals[8] if len(row_vals) > 8 and row_vals[8] else row_vals[6]
+        # Table format: value date is column F (index 5), transaction date fallback is E (index 4).
+        v = row_vals[5] if len(row_vals) > 5 and row_vals[5] else row_vals[4]
         if isinstance(v, str):
             try:
                 return _parse_dmon_y(v, '-') or date.min
