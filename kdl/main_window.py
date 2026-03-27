@@ -3125,6 +3125,8 @@ class MainWindow(QMainWindow):
             return True
         if low.startswith("*"):
             return True
+        if low.startswith(("\\*", "\\^", "\\%", "\\+")):
+            return True
         if low.startswith("\\{") and low.endswith("}"):
             return True
         return False
