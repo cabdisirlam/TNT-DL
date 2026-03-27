@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import tempfile
 from datetime import date, datetime
 from html.parser import HTMLParser
@@ -129,6 +130,58 @@ def load_html_tables(filepath: str) -> list[list[list[str]]]:
     return parser.tables
 
 
+_NUMERIC_RE = re.compile(r"^\(?-?\d[\d,]*\.?\d*\)?%?$")
+_DATE_FORMATS = (
+    "%d-%b-%Y",
+    "%d-%B-%Y",
+    "%d/%m/%Y",
+    "%m/%d/%Y",
+    "%Y-%m-%d",
+)
+
+
+def _coerce_tabular_value(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float, datetime, date)):
+        return value
+
+    text = str(value).strip()
+    if text == "":
+        return ""
+
+    compact = text.replace("\u00a0", " ").strip()
+    candidate = compact.replace(",", "")
+
+    if _NUMERIC_RE.match(compact):
+        is_percent = compact.endswith("%")
+        if is_percent:
+            candidate = candidate[:-1]
+        if candidate.startswith("(") and candidate.endswith(")"):
+            candidate = "-" + candidate[1:-1]
+        try:
+            number = float(candidate)
+            if is_percent:
+                return number / 100.0
+            if "." not in candidate and "e" not in candidate.lower():
+                return int(number)
+            return number
+        except ValueError:
+            pass
+
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(compact, fmt)
+        except ValueError:
+            continue
+
+    return compact
+
+
+def _append_tabular_row(ws, row_vals):
+    ws.append([_coerce_tabular_value(val) for val in row_vals])
+
+
 def list_source_sheet_names(filepath: str) -> list[str]:
     source_kind = detect_source_format(filepath)
     if source_kind == "csv":
@@ -151,7 +204,7 @@ def build_workbook_from_source(filepath: str):
         ws.title = list_source_sheet_names(filepath)[0]
         with open(filepath, newline="", encoding="utf-8-sig") as f:
             for row_vals in csv.reader(f):
-                ws.append(row_vals)
+                _append_tabular_row(ws, row_vals)
         return wb
 
     if source_kind == "html":
@@ -163,7 +216,7 @@ def build_workbook_from_source(filepath: str):
         ws.title = list_source_sheet_names(filepath)[0]
         for idx, rows in enumerate(tables):
             for row_vals in rows:
-                ws.append(row_vals)
+                _append_tabular_row(ws, row_vals)
             if idx < len(tables) - 1:
                 ws.append([])
         return wb
