@@ -479,6 +479,7 @@ class LoaderThread(QThread):
                     cell_type=CellType.KEYSTROKE,
                     raw_value=parsed.raw_value,
                     key_actions=[
+                        {"type": "key", "key": "down"},
                         {"type": "type", "text": "r"},
                     ],
                 )
