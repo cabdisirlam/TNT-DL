@@ -1962,8 +1962,11 @@ class MainWindow(QMainWindow):
             dialog.radio_popup_stop.setChecked(True)
         else:
             dialog.radio_popup_pause.setChecked(True)
+        default_eor = self._default_end_of_row_action
+        if self._default_load_mode == "imprest_surrender":
+            default_eor = "none"
         for idx, (_, key) in enumerate(END_OF_ROW_ACTIONS):
-            if key == self._default_end_of_row_action:
+            if key == default_eor:
                 dialog.eor_combo.setCurrentIndex(idx)
                 break
 

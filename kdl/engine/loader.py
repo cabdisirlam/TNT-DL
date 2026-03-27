@@ -935,7 +935,11 @@ class LoaderThread(QThread):
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
                                     break
 
-                if not self._stop_requested and row_had_activity:
+                if (
+                    self.load_mode != "imprest_surrender"
+                    and not self._stop_requested
+                    and row_had_activity
+                ):
                     if not self._perform_end_of_row_action(rows_processed, is_last_row=(row_idx == self.end_row)):
                         break
 

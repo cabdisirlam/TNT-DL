@@ -473,6 +473,10 @@ class LoadSettingsDialog(QDialog):
         load_mode = self._selected_load_mode()
         eor_idx = self.eor_combo.currentIndex()
         end_of_row_action = END_OF_ROW_ACTIONS[eor_idx][1] if eor_idx >= 0 else "none"
+        if load_mode == "imprest_surrender":
+            # The imprest macro already performs its own full save/next-record
+            # navigation, so any generic row-end action would overshoot row 2.
+            end_of_row_action = "none"
 
         try:
             save_interval = max(1, int(self.save_interval_input.text()))
