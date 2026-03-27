@@ -425,6 +425,7 @@ TEMPLATE_ACTIONS = (
     ("tab", 1),
     ("hotkey", ["ctrl"], "s"),
     ("hotkey", ["ctrl"], "f4"),
+    ("delay", 500),
     ("hotkey", ["alt"], "c"),
     ("hotkey", ["alt"], "u"),
     ("hotkey", ["alt"], "k"),
@@ -432,6 +433,7 @@ TEMPLATE_ACTIONS = (
     ("key", "down"),
     ("key", "down"),
     ("key", "enter"),
+    ("delay", 500),
     ("field", "Old_Imprest_No"),
     ("tab", 7),
     ("field", "Application_Amount"),
@@ -444,13 +446,17 @@ TEMPLATE_ACTIONS = (
     ("field", "GL_Date"),
     ("tab", 1),
     ("hotkey", ["ctrl"], "s"),
+    ("delay", 700),
     ("hotkey", ["ctrl"], "f4"),
+    ("delay", 700),
     ("key", "alt"),
+    ("delay", 250),
     ("key", "down"),
     ("key", "down"),
     ("key", "down"),
     ("key", "down"),
     ("key", "enter"),
+    ("delay", 350),
     ("hotkey", ["shift"], "tab"),
     ("hotkey", ["shift"], "tab"),
     ("hotkey", ["shift"], "tab"),
@@ -1474,7 +1480,12 @@ class ImprestSurrenderThread(QThread):
             inv = row.get("Invoice_Num") or f"row {i + 1}"
             self.status_update.emit(f"Loading {i + 1}/{total}: {inv} …")
 
-            ok = execute_row_for_loader(sender, row, lambda: self._stop)
+            ok = execute_row_for_loader(
+                sender,
+                row,
+                lambda: self._stop,
+                is_last_row=(i == total - 1),
+            )
             if not ok:
                 if self._stop:
                     self.stopped_signal.emit()
