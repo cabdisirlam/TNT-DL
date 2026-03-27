@@ -7,6 +7,7 @@ import csv
 import os
 import zipfile
 import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -51,6 +52,107 @@ def _fast_xlsx_sheet_names(filepath: str) -> list[str] | None:
         return None
 
 
+class _HTMLTableParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tables: list[list[list[str]]] = []
+        self._table_depth = 0
+        self._current_table: list[list[str]] | None = None
+        self._current_row: list[str] | None = None
+        self._current_cell: list[str] | None = None
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag == "table":
+            if self._table_depth == 0:
+                self._current_table = []
+            self._table_depth += 1
+            return
+
+        if self._table_depth != 1:
+            return
+
+        if tag == "tr":
+            self._current_row = []
+        elif tag in ("td", "th"):
+            self._current_cell = []
+        elif tag == "br" and self._current_cell is not None:
+            self._current_cell.append("\n")
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag == "table":
+            if self._table_depth == 1 and self._current_table:
+                if any(row for row in self._current_table):
+                    self.tables.append(self._current_table)
+                self._current_table = None
+            if self._table_depth > 0:
+                self._table_depth -= 1
+            return
+
+        if self._table_depth != 1:
+            return
+
+        if tag in ("td", "th") and self._current_row is not None and self._current_cell is not None:
+            text = "".join(self._current_cell)
+            text = "\n".join(part.strip() for part in text.splitlines() if part.strip())
+            self._current_row.append(text)
+            self._current_cell = None
+        elif tag == "tr" and self._current_table is not None and self._current_row is not None:
+            if self._current_row:
+                self._current_table.append(self._current_row)
+            self._current_row = None
+
+    def handle_data(self, data):
+        if self._current_cell is not None:
+            self._current_cell.append(data)
+
+
+def _sheet_safe_name(name: str, fallback: str) -> str:
+    cleaned = "".join("_" if ch in '[]:*?/\\\\' else ch for ch in str(name).strip())
+    cleaned = cleaned.strip("'")
+    return (cleaned or fallback)[:31]
+
+
+def _load_html_tables(filepath: str) -> list[list[list[str]]]:
+    with open(filepath, "rb") as f:
+        raw = f.read()
+
+    for encoding in ("utf-8-sig", "utf-16", "cp1252", "latin-1"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        text = raw.decode("utf-8", errors="replace")
+
+    parser = _HTMLTableParser()
+    parser.feed(text)
+    parser.close()
+    return parser.tables
+
+
+def _build_workbook_from_html(filepath: str):
+    import openpyxl
+
+    tables = _load_html_tables(filepath)
+    if not tables:
+        raise RuntimeError("No HTML tables found in the selected file.")
+
+    wb = openpyxl.Workbook()
+    base_name = os.path.splitext(os.path.basename(filepath))[0]
+
+    for idx, rows in enumerate(tables, start=1):
+        ws = wb.active if idx == 1 else wb.create_sheet()
+        suffix = f"_{idx}" if len(tables) > 1 else ""
+        ws.title = _sheet_safe_name(f"{base_name}{suffix}", f"Table_{idx}")
+        for row_vals in rows:
+            ws.append(row_vals)
+
+    return wb
+
+
 class _SheetLoaderWorker(QThread):
     """Background worker that reads sheet names from an Excel file."""
 
@@ -69,6 +171,18 @@ class _SheetLoaderWorker(QThread):
             if ext == ".csv":
                 name = os.path.splitext(os.path.basename(self.filepath))[0]
                 self.sheets_ready.emit([name])
+                return
+
+            if ext in (".html", ".htm"):
+                tables = _load_html_tables(self.filepath)
+                if not tables:
+                    raise RuntimeError("No HTML tables found in the selected file.")
+                base_name = os.path.splitext(os.path.basename(self.filepath))[0]
+                names = []
+                for idx, _rows in enumerate(tables, start=1):
+                    suffix = f"_{idx}" if len(tables) > 1 else ""
+                    names.append(_sheet_safe_name(f"{base_name}{suffix}", f"Table_{idx}"))
+                self.sheets_ready.emit(names)
                 return
 
             # ── Fast path: xlsx / xlsm via zipfile (no workbook load) ──
@@ -170,31 +284,38 @@ class _ConverterWorker(QThread):
             source_ext = os.path.splitext(self.filepath)[1].lower()
             load_path = self.filepath
 
-            if source_ext == ".csv":
-                wb = openpyxl.Workbook()
-                ws = wb.active
-                sheet_name = os.path.splitext(os.path.basename(self.filepath))[0]
-                ws.title = sheet_name
-                with open(self.filepath, newline="", encoding="utf-8-sig") as f:
-                    for row_vals in csv.reader(f):
-                        ws.append(row_vals)
-                # Use the CSV sheet name for conversion
-                self.sheet_names = [sheet_name]
+            if source_ext in (".csv", ".html", ".htm"):
+                if source_ext == ".csv":
+                    wb = openpyxl.Workbook()
+                    ws = wb.active
+                    sheet_name = os.path.splitext(os.path.basename(self.filepath))[0]
+                    ws.title = sheet_name
+                    with open(self.filepath, newline="", encoding="utf-8-sig") as f:
+                        for row_vals in csv.reader(f):
+                            ws.append(row_vals)
+                    self.sheet_names = [sheet_name]
+                else:
+                    wb = _build_workbook_from_html(self.filepath)
+                    self.sheet_names = [name for name in self.sheet_names if name in wb.sheetnames]
+                    if not self.sheet_names:
+                        self.sheet_names = list(wb.sheetnames)
                 multi = False
                 all_output_data = []
-                all_audit_rows = []
                 all_messages = []
                 any_success = False
-                result = convert_statement(wb, sheet_name, skip_contra=self.skip_contra)
-                if result.success:
-                    any_success = True
-                    all_output_data.extend(result.output_data)
-                    all_messages.append(result.message)
-                else:
-                    all_messages.append(f"FAILED\n{result.message}")
+                for sheet_name in self.sheet_names:
+                    result = convert_statement(wb, sheet_name, skip_contra=self.skip_contra)
+                    if result.success:
+                        any_success = True
+                        all_output_data.extend(result.output_data)
+                        prefix = f"[{sheet_name}]\n" if len(self.sheet_names) > 1 else ""
+                        all_messages.append(f"{prefix}{result.message}")
+                    else:
+                        prefix = f"[{sheet_name}] FAILED\n" if len(self.sheet_names) > 1 else "FAILED\n"
+                        all_messages.append(f"{prefix}{result.message}")
                 self.result = ConversionResult(
                     success=any_success,
-                    message="\n".join(all_messages),
+                    message=("\n\n" + ("-" * 40) + "\n\n").join(all_messages),
                     output_data=all_output_data,
                 )
                 if any_success:
@@ -480,7 +601,7 @@ class StatementConverterDialog(QDialog):
             self,
             "Select Excel File",
             _default_browse_dir(),
-            "All Supported (*.xlsx *.xls *.xlsm *.csv);;Excel Files (*.xlsx *.xls *.xlsm);;CSV Files (*.csv);;All Files (*)",
+            "All Supported (*.xlsx *.xls *.xlsm *.csv *.html *.htm);;Excel Files (*.xlsx *.xls *.xlsm);;CSV Files (*.csv);;HTML Files (*.html *.htm);;All Files (*)",
         )
         if not path:
             return
@@ -608,7 +729,7 @@ class StatementConverterDialog(QDialog):
             filepath = self._file_edit.text().strip()
             source_ext = os.path.splitext(filepath)[1].lower()
             save_path = filepath
-            if source_ext == ".xls":
+            if source_ext in (".xls", ".csv", ".html", ".htm"):
                 save_path = os.path.splitext(filepath)[0] + "_converted.xlsx"
             saved_name = None
             try:
@@ -638,7 +759,7 @@ class StatementConverterDialog(QDialog):
             if saved_name:
                 if save_path != filepath:
                     self._result_text.append(
-                        f"Saved to: {saved_name} (legacy .xls source kept unchanged)"
+                        f"Saved to: {saved_name} (source file kept unchanged)"
                     )
                 else:
                     self._result_text.append(f"Saved to: {saved_name}")

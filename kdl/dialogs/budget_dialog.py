@@ -1,12 +1,11 @@
 """
 GOK IFMIS Statement of Budget Execution - Processing Dialog.
 
-Imports an IFMIS budget Excel file (1-3 sheets), runs the budget
+Imports an IFMIS budget source file, runs the budget
 processor engine on the selected sheets, and saves the formatted
-output workbook as budget.xlsx.
+output workbook as Excel.
 """
 
-import csv
 import os
 import xml.etree.ElementTree as ET
 import zipfile
@@ -32,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import accent_button_qss, dialog_qss
+from kdl.tabular_import import build_workbook_from_source, list_source_sheet_names
 
 
 def _default_dir() -> str:
@@ -70,9 +70,8 @@ class _SheetLoaderWorker(QThread):
     def run(self):
         try:
             ext = os.path.splitext(self.filepath)[1].lower()
-            if ext == ".csv":
-                name = os.path.splitext(os.path.basename(self.filepath))[0]
-                self.sheets_ready.emit([name])
+            if ext in (".csv", ".html", ".htm"):
+                self.sheets_ready.emit(list_source_sheet_names(self.filepath))
                 return
             if ext in (".xlsx", ".xlsm"):
                 names = _fast_xlsx_sheet_names(self.filepath)
@@ -106,15 +105,14 @@ class _BudgetWorker(QThread):
         try:
             import openpyxl
             source_ext = os.path.splitext(self.filepath)[1].lower()
-            if source_ext == ".csv":
-                wb = openpyxl.Workbook()
-                ws = wb.active
-                sheet_name = os.path.splitext(os.path.basename(self.filepath))[0]
-                ws.title = sheet_name
-                with open(self.filepath, newline="", encoding="utf-8-sig") as f:
-                    for row_vals in csv.reader(f):
-                        ws.append(row_vals)
-                self.sheet_names = [sheet_name]
+            if source_ext in (".csv", ".html", ".htm"):
+                wb = build_workbook_from_source(self.filepath)
+                if source_ext == ".csv":
+                    self.sheet_names = [wb.sheetnames[0]]
+                else:
+                    self.sheet_names = [name for name in self.sheet_names if name in wb.sheetnames]
+                    if not self.sheet_names:
+                        self.sheet_names = list(wb.sheetnames)
             else:
                 wb = openpyxl.load_workbook(
                     self.filepath, data_only=True, keep_links=False
@@ -274,9 +272,9 @@ class BudgetDialog(QDialog):
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select IFMIS Budget Excel File",
+            "Select IFMIS Budget Source File",
             _default_dir(),
-            "All Supported (*.xlsx *.xlsm *.xls *.csv);;Excel Files (*.xlsx *.xlsm *.xls);;CSV Files (*.csv);;All Files (*)",
+            "All Supported (*.xlsx *.xlsm *.xls *.csv *.html *.htm);;Excel Files (*.xlsx *.xlsm *.xls);;CSV Files (*.csv);;HTML Files (*.html *.htm);;All Files (*)",
         )
         if not path:
             return

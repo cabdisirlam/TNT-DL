@@ -27,6 +27,7 @@ Keystroke template (per row) — 82-cell DL grid (C1–C82):
     → Tab to Amount → enter amount → GL Date → Dist Account → Save → Down
 """
 
+import os
 import time
 
 from PySide6.QtCore import QThread, Signal
@@ -298,7 +299,7 @@ TEMPLATE_ACTIONS = (
 def read_invoice_rows(filepath: str) -> tuple:
     """
     Read invoice rows from the Data_Entry sheet (or first sheet) of filepath.
-    Supports .xlsx, .xls, and .csv files.
+    Supports .xlsx, .xls, .csv, and HTML files.
     Data rows start at row 4 (rows 1–3 are title / headers / hints) for Excel,
     or row 2 for CSV (row 1 = headers).
     Returns (rows: list[dict], error: str).
@@ -306,21 +307,23 @@ def read_invoice_rows(filepath: str) -> tuple:
     import os
     ext = os.path.splitext(filepath)[1].lower()
 
-    if ext == ".csv":
-        return _read_invoice_rows_csv(filepath)
-
     try:
         import openpyxl
     except ImportError:
         return [], "openpyxl is not installed."
 
     try:
-        wb = openpyxl.load_workbook(
-            filepath,
-            data_only=True,
-            read_only=True,
-            keep_links=False,
-        )
+        if ext in (".csv", ".html", ".htm"):
+            from kdl.tabular_import import build_workbook_from_source
+
+            wb = build_workbook_from_source(filepath)
+        else:
+            wb = openpyxl.load_workbook(
+                filepath,
+                data_only=True,
+                read_only=True,
+                keep_links=False,
+            )
     except Exception as exc:
         return [], f"Cannot open file: {exc}"
 
@@ -333,8 +336,19 @@ def read_invoice_rows(filepath: str) -> tuple:
                 break
 
         ws = wb[sheet_name]
+        first_row = [
+            str(v or "").strip().lower()
+            for v in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
+        ]
+        second_row = [
+            str(v or "").strip().lower()
+            for v in next(ws.iter_rows(min_row=2, max_row=2, values_only=True), ())
+        ]
+        header_on_row_1 = any("supplier" in val and "num" in val for val in first_row)
+        header_on_row_2 = any("supplier" in val and "num" in val for val in second_row)
+        start_row = 2 if header_on_row_1 and not header_on_row_2 else 5
         rows = []
-        for row_values in ws.iter_rows(min_row=5, values_only=True):
+        for row_values in ws.iter_rows(min_row=start_row, values_only=True):
             if not row_values or all(v is None or str(v).strip() == "" for v in row_values):
                 continue
             row_dict = _normalize_invoice_row({
@@ -536,7 +550,7 @@ def _normalize_invoice_row(row: dict) -> dict:
 def import_ifmis_export(filepath: str) -> tuple:
     """
     Read an IFMIS-exported AP invoice file and map to our 11-column format.
-    Supports .xlsx, .xls, and .csv files.
+    Supports .xlsx, .xls, .csv, and HTML files.
     Only rows where the 'Type' column equals 'Prepayment' are imported.
 
     Returns (rows: list[dict], skipped: int, error: str).
@@ -552,22 +566,19 @@ def import_ifmis_export(filepath: str) -> tuple:
     except ImportError:
         return [], 0, "openpyxl is not installed."
 
-    if ext == ".csv":
-        import csv
+    if ext in (".csv", ".html", ".htm"):
         try:
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            with open(filepath, newline="", encoding="utf-8-sig") as f:
-                for row_vals in csv.reader(f):
-                    ws.append(row_vals)
+            from kdl.tabular_import import build_workbook_from_source
+
+            wb = build_workbook_from_source(filepath)
         except Exception as exc:
-            return [], 0, f"Cannot open CSV file: {exc}"
+            return [], 0, f"Cannot open source file: {exc}"
     else:
         try:
             wb = openpyxl.load_workbook(filepath, data_only=True)
         except Exception as exc:
             return [], 0, f"Cannot open file: {exc}"
-        ws = wb.active
+    ws = wb.active
 
     # ── Build header index (0-based) ──────────────────────────────────────────
     headers = [str(ws.cell(1, c).value or "").strip().lower()
@@ -655,16 +666,13 @@ def import_ifmis_export(filepath: str) -> tuple:
     except ImportError:
         return [], 0, "openpyxl is not installed."
 
-    if ext == ".csv":
-        import csv
+    if ext in (".csv", ".html", ".htm"):
         try:
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            with open(filepath, newline="", encoding="utf-8-sig") as f:
-                for row_vals in csv.reader(f):
-                    ws.append(row_vals)
+            from kdl.tabular_import import build_workbook_from_source
+
+            wb = build_workbook_from_source(filepath)
         except Exception as exc:
-            return [], 0, f"Cannot open CSV file: {exc}"
+            return [], 0, f"Cannot open source file: {exc}"
     else:
         try:
             wb = openpyxl.load_workbook(
@@ -1049,12 +1057,18 @@ def export_keystroke_sheet_to_workbook(source_path: str, save_path: str, rows: l
 
     wb = None
     try:
+        source_ext = os.path.splitext(source_path)[1].lower()
         keep_vba = source_path.lower().endswith(".xlsm") or save_path.lower().endswith(".xlsm")
-        wb = openpyxl.load_workbook(
-            source_path,
-            keep_vba=keep_vba,
-            keep_links=False,
-        )
+        if source_ext in (".csv", ".html", ".htm"):
+            from kdl.tabular_import import build_workbook_from_source
+
+            wb = build_workbook_from_source(source_path)
+        else:
+            wb = openpyxl.load_workbook(
+                source_path,
+                keep_vba=keep_vba,
+                keep_links=False,
+            )
         if "DL_Keystrokes" in wb.sheetnames:
             del wb["DL_Keystrokes"]
         ws = wb.create_sheet("DL_Keystrokes")

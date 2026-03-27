@@ -196,7 +196,7 @@ class ImprestSurrenderDialog(QDialog):
         browse_row = QHBoxLayout()
         browse_row.setSpacing(10)
         self._path_edit = QLineEdit()
-        self._path_edit.setPlaceholderText("Choose the completed .xlsx template...")
+        self._path_edit.setPlaceholderText("Choose the completed template (.xlsx, .csv, .html)...")
         self._path_edit.setReadOnly(True)
         browse_row.addWidget(self._path_edit, 1)
 
@@ -418,7 +418,7 @@ class ImprestSurrenderDialog(QDialog):
             self,
             "Open IFMIS Export",
             _default_dir(),
-            "All Supported (*.xlsx *.xls *.csv);;Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)",
+            "All Supported (*.xlsx *.xls *.csv *.html *.htm);;Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;HTML Files (*.html *.htm);;All Files (*)",
         )
         if not src:
             return
@@ -439,7 +439,7 @@ class ImprestSurrenderDialog(QDialog):
             self,
             "Open Completed Template",
             _default_dir(),
-            "All Supported (*.xlsx *.xls *.csv);;Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)",
+            "All Supported (*.xlsx *.xls *.csv *.html *.htm);;Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;HTML Files (*.html *.htm);;All Files (*)",
         )
         if not path:
             return
