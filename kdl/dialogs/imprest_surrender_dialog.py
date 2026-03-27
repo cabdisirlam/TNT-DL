@@ -24,7 +24,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
+from kdl.dialogs.dialog_sizing import (
+    create_hint_button,
+    create_scrollable_dialog_layout,
+    fit_dialog_to_screen,
+)
 from kdl.styles import TEXT_MUTED, accent_button_qss, dialog_qss
 
 
@@ -100,7 +104,7 @@ class ImprestSurrenderDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Imprest Surrender AP Loader")
-        self.setMinimumWidth(640)
+        self.setMinimumWidth(620)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
@@ -126,9 +130,7 @@ class ImprestSurrenderDialog(QDialog):
             pass
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout = create_scrollable_dialog_layout(self)
 
         intro_row = QHBoxLayout()
         intro_row.setSpacing(8)
@@ -466,13 +468,15 @@ class ImprestSurrenderDialog(QDialog):
     def _fit_to_screen(self):
         fit_dialog_to_screen(
             self,
-            min_width=760,
-            min_height=540,
-            preferred_width=940,
-            wide_width=1080,
-            margin_width=72,
-            margin_height=80,
-            extra_hint_width=40,
+            min_width=680,
+            min_height=420,
+            preferred_width=800,
+            wide_width=880,
+            preferred_height=580,
+            tall_height=660,
+            margin_width=56,
+            margin_height=64,
+            extra_hint_width=32,
             extra_hint_height=28,
         )
 

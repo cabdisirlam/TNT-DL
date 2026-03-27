@@ -19,7 +19,11 @@ from PySide6.QtWidgets import (
 )
 
 from kdl import __display_name__
-from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
+from kdl.dialogs.dialog_sizing import (
+    create_hint_button,
+    create_scrollable_dialog_layout,
+    fit_dialog_to_screen,
+)
 from kdl.styles import TEXT_MUTED, accent_button_qss, dialog_qss
 from kdl.window.window_manager import WindowManager
 
@@ -64,7 +68,7 @@ class LoadSettingsDialog(QDialog):
         self._hourglass_before_load_control = True
 
         self.setWindowTitle(f"{__display_name__} - Load Settings")
-        self.setMinimumSize(720, 470)
+        self.setMinimumSize(640, 420)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
@@ -90,9 +94,11 @@ class LoadSettingsDialog(QDialog):
                 self.app_combo.setCurrentText("Oracle EBS R12")
 
     def _build_ui(self):
-        outer = QVBoxLayout(self)
-        outer.setSpacing(6)
-        outer.setContentsMargins(8, 8, 8, 8)
+        outer = create_scrollable_dialog_layout(
+            self,
+            content_margins=(8, 8, 8, 8),
+            spacing=6,
+        )
 
         title_row = QHBoxLayout()
         title_row.setSpacing(8)
@@ -320,13 +326,15 @@ class LoadSettingsDialog(QDialog):
     def _fit_to_screen(self):
         fit_dialog_to_screen(
             self,
-            min_width=760,
-            min_height=500,
-            preferred_width=960,
-            wide_width=1100,
-            margin_width=64,
-            margin_height=72,
-            extra_hint_width=40,
+            min_width=680,
+            min_height=420,
+            preferred_width=800,
+            wide_width=880,
+            preferred_height=560,
+            tall_height=640,
+            margin_width=56,
+            margin_height=64,
+            extra_hint_width=32,
             extra_hint_height=28,
         )
 

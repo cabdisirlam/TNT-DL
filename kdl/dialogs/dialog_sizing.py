@@ -2,7 +2,40 @@
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QToolButton, QToolTip
+from PySide6.QtWidgets import QFrame, QScrollArea, QToolButton, QToolTip, QVBoxLayout, QWidget
+
+
+def create_scrollable_dialog_layout(
+    dialog,
+    *,
+    content_margins: tuple[int, int, int, int] = (16, 16, 16, 16),
+    spacing: int = 12,
+) -> QVBoxLayout:
+    """Return a scrollable top-level layout for taller dialogs."""
+    root = QVBoxLayout(dialog)
+    root.setContentsMargins(0, 0, 0, 0)
+    root.setSpacing(0)
+
+    scroll = QScrollArea(dialog)
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    scroll.setStyleSheet("QScrollArea { background: transparent; }")
+    scroll.viewport().setAutoFillBackground(False)
+
+    content = QWidget(scroll)
+    content.setObjectName("DialogScrollContent")
+    content.setAttribute(Qt.WA_StyledBackground, True)
+    content.setStyleSheet("QWidget#DialogScrollContent { background: transparent; }")
+    layout = QVBoxLayout(content)
+    layout.setContentsMargins(*content_margins)
+    layout.setSpacing(spacing)
+
+    scroll.setWidget(content)
+    root.addWidget(scroll)
+
+    return layout
 
 
 def fit_dialog_to_screen(
@@ -12,6 +45,8 @@ def fit_dialog_to_screen(
     min_height: int,
     preferred_width: int,
     wide_width: int | None = None,
+    preferred_height: int | None = None,
+    tall_height: int | None = None,
     margin_width: int = 72,
     margin_height: int = 72,
     extra_hint_width: int = 24,
@@ -30,9 +65,16 @@ def fit_dialog_to_screen(
 
     hint = dialog.sizeHint()
     desktop_width = wide_width if wide_width is not None and geo.width() >= 1600 else preferred_width
+    desktop_height = (
+        tall_height if tall_height is not None and geo.height() >= 1000 else preferred_height
+    )
 
     target_w = max(clamped_min_w, hint.width() + extra_hint_width, desktop_width)
-    target_h = max(clamped_min_h, hint.height() + extra_hint_height)
+    hinted_h = hint.height() + extra_hint_height
+    if desktop_height is None:
+        target_h = max(clamped_min_h, hinted_h)
+    else:
+        target_h = max(clamped_min_h, min(hinted_h, desktop_height))
 
     dialog.setMinimumSize(clamped_min_w, clamped_min_h)
     dialog.setMaximumSize(max_w, max_h)
