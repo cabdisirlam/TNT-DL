@@ -17,7 +17,8 @@ except ImportError:
     openpyxl = None
 
 # ── Constants ──────────────────────────────────────────────
-OUTPUT_FIRST_ROW = 1
+DN_PREFIX_CELL = r"\*s"
+OUTPUT_FIRST_ROW = 2
 AUDIT_DETAIL_HEADER_ROW = 9
 AUDIT_DETAIL_FIRST_ROW = 10
 
@@ -168,8 +169,8 @@ def _month_text_to_num(mon: str) -> int:
 
 # ── Doc number extraction ──────────────────────────────────
 
-def _extract_doc_no_10(details: str) -> str:
-    """Extract rightmost 10-digit run, strip leading zeros."""
+def _extract_doc_no_10(details: str, *, strip_leading_zeros: bool = True) -> str:
+    """Extract rightmost 10-digit run from details."""
     if not details:
         return ''
     best10 = ''
@@ -185,6 +186,8 @@ def _extract_doc_no_10(details: str) -> str:
         best10 = run[-10:]
     if not best10:
         return ''
+    if not strip_leading_zeros:
+        return best10
     return best10.lstrip('0') or ''
 
 
@@ -231,32 +234,80 @@ def _fmt_date(d: date) -> str:
 def _make_payment_row(doc_no, dt: date, amt: float) -> list:
     return [
         'tab',
-        'Payment',
-        'TRFD',
+        'tab',
+        'trfd',
+        'tab',
         str(doc_no) if doc_no else '',
+        'tab',
         _fmt_date(dt),
+        'tab',
         _fmt_date(dt),
+        'tab',
         amt,
+        'tab',
+        DN_PREFIX_CELL,
+        '*dn',
     ]
 
 
 def _make_receipt_row(doc_no: str, dt: date, amt: float) -> list:
     return [
         'tab',
-        'Receipt',
-        'TRFC',
+        '*dn',
+        'r',
+        'tab',
+        'trfc',
+        'tab',
         doc_no,
+        'tab',
         _fmt_date(dt),
+        'tab',
         _fmt_date(dt),
+        'tab',
         amt,
+        'tab',
+        DN_PREFIX_CELL,
+        '*dn',
     ]
 
 
 def _write_rows_to_sheet(ws_out: Worksheet, rows: list[list]):
-    """Write table-format rows to ws_out starting at row 1, without headers."""
+    """Write keystroke-format rows to ws_out starting at row 2, leaving row 1 blank."""
     for i, row_vals in enumerate(rows):
         for c, val in enumerate(row_vals, 1):
-            ws_out.cell(row=i + OUTPUT_FIRST_ROW, column=c, value=val)
+            out_val = val
+
+            # Preserve the VBA-style typed worksheet output while keeping output_data
+            # as simple row lists for the TNT DL grid.
+            if len(row_vals) >= 14:
+                is_payment = (
+                    str(row_vals[0]).lower() == 'tab'
+                    and str(row_vals[1]).lower() == 'tab'
+                    and str(row_vals[2]).lower() == 'trfd'
+                )
+                is_receipt = (
+                    str(row_vals[0]).lower() == 'tab'
+                    and str(row_vals[1]).lower() == '*dn'
+                    and str(row_vals[2]).lower() == 'r'
+                    and str(row_vals[4]).lower() == 'trfc'
+                )
+
+                if is_payment:
+                    if c == 5 and str(val).strip().isdigit():
+                        out_val = int(str(val).strip())
+                    elif c in (7, 9) and isinstance(val, str):
+                        out_val = _parse_dmon_y(val, '-') or val
+                    elif c == 11:
+                        num = _parse_number(val)
+                        out_val = num if num is not None else val
+                elif is_receipt:
+                    if c in (9, 11) and isinstance(val, str):
+                        out_val = _parse_dmon_y(val, '-') or val
+                    elif c == 13:
+                        num = _parse_number(val)
+                        out_val = num if num is not None else val
+
+            ws_out.cell(row=i + OUTPUT_FIRST_ROW, column=c, value=out_val)
 
 
 # ── Audit writers ──────────────────────────────────────────
@@ -477,8 +528,8 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
 
     # 8) Sort combined rows by date in Python, then write to worksheet once
     def _sort_key(row_vals: list) -> date:
-        # Table format: value date is column F (index 5), transaction date fallback is E (index 4).
-        v = row_vals[5] if len(row_vals) > 5 and row_vals[5] else row_vals[4]
+        # Keystroke format: value date is column I (index 8), payment date fallback is G (index 6).
+        v = row_vals[8] if len(row_vals) > 8 and row_vals[8] else row_vals[6]
         if isinstance(v, str):
             try:
                 return _parse_dmon_y(v, '-') or date.min
