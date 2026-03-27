@@ -3,7 +3,6 @@ Bank Statement Converter Dialog.
 Lets the user pick an Excel file, choose sheets, and run the conversion.
 """
 
-import csv
 import os
 import zipfile
 import xml.etree.ElementTree as ET
@@ -31,7 +30,9 @@ from PySide6.QtWidgets import (
 from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import accent_button_qss, dialog_qss, themed_button_qss
 from kdl.tabular_import import (
+    build_filtered_workbook_from_excel,
     detect_source_format,
+    iter_csv_rows,
     list_legacy_xls_sheet_names,
     load_workbook_from_source,
 )
@@ -221,6 +222,55 @@ class _ConverterWorker(QThread):
         self.wb = None
         self.result = None
         self.error_message = ""
+        self.save_as_copy = False
+
+    def _convert_loaded_workbook(
+        self,
+        wb,
+        convert_statement,
+        ConversionResult,
+        _get_or_create_sheet,
+        _write_rows_to_sheet,
+        _write_audit_header,
+        AUDIT_DETAIL_FIRST_ROW,
+    ):
+        multi = len(self.sheet_names) > 1
+        all_output_data = []
+        all_audit_rows = []
+        all_messages = []
+        any_success = False
+
+        for sheet_name in self.sheet_names:
+            result = convert_statement(wb, sheet_name, skip_contra=self.skip_contra)
+            if result.success:
+                any_success = True
+                all_output_data.extend(result.output_data)
+                prefix = f"[{sheet_name}]\n" if multi else ""
+                all_messages.append(f"{prefix}{result.message}")
+                if multi:
+                    all_audit_rows.extend(result.audit_rows)
+            else:
+                prefix = f"[{sheet_name}] FAILED\n" if multi else "FAILED\n"
+                all_messages.append(f"{prefix}{result.message}")
+
+        if any_success and multi:
+            ws_out = _get_or_create_sheet(wb, "Output")
+            _write_rows_to_sheet(ws_out, all_output_data)
+
+            ws_audit = _get_or_create_sheet(wb, "Audit_Skipped")
+            _write_audit_header(ws_audit)
+            for i, row_vals in enumerate(all_audit_rows):
+                for c, val in enumerate(row_vals, 1):
+                    ws_audit.cell(row=AUDIT_DETAIL_FIRST_ROW + i, column=c, value=val)
+
+        sep = "\n\n" + ("-" * 40) + "\n\n" if multi else ""
+        self.result = ConversionResult(
+            success=any_success,
+            message=sep.join(all_messages),
+            output_data=all_output_data,
+        )
+        if any_success:
+            self.wb = wb
 
     def run(self):
         try:
@@ -243,85 +293,82 @@ class _ConverterWorker(QThread):
                     ws = wb.active
                     sheet_name = os.path.splitext(os.path.basename(self.filepath))[0]
                     ws.title = sheet_name
-                    with open(self.filepath, newline="", encoding="utf-8-sig") as f:
-                        for row_vals in csv.reader(f):
-                            ws.append(row_vals)
+                    for row_vals in iter_csv_rows(self.filepath):
+                        ws.append(row_vals)
                     self.sheet_names = [sheet_name]
                 else:
                     wb = _build_workbook_from_html(self.filepath)
                     self.sheet_names = [name for name in self.sheet_names if name in wb.sheetnames]
                     if not self.sheet_names:
                         self.sheet_names = list(wb.sheetnames)
-                multi = False
-                all_output_data = []
-                all_messages = []
-                any_success = False
-                for sheet_name in self.sheet_names:
-                    result = convert_statement(wb, sheet_name, skip_contra=self.skip_contra)
-                    if result.success:
-                        any_success = True
-                        all_output_data.extend(result.output_data)
-                        prefix = f"[{sheet_name}]\n" if len(self.sheet_names) > 1 else ""
-                        all_messages.append(f"{prefix}{result.message}")
-                    else:
-                        prefix = f"[{sheet_name}] FAILED\n" if len(self.sheet_names) > 1 else "FAILED\n"
-                        all_messages.append(f"{prefix}{result.message}")
-                self.result = ConversionResult(
-                    success=any_success,
-                    message=("\n\n" + ("-" * 40) + "\n\n").join(all_messages),
-                    output_data=all_output_data,
+                self._convert_loaded_workbook(
+                    wb,
+                    convert_statement,
+                    ConversionResult,
+                    _get_or_create_sheet,
+                    _write_rows_to_sheet,
+                    _write_audit_header,
+                    AUDIT_DETAIL_FIRST_ROW,
                 )
-                if any_success:
-                    self.wb = wb
                 return
 
             keep_vba = source_ext == ".xlsm"
-            wb = load_workbook_from_source(
-                self.filepath,
-                sheet_names=self.sheet_names,
-                data_only=True,
-                keep_links=False,
-                keep_vba=keep_vba,
-            )
-            multi = len(self.sheet_names) > 1
-            all_output_data = []
-            all_audit_rows = []
-            all_messages = []
-            any_success = False
-
-            for sheet_name in self.sheet_names:
-                result = convert_statement(wb, sheet_name, skip_contra=self.skip_contra)
-                if result.success:
-                    any_success = True
-                    all_output_data.extend(result.output_data)
-                    prefix = f"[{sheet_name}]\n" if multi else ""
-                    all_messages.append(f"{prefix}{result.message}")
-                    if multi:
-                        all_audit_rows.extend(result.audit_rows)
-                else:
-                    prefix = f"[{sheet_name}] FAILED\n" if multi else "FAILED\n"
-                    all_messages.append(f"{prefix}{result.message}")
-
-            if any_success and multi:
-                ws_out = _get_or_create_sheet(wb, "Output")
-                _write_rows_to_sheet(ws_out, all_output_data)
-
-                ws_audit = _get_or_create_sheet(wb, "Audit_Skipped")
-                _write_audit_header(ws_audit)
-                for i, row_vals in enumerate(all_audit_rows):
-                    for c, val in enumerate(row_vals, 1):
-                        ws_audit.cell(row=AUDIT_DETAIL_FIRST_ROW + i, column=c, value=val)
-
-            sep = "\n\n" + ("-" * 40) + "\n\n" if multi else ""
-            combined_msg = sep.join(all_messages)
-
-            self.result = ConversionResult(
-                success=any_success,
-                message=combined_msg,
-                output_data=all_output_data,
-            )
-            if any_success:
-                self.wb = wb
+            full_wb = None
+            try:
+                full_wb = load_workbook_from_source(
+                    self.filepath,
+                    sheet_names=self.sheet_names,
+                    data_only=True,
+                    keep_links=False,
+                    keep_vba=keep_vba,
+                )
+                self._convert_loaded_workbook(
+                    full_wb,
+                    convert_statement,
+                    ConversionResult,
+                    _get_or_create_sheet,
+                    _write_rows_to_sheet,
+                    _write_audit_header,
+                    AUDIT_DETAIL_FIRST_ROW,
+                )
+                return
+            except Exception as original_exc:
+                close_wb = getattr(full_wb, "close", None)
+                if callable(close_wb):
+                    try:
+                        close_wb()
+                    except Exception:
+                        pass
+                if source_ext not in (".xlsx", ".xlsm"):
+                    raise
+                try:
+                    wb = build_filtered_workbook_from_excel(
+                        self.filepath,
+                        sheet_names=self.sheet_names,
+                        data_only=True,
+                        keep_links=False,
+                    )
+                    self.save_as_copy = True
+                    self._convert_loaded_workbook(
+                        wb,
+                        convert_statement,
+                        ConversionResult,
+                        _get_or_create_sheet,
+                        _write_rows_to_sheet,
+                        _write_audit_header,
+                        AUDIT_DETAIL_FIRST_ROW,
+                    )
+                    if self.result is not None:
+                        self.result.message += (
+                            "\n\nLarge workbook fallback used. "
+                            "The converted result will be saved as a separate "
+                            "_converted.xlsx copy so the original workbook stays unchanged."
+                        )
+                    return
+                except Exception as fallback_exc:
+                    raise RuntimeError(
+                        f"{original_exc}\n\nFallback conversion also failed:\n{fallback_exc}"
+                    ) from fallback_exc
         except Exception as exc:
             if not self.error_message:
                 self.error_message = str(exc)
@@ -339,6 +386,7 @@ class StatementConverterDialog(QDialog):
         self._sheet_loader = None
         self._result = None
         self._wb = None
+        self._save_as_copy = False
         self._sheet_checks = []
 
         from kdl.config_store import get_dark_mode
@@ -529,6 +577,7 @@ class StatementConverterDialog(QDialog):
         self._worker = None
         self._result = None
         self._wb = None
+        self._save_as_copy = False
         for cb in self._sheet_checks:
             self._sheet_check_layout.removeWidget(cb)
             cb.deleteLater()
@@ -550,6 +599,7 @@ class StatementConverterDialog(QDialog):
         self._convert_btn.setEnabled(False)
         self._result = None
         self._wb = None
+        self._save_as_copy = False
         self._load_grid_btn.setEnabled(False)
         self._result_text.setPlainText("Reading sheets\u2026")
 
@@ -611,6 +661,7 @@ class StatementConverterDialog(QDialog):
         self._load_grid_btn.setEnabled(False)
         self._result = None
         self._wb = None
+        self._save_as_copy = False
 
         self._worker = _ConverterWorker(
             filepath,
@@ -635,6 +686,7 @@ class StatementConverterDialog(QDialog):
         if worker.error_message:
             self._result = None
             self._wb = None
+            self._save_as_copy = False
             self._result_text.setPlainText(f"ERROR:\n{worker.error_message}")
             QMessageBox.critical(self, "Conversion Error", worker.error_message)
             self._release_worker()
@@ -642,6 +694,7 @@ class StatementConverterDialog(QDialog):
 
         result = worker.result
         self._result = result
+        self._save_as_copy = bool(getattr(worker, "save_as_copy", False))
         if result is not None and result.success:
             self._wb = worker.wb
 
@@ -666,7 +719,7 @@ class StatementConverterDialog(QDialog):
             filepath = self._file_edit.text().strip()
             source_ext = os.path.splitext(filepath)[1].lower()
             save_path = filepath
-            if source_ext in (".xls", ".csv", ".html", ".htm"):
+            if self._save_as_copy or source_ext in (".xls", ".csv", ".html", ".htm"):
                 save_path = os.path.splitext(filepath)[0] + "_converted.xlsx"
             saved_name = None
             try:

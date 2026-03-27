@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import os
 import re
 import tempfile
@@ -111,19 +112,27 @@ def detect_source_format(filepath: str) -> str:
     return "excel"
 
 
-def load_html_tables(filepath: str) -> list[list[list[str]]]:
+def read_text_with_fallbacks(filepath: str) -> str:
     with open(filepath, "rb") as f:
         raw = f.read()
 
     for encoding in ("utf-8-sig", "utf-16", "cp1252", "latin-1"):
         try:
-            text = raw.decode(encoding)
-            break
+            return raw.decode(encoding)
         except UnicodeDecodeError:
             continue
-    else:
-        text = raw.decode("utf-8", errors="replace")
 
+    return raw.decode("utf-8", errors="replace")
+
+
+def iter_csv_rows(filepath: str):
+    text = read_text_with_fallbacks(filepath)
+    with io.StringIO(text, newline="") as stream:
+        yield from csv.reader(stream)
+
+
+def load_html_tables(filepath: str) -> list[list[list[str]]]:
+    text = read_text_with_fallbacks(filepath)
     parser = _HTMLTableParser()
     parser.feed(text)
     parser.close()
@@ -202,9 +211,8 @@ def build_workbook_from_source(filepath: str):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = list_source_sheet_names(filepath)[0]
-        with open(filepath, newline="", encoding="utf-8-sig") as f:
-            for row_vals in csv.reader(f):
-                _append_tabular_row(ws, row_vals)
+        for row_vals in iter_csv_rows(filepath):
+            _append_tabular_row(ws, row_vals)
         return wb
 
     if source_kind == "html":
@@ -222,6 +230,46 @@ def build_workbook_from_source(filepath: str):
         return wb
 
     raise ValueError(f"Unsupported tabular source: {filepath}")
+
+
+def build_filtered_workbook_from_excel(
+    filepath: str,
+    *,
+    sheet_names: list[str] | None = None,
+    data_only: bool = True,
+    keep_links: bool = False,
+):
+    import openpyxl
+
+    source_wb = openpyxl.load_workbook(
+        filepath,
+        read_only=True,
+        data_only=data_only,
+        keep_links=keep_links,
+    )
+    target_wb = openpyxl.Workbook()
+    target_wb.remove(target_wb.active)
+
+    wanted = []
+    seen = set()
+    if sheet_names:
+        for name in sheet_names:
+            if name in source_wb.sheetnames and name not in seen:
+                wanted.append(name)
+                seen.add(name)
+    if not wanted:
+        wanted = list(source_wb.sheetnames)
+
+    try:
+        for sheet_name in wanted:
+            src_ws = source_wb[sheet_name]
+            dst_ws = target_wb.create_sheet(title=sheet_name)
+            for row_vals in src_ws.iter_rows(values_only=True):
+                dst_ws.append(list(row_vals))
+    finally:
+        source_wb.close()
+
+    return target_wb
 
 
 def _iter_legacy_xls_connection_strings(filepath: str):
