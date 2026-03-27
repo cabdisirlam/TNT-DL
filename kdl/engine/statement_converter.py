@@ -19,6 +19,7 @@ except ImportError:
 # ── Constants ──────────────────────────────────────────────
 DN_PREFIX_CELL = r"\*s"
 OUTPUT_FIRST_ROW = 2
+HEADER_ROW = 13
 AUDIT_DETAIL_HEADER_ROW = 9
 AUDIT_DETAIL_FIRST_ROW = 10
 
@@ -223,6 +224,39 @@ def _find_txn_header_row(ws: Worksheet) -> int:
     return 0
 
 
+def _normalize_row13_headers(ws: Worksheet):
+    """Mirror the VBA fallback that rewrites row 13 headers in-place."""
+    headers = [
+        'Date',
+        'Transaction Reference',
+        'Transaction Details',
+        'Transaction Type',
+        'Originator Reference',
+        'Debit',
+        'Credit',
+        'Closing Balance',
+    ]
+    for c, header in enumerate(headers, 1):
+        ws.cell(row=HEADER_ROW, column=c, value=header)
+
+
+def _row13_has_expected_layout(ws: Worksheet) -> bool:
+    expected = {
+        1: 'Date',
+        2: 'Transaction Reference',
+        3: 'Transaction Details',
+        4: 'Transaction Type',
+        5: 'Originator Reference',
+        6: 'Debit',
+        7: 'Credit',
+        8: 'Closing Balance',
+    }
+    for col, text in expected.items():
+        if _normalize_header(ws.cell(row=HEADER_ROW, column=col).value) != _normalize_header(text):
+            return False
+    return True
+
+
 # ── Output row builders (return plain lists, no worksheet I/O) ─────────────
 
 def _fmt_date(d: date) -> str:
@@ -390,6 +424,17 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
 
     # 1) Find header row
     hdr_row = _find_txn_header_row(ws)
+    if hdr_row == 0:
+        _normalize_row13_headers(ws)
+        hdr_row = HEADER_ROW
+
+    # Some CBK statements arrive with row 13 shifted (for example blank column B
+    # and the rest of the headers moved one column right). The VBA macro fixes
+    # that by rewriting row 13, so do the same here.
+    if hdr_row == HEADER_ROW and not _row13_has_expected_layout(ws):
+        _normalize_row13_headers(ws)
+        hdr_row = HEADER_ROW
+
     if hdr_row == 0:
         return ConversionResult(
             success=False,
