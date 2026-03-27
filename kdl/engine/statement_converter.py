@@ -17,15 +17,8 @@ except ImportError:
     openpyxl = None
 
 # ── Constants ──────────────────────────────────────────────
-OUTPUT_HEADERS = [
-    "Action",
-    "Type",
-    "Code",
-    "Number",
-    "Transaction Date",
-    "Value Date",
-    "Amount",
-]
+DN_PREFIX_CELL = r"\*s"
+OUTPUT_FIRST_ROW = 2
 AUDIT_DETAIL_HEADER_ROW = 9
 AUDIT_DETAIL_FIRST_ROW = 10
 
@@ -239,35 +232,48 @@ def _fmt_date(d: date) -> str:
 def _make_payment_row(doc_no, dt: date, amt: float) -> list:
     return [
         'tab',
-        'Payment',
+        'tab',
         'TRFD',
+        'tab',
         str(doc_no) if doc_no else '',
+        'tab',
         _fmt_date(dt),
+        'tab',
         _fmt_date(dt),
+        'tab',
         amt,
+        'tab',
+        DN_PREFIX_CELL,
+        '*DN',
     ]
 
 
 def _make_receipt_row(doc_no: str, dt: date, amt: float) -> list:
     return [
         'tab',
-        'Receipt',
+        '*DN',
+        'r',
+        'tab',
         'TRFC',
+        'tab',
         doc_no,
+        'tab',
         _fmt_date(dt),
+        'tab',
         _fmt_date(dt),
+        'tab',
         amt,
+        'tab',
+        DN_PREFIX_CELL,
+        '*DN',
     ]
 
 
 def _write_rows_to_sheet(ws_out: Worksheet, rows: list[list]):
-    """Write a list of table-format value-lists to ws_out starting at row 2."""
-    for c, header in enumerate(OUTPUT_HEADERS, 1):
-        cell = ws_out.cell(row=1, column=c, value=header)
-        cell.font = Font(bold=True)
+    """Write keystroke-format rows to ws_out starting at row 2, leaving row 1 blank."""
     for i, row_vals in enumerate(rows):
         for c, val in enumerate(row_vals, 1):
-            ws_out.cell(row=i + 2, column=c, value=val)
+            ws_out.cell(row=i + OUTPUT_FIRST_ROW, column=c, value=val)
 
 
 # ── Audit writers ──────────────────────────────────────────
@@ -488,8 +494,8 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
 
     # 8) Sort combined rows by date in Python, then write to worksheet once
     def _sort_key(row_vals: list) -> date:
-        # Table format: index 5 = value date, index 4 = transaction date.
-        v = row_vals[5] if len(row_vals) > 5 and row_vals[5] else row_vals[4]
+        # Keystroke format: value date is column I (index 8), payment date fallback is G (index 6).
+        v = row_vals[8] if len(row_vals) > 8 and row_vals[8] else row_vals[6]
         if isinstance(v, str):
             try:
                 return _parse_dmon_y(v, '-') or date.min
