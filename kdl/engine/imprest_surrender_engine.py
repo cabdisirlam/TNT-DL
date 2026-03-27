@@ -248,6 +248,9 @@ TEMPLATE_ACTIONS = (
     ("hotkey", ["ctrl"], "s"),
     ("delay", 500),              # settle: let IFMIS commit the save before clearing
     ("hotkey", ["ctrl"], "f4"),
+    # IFMIS can take a moment to open the follow-on apply/prepayment flow
+    # after the clear-record action.
+    ("delay", 500),
     ("hotkey", ["alt"], "c"),
     ("hotkey", ["alt"], "u"),
     ("hotkey", ["alt"], "k"),
@@ -255,8 +258,13 @@ TEMPLATE_ACTIONS = (
     ("key", "down"),
     ("key", "down"),
     ("key", "enter"),
+    # Give the selected apply/prepayment screen time to receive focus before
+    # typing the old imprest number.
+    ("delay", 500),
     ("field", "Old_Imprest_No"),
-    ("tab", 2),
+    # Match the exported 109-step DL macro: after entering the old imprest
+    # number IFMIS needs seven Tabs to reach the application amount field.
+    ("tab", 7),
     ("field", "Application_Amount"),
     ("tab", 2),
     ("key", "enter"),
@@ -269,12 +277,17 @@ TEMPLATE_ACTIONS = (
     ("hotkey", ["ctrl"], "s"),
     ("delay", 500),              # settle: let IFMIS commit before navigation
     ("hotkey", ["ctrl"], "f4"),
+    # Clearing the record and reopening the next form is one of the most
+    # timing-sensitive transitions in IFMIS.
+    ("delay", 700),
     ("key", "alt"),
+    ("delay", 250),
     ("key", "down"),
     ("key", "down"),
     ("key", "down"),
     ("key", "down"),
     ("key", "enter"),
+    ("delay", 350),
     ("hotkey", ["shift"], "tab"),
     ("hotkey", ["shift"], "tab"),
     ("hotkey", ["shift"], "tab"),
