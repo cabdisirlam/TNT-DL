@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -23,12 +24,17 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
+from kdl.dialogs.dialog_sizing import (
+    create_hint_button,
+    create_scrollable_dialog_layout,
+    fit_dialog_to_screen,
+)
 from kdl.styles import accent_button_qss, dialog_qss
 
 
@@ -139,7 +145,7 @@ class BudgetDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("GOK IFMIS Budget Processor")
-        self.setMinimumWidth(640)
+        self.setMinimumWidth(620)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
         self._worker       = None
         self._sheet_loader = None
@@ -153,9 +159,7 @@ class BudgetDialog(QDialog):
 
     # ------------------------------------------------------------------
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout = create_scrollable_dialog_layout(self)
 
         intro_row = QHBoxLayout()
         intro_row.setSpacing(8)
@@ -210,7 +214,14 @@ class BudgetDialog(QDialog):
         self._sheet_check_layout = QGridLayout(self._sheet_check_container)
         self._sheet_check_layout.setSpacing(8)
         self._sheet_check_layout.setContentsMargins(4, 2, 4, 2)
-        sheet_outer.addWidget(self._sheet_check_container)
+        self._sheet_scroll = QScrollArea()
+        self._sheet_scroll.setWidgetResizable(True)
+        self._sheet_scroll.setFrameShape(QFrame.NoFrame)
+        self._sheet_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._sheet_scroll.setMinimumHeight(88)
+        self._sheet_scroll.setMaximumHeight(200)
+        self._sheet_scroll.setWidget(self._sheet_check_container)
+        sheet_outer.addWidget(self._sheet_scroll)
         layout.addWidget(sheet_group)
 
         # ── Process button ──
@@ -402,12 +413,14 @@ class BudgetDialog(QDialog):
     def _fit_to_screen(self):
         fit_dialog_to_screen(
             self,
-            min_width=760,
-            min_height=540,
-            preferred_width=940,
-            wide_width=1080,
-            margin_width=72,
-            margin_height=80,
-            extra_hint_width=40,
+            min_width=680,
+            min_height=420,
+            preferred_width=800,
+            wide_width=880,
+            preferred_height=560,
+            tall_height=640,
+            margin_width=56,
+            margin_height=64,
+            extra_hint_width=32,
             extra_hint_height=40,
         )
