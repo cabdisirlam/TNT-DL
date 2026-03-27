@@ -169,7 +169,7 @@ TEMPLATE_ACTIONS_PGDN = (
 # ── Excel I/O ─────────────────────────────────────────────────────────────────
 
 def build_keystroke_row(row: dict) -> list:
-    """Updated 109-cell DataLoad grid row for Imprest surrender application."""
+    """Updated 110-cell DataLoad grid row for Imprest surrender application."""
     row = _normalize_invoice_row(row)
     sup = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
@@ -195,7 +195,7 @@ def build_keystroke_row(row: dict) -> list:
         _T, _CTRLS, _CTRLF4, "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}",
         old_imp, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
         "\\{TAB}", "\\{ENTER}", "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", _CTRLS, _CTRLF4,
-        "\\%", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
+        "\\%", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
     ]
 
 
@@ -287,6 +287,7 @@ TEMPLATE_ACTIONS = (
     ("key", "down"),
     ("key", "down"),
     ("key", "enter"),
+    ("key", "down"),
     ("delay", 350),
     ("hotkey", ["shift"], "tab"),
     ("hotkey", ["shift"], "tab"),
@@ -929,7 +930,7 @@ def _build_dl_keystroke_row(row: dict) -> list:
 
 
 def _build_dl_keystroke_row(row: dict) -> list:
-    """Updated 109-cell backslash-macro row for DataLoad export."""
+    """Updated 110-cell backslash-macro row for DataLoad export."""
     row = _normalize_invoice_row(row)
     sup = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
@@ -955,7 +956,7 @@ def _build_dl_keystroke_row(row: dict) -> list:
         "\\{TAB}", "\\^s", "\\^{F4}", "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}",
         old_imp, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
         "\\{TAB}", "\\{ENTER}", "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", "\\^s", "\\^{F4}",
-        "\\%", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
+        "\\%", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
     ]
 
 
@@ -1076,7 +1077,7 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
     blue = "0070C0"
     white_text = "FFFFFF"
     grey_bg = "F2F2F2"
-    ncols = 109
+    ncols = 110
     title_font = Font(bold=True, size=10, color=white_text)
     header_font = Font(bold=True, color=white_text, size=9)
     body_font = Font(size=9)
