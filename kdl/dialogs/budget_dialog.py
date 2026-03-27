@@ -31,7 +31,12 @@ from PySide6.QtWidgets import (
 
 from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import accent_button_qss, dialog_qss
-from kdl.tabular_import import build_workbook_from_source, list_source_sheet_names
+from kdl.tabular_import import (
+    build_workbook_from_source,
+    convert_legacy_xls_to_temp_xlsx,
+    detect_source_format,
+    list_source_sheet_names,
+)
 
 
 def _default_dir() -> str:
@@ -70,7 +75,8 @@ class _SheetLoaderWorker(QThread):
     def run(self):
         try:
             ext = os.path.splitext(self.filepath)[1].lower()
-            if ext in (".csv", ".html", ".htm"):
+            source_kind = detect_source_format(self.filepath)
+            if source_kind in ("csv", "html"):
                 self.sheets_ready.emit(list_source_sheet_names(self.filepath))
                 return
             if ext in (".xlsx", ".xlsm"):
@@ -78,6 +84,19 @@ class _SheetLoaderWorker(QThread):
                 if names:
                     self.sheets_ready.emit(names)
                     return
+            if ext == ".xls":
+                try:
+                    import xlrd
+                    wb = xlrd.open_workbook(self.filepath, on_demand=True)
+                    try:
+                        self.sheets_ready.emit(list(wb.sheet_names()))
+                    finally:
+                        release = getattr(wb, "release_resources", None)
+                        if callable(release):
+                            release()
+                    return
+                except Exception:
+                    pass
             import openpyxl
             wb = openpyxl.load_workbook(
                 self.filepath, read_only=True, data_only=True, keep_links=False
@@ -102,17 +121,24 @@ class _BudgetWorker(QThread):
         self.success     = False
 
     def run(self):
+        tmp_path = None
         try:
             import openpyxl
             source_ext = os.path.splitext(self.filepath)[1].lower()
-            if source_ext in (".csv", ".html", ".htm"):
+            source_kind = detect_source_format(self.filepath)
+            if source_kind in ("csv", "html"):
                 wb = build_workbook_from_source(self.filepath)
-                if source_ext == ".csv":
+                if source_kind == "csv":
                     self.sheet_names = [wb.sheetnames[0]]
                 else:
                     self.sheet_names = [name for name in self.sheet_names if name in wb.sheetnames]
                     if not self.sheet_names:
                         self.sheet_names = list(wb.sheetnames)
+            elif source_ext == ".xls":
+                tmp_path = convert_legacy_xls_to_temp_xlsx(self.filepath)
+                wb = openpyxl.load_workbook(
+                    tmp_path, data_only=True, keep_links=False
+                )
             else:
                 wb = openpyxl.load_workbook(
                     self.filepath, data_only=True, keep_links=False
@@ -127,6 +153,12 @@ class _BudgetWorker(QThread):
             import traceback
             self.success = False
             self.message = f"{exc}\n\n{traceback.format_exc()}"
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
 
 # ---------------------------------------------------------------------------

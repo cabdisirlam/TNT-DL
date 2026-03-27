@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import accent_button_qss, dialog_qss, themed_button_qss
+from kdl.tabular_import import detect_source_format
 
 
 def _default_browse_dir() -> str:
@@ -166,14 +167,15 @@ class _SheetLoaderWorker(QThread):
     def run(self):
         try:
             ext = os.path.splitext(self.filepath)[1].lower()
+            source_kind = detect_source_format(self.filepath)
 
             # ── CSV: single implicit sheet ──
-            if ext == ".csv":
+            if source_kind == "csv":
                 name = os.path.splitext(os.path.basename(self.filepath))[0]
                 self.sheets_ready.emit([name])
                 return
 
-            if ext in (".html", ".htm"):
+            if source_kind == "html":
                 tables = _load_html_tables(self.filepath)
                 if not tables:
                     raise RuntimeError("No HTML tables found in the selected file.")
@@ -282,10 +284,11 @@ class _ConverterWorker(QThread):
             )
 
             source_ext = os.path.splitext(self.filepath)[1].lower()
+            source_kind = detect_source_format(self.filepath)
             load_path = self.filepath
 
-            if source_ext in (".csv", ".html", ".htm"):
-                if source_ext == ".csv":
+            if source_kind in ("csv", "html"):
+                if source_kind == "csv":
                     wb = openpyxl.Workbook()
                     ws = wb.active
                     sheet_name = os.path.splitext(os.path.basename(self.filepath))[0]

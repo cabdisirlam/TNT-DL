@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import os
+import tempfile
 from html.parser import HTMLParser
 
 
@@ -73,6 +74,41 @@ def _base_name(filepath: str) -> str:
     return os.path.splitext(os.path.basename(filepath))[0]
 
 
+def detect_source_format(filepath: str) -> str:
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext == ".csv":
+        return "csv"
+    if ext in (".html", ".htm"):
+        return "html"
+
+    try:
+        with open(filepath, "rb") as f:
+            sample = f.read(16384)
+    except OSError:
+        return "excel"
+
+    if sample.startswith(b"PK\x03\x04"):
+        return "excel"
+    if sample.startswith(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"):
+        return "excel"
+
+    lowered = sample.decode("latin-1", errors="ignore").lower()
+    html_markers = (
+        "<html",
+        "<table",
+        "<tr",
+        "<td",
+        "<th",
+        "<!doctype html",
+        "urn:schemas-microsoft-com:office:excel",
+        "content-type",
+    )
+    if any(marker in lowered for marker in html_markers):
+        return "html"
+
+    return "excel"
+
+
 def load_html_tables(filepath: str) -> list[list[list[str]]]:
     with open(filepath, "rb") as f:
         raw = f.read()
@@ -93,10 +129,10 @@ def load_html_tables(filepath: str) -> list[list[list[str]]]:
 
 
 def list_source_sheet_names(filepath: str) -> list[str]:
-    ext = os.path.splitext(filepath)[1].lower()
-    if ext == ".csv":
+    source_kind = detect_source_format(filepath)
+    if source_kind == "csv":
         return [_sheet_safe_name(_base_name(filepath), "Sheet1")]
-    if ext in (".html", ".htm"):
+    if source_kind == "html":
         tables = load_html_tables(filepath)
         if not tables:
             raise RuntimeError("No HTML tables found in the selected file.")
@@ -112,8 +148,8 @@ def list_source_sheet_names(filepath: str) -> list[str]:
 def build_workbook_from_source(filepath: str):
     import openpyxl
 
-    ext = os.path.splitext(filepath)[1].lower()
-    if ext == ".csv":
+    source_kind = detect_source_format(filepath)
+    if source_kind == "csv":
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = list_source_sheet_names(filepath)[0]
@@ -122,7 +158,7 @@ def build_workbook_from_source(filepath: str):
                 ws.append(row_vals)
         return wb
 
-    if ext in (".html", ".htm"):
+    if source_kind == "html":
         tables = load_html_tables(filepath)
         if not tables:
             raise RuntimeError("No HTML tables found in the selected file.")
@@ -136,3 +172,54 @@ def build_workbook_from_source(filepath: str):
         return wb
 
     raise ValueError(f"Unsupported tabular source: {filepath}")
+
+
+def convert_legacy_xls_to_temp_xlsx(filepath: str) -> str:
+    excel_app = None
+    excel_wb = None
+    pythoncom = None
+    temp_path = ""
+    try:
+        import pythoncom
+        import win32com.client
+
+        pythoncom.CoInitialize()
+        excel_app = win32com.client.DispatchEx("Excel.Application")
+        excel_app.Visible = False
+        excel_app.DisplayAlerts = False
+        excel_wb = excel_app.Workbooks.Open(
+            os.path.abspath(filepath),
+            UpdateLinks=0,
+            ReadOnly=True,
+        )
+        fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+        os.close(fd)
+        os.unlink(temp_path)
+        excel_wb.SaveAs(temp_path, 51)
+        return temp_path
+    except Exception as exc:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+        raise RuntimeError(
+            "Could not convert this legacy .xls workbook. Open it in Excel and save as .xlsx, "
+            "or make sure Excel is installed."
+        ) from exc
+    finally:
+        if excel_wb is not None:
+            try:
+                excel_wb.Close(False)
+            except Exception:
+                pass
+        if excel_app is not None:
+            try:
+                excel_app.Quit()
+            except Exception:
+                pass
+        if pythoncom is not None:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass

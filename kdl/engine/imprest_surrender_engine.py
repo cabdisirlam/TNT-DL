@@ -306,17 +306,30 @@ def read_invoice_rows(filepath: str) -> tuple:
     """
     import os
     ext = os.path.splitext(filepath)[1].lower()
+    from kdl.tabular_import import detect_source_format
+    source_kind = detect_source_format(filepath)
 
+    tmp_path = None
     try:
         import openpyxl
     except ImportError:
         return [], "openpyxl is not installed."
 
     try:
-        if ext in (".csv", ".html", ".htm"):
+        if source_kind in ("csv", "html"):
             from kdl.tabular_import import build_workbook_from_source
 
             wb = build_workbook_from_source(filepath)
+        elif ext == ".xls":
+            from kdl.tabular_import import convert_legacy_xls_to_temp_xlsx
+
+            tmp_path = convert_legacy_xls_to_temp_xlsx(filepath)
+            wb = openpyxl.load_workbook(
+                tmp_path,
+                data_only=True,
+                read_only=True,
+                keep_links=False,
+            )
         else:
             wb = openpyxl.load_workbook(
                 filepath,
@@ -364,6 +377,11 @@ def read_invoice_rows(filepath: str) -> tuple:
         close_wb = getattr(wb, "close", None)
         if callable(close_wb):
             close_wb()
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def _read_invoice_rows_csv(filepath: str) -> tuple:
@@ -560,19 +578,30 @@ def import_ifmis_export(filepath: str) -> tuple:
     """
     import os as _os
     ext = _os.path.splitext(filepath)[1].lower()
+    from kdl.tabular_import import detect_source_format
+    source_kind = detect_source_format(filepath)
 
+    tmp_path = None
     try:
         import openpyxl
     except ImportError:
         return [], 0, "openpyxl is not installed."
 
-    if ext in (".csv", ".html", ".htm"):
+    if source_kind in ("csv", "html"):
         try:
             from kdl.tabular_import import build_workbook_from_source
 
             wb = build_workbook_from_source(filepath)
         except Exception as exc:
             return [], 0, f"Cannot open source file: {exc}"
+    elif ext == ".xls":
+        try:
+            from kdl.tabular_import import convert_legacy_xls_to_temp_xlsx
+
+            tmp_path = convert_legacy_xls_to_temp_xlsx(filepath)
+            wb = openpyxl.load_workbook(tmp_path, data_only=True)
+        except Exception as exc:
+            return [], 0, f"Cannot open file: {exc}"
     else:
         try:
             wb = openpyxl.load_workbook(filepath, data_only=True)
@@ -648,6 +677,11 @@ def import_ifmis_export(filepath: str) -> tuple:
         }
         rows.append(row_dict)
 
+    if tmp_path and os.path.exists(tmp_path):
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
     return rows, skipped, ""
 
 
@@ -660,19 +694,35 @@ def import_ifmis_export(filepath: str) -> tuple:
     import os as _os
 
     ext = _os.path.splitext(filepath)[1].lower()
+    from kdl.tabular_import import detect_source_format
+    source_kind = detect_source_format(filepath)
 
+    tmp_path = None
     try:
         import openpyxl
     except ImportError:
         return [], 0, "openpyxl is not installed."
 
-    if ext in (".csv", ".html", ".htm"):
+    if source_kind in ("csv", "html"):
         try:
             from kdl.tabular_import import build_workbook_from_source
 
             wb = build_workbook_from_source(filepath)
         except Exception as exc:
             return [], 0, f"Cannot open source file: {exc}"
+    elif ext == ".xls":
+        try:
+            from kdl.tabular_import import convert_legacy_xls_to_temp_xlsx
+
+            tmp_path = convert_legacy_xls_to_temp_xlsx(filepath)
+            wb = openpyxl.load_workbook(
+                tmp_path,
+                data_only=True,
+                read_only=True,
+                keep_links=False,
+            )
+        except Exception as exc:
+            return [], 0, f"Cannot open file: {exc}"
     else:
         try:
             wb = openpyxl.load_workbook(
@@ -761,6 +811,11 @@ def import_ifmis_export(filepath: str) -> tuple:
         close_wb = getattr(wb, "close", None)
         if callable(close_wb):
             close_wb()
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def export_prefilled_template(filepath: str, rows: list) -> str:
@@ -1056,13 +1111,24 @@ def export_keystroke_sheet_to_workbook(source_path: str, save_path: str, rows: l
         return "openpyxl is not installed."
 
     wb = None
+    tmp_path = None
     try:
         source_ext = os.path.splitext(source_path)[1].lower()
+        from kdl.tabular_import import detect_source_format
+        source_kind = detect_source_format(source_path)
         keep_vba = source_path.lower().endswith(".xlsm") or save_path.lower().endswith(".xlsm")
-        if source_ext in (".csv", ".html", ".htm"):
+        if source_kind in ("csv", "html"):
             from kdl.tabular_import import build_workbook_from_source
 
             wb = build_workbook_from_source(source_path)
+        elif source_ext == ".xls":
+            from kdl.tabular_import import convert_legacy_xls_to_temp_xlsx
+
+            tmp_path = convert_legacy_xls_to_temp_xlsx(source_path)
+            wb = openpyxl.load_workbook(
+                tmp_path,
+                keep_links=False,
+            )
         else:
             wb = openpyxl.load_workbook(
                 source_path,
@@ -1082,6 +1148,11 @@ def export_keystroke_sheet_to_workbook(source_path: str, save_path: str, rows: l
             close_wb = getattr(wb, "close", None)
             if callable(close_wb):
                 close_wb()
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def _write_keystroke_sheet(ws, rows: list) -> None:
