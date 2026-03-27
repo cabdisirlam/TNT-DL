@@ -26,7 +26,7 @@ class DatabaseSetupDialog(QDialog):
     def __init__(self, current_settings: Dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Setup Databases")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(380)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
@@ -140,14 +140,14 @@ class DatabaseSetupDialog(QDialog):
     def _fit_to_screen(self):
         fit_dialog_to_screen(
             self,
-            min_width=560,
-            min_height=420,
-            preferred_width=720,
-            wide_width=840,
+            min_width=440,
+            min_height=400,
+            preferred_width=640,
+            wide_width=760,
             margin_width=72,
             margin_height=72,
             extra_hint_width=32,
-            extra_hint_height=32,
+            extra_hint_height=28,
         )
 
     def _load_mode(self):

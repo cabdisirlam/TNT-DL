@@ -306,7 +306,7 @@ class StatementConverterDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Bank Statement Converter")
-        self.setMinimumWidth(640)
+        self.setMinimumWidth(440)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
         self._worker = None
         self._sheet_loader = None
@@ -331,9 +331,19 @@ class StatementConverterDialog(QDialog):
             pass
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setSpacing(0)
+        outer.setContentsMargins(16, 16, 16, 16)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        _content = QWidget()
+        layout = QVBoxLayout(_content)
         layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(0, 0, 4, 0)
 
         intro_row = QHBoxLayout()
         intro_row.setSpacing(8)
@@ -427,7 +437,13 @@ class StatementConverterDialog(QDialog):
         result_layout.addWidget(self._result_text)
         layout.addWidget(result_group)
 
+        layout.addStretch()
+        scroll.setWidget(_content)
+        outer.addWidget(scroll, 1)
+
+        # ── Action row (always visible outside scroll) ──
         action_row = QHBoxLayout()
+        action_row.setContentsMargins(0, 8, 0, 0)
         self._load_grid_btn = QPushButton("Load Output to Grid")
         self._load_grid_btn.setMinimumWidth(158)
         self._load_grid_btn.setEnabled(False)
@@ -443,7 +459,7 @@ class StatementConverterDialog(QDialog):
         action_row.addWidget(self._load_grid_btn)
         action_row.addStretch()
         action_row.addWidget(self._close_btn)
-        layout.addLayout(action_row)
+        outer.addLayout(action_row)
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -473,7 +489,7 @@ class StatementConverterDialog(QDialog):
         self._result = None
         self._wb = None
         self._load_grid_btn.setEnabled(False)
-        self._result_text.setPlainText("Reading sheets…")
+        self._result_text.setPlainText("Reading sheets\u2026")
 
         loader = _SheetLoaderWorker(filepath)
         loader.sheets_ready.connect(self._on_sheets_ready)
@@ -638,12 +654,12 @@ class StatementConverterDialog(QDialog):
     def _fit_to_screen(self):
         fit_dialog_to_screen(
             self,
-            min_width=760,
-            min_height=540,
-            preferred_width=940,
-            wide_width=1080,
+            min_width=560,
+            min_height=420,
+            preferred_width=720,
+            wide_width=860,
             margin_width=72,
-            margin_height=80,
-            extra_hint_width=40,
-            extra_hint_height=40,
+            margin_height=72,
+            extra_hint_width=32,
+            extra_hint_height=28,
         )

@@ -22,7 +22,7 @@ class ShortcutsDialog(QDialog):
     def __init__(self, shortcuts: dict = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"{__display_name__} - Shortcuts / Commands")
-        self.setMinimumSize(460, 360)
+        self.setMinimumSize(380, 340)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
@@ -158,12 +158,12 @@ class ShortcutsDialog(QDialog):
     def _fit_to_screen(self):
         fit_dialog_to_screen(
             self,
-            min_width=640,
+            min_width=560,
             min_height=420,
-            preferred_width=900,
-            wide_width=1040,
+            preferred_width=720,
+            wide_width=860,
             margin_width=72,
             margin_height=72,
-            extra_hint_width=36,
+            extra_hint_width=32,
             extra_hint_height=28,
         )

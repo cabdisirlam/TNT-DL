@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -226,7 +228,7 @@ class FinancialReportDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("IFMIS Financial Statements Generator")
-        self.setMinimumWidth(640)
+        self.setMinimumWidth(440)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
         self._worker       = None
         self._sheet_loader = None
@@ -240,9 +242,19 @@ class FinancialReportDialog(QDialog):
 
     # ------------------------------------------------------------------
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setSpacing(0)
+        outer.setContentsMargins(16, 16, 16, 16)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        _content = QWidget()
+        layout = QVBoxLayout(_content)
         layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(0, 0, 4, 0)
 
         intro_row = QHBoxLayout()
         intro_row.setSpacing(8)
@@ -308,8 +320,13 @@ class FinancialReportDialog(QDialog):
         result_layout.addWidget(self._result_text)
         layout.addWidget(result_group)
 
-        # ── Save + Close ──
+        layout.addStretch()
+        scroll.setWidget(_content)
+        outer.addWidget(scroll, 1)
+
+        # ── Save + Close (always visible outside scroll) ──
         action_row = QHBoxLayout()
+        action_row.setContentsMargins(0, 8, 0, 0)
         self._save_btn = QPushButton("Save Statements...")
         self._save_btn.setMinimumWidth(158)
         self._save_btn.setEnabled(False)
@@ -321,7 +338,7 @@ class FinancialReportDialog(QDialog):
         action_row.addWidget(self._save_btn)
         action_row.addStretch()
         action_row.addWidget(self._close_btn)
-        layout.addLayout(action_row)
+        outer.addLayout(action_row)
 
     # ------------------------------------------------------------------
     def _browse_file(self):
@@ -349,7 +366,7 @@ class FinancialReportDialog(QDialog):
         self._generate_btn.setEnabled(False)
         self._save_btn.setEnabled(False)
         self._wb_out = None
-        self._result_text.setPlainText("Reading sheets…")
+        self._result_text.setPlainText("Reading sheets\u2026")
 
         loader = _SheetLoaderWorker(filepath)
         loader.sheets_ready.connect(self._on_sheets_ready)
@@ -477,12 +494,12 @@ class FinancialReportDialog(QDialog):
     def _fit_to_screen(self):
         fit_dialog_to_screen(
             self,
-            min_width=760,
-            min_height=540,
-            preferred_width=940,
-            wide_width=1080,
+            min_width=560,
+            min_height=420,
+            preferred_width=720,
+            wide_width=860,
             margin_width=72,
-            margin_height=80,
-            extra_hint_width=40,
-            extra_hint_height=40,
+            margin_height=72,
+            extra_hint_width=32,
+            extra_hint_height=28,
         )

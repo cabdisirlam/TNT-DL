@@ -14,14 +14,17 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
@@ -100,7 +103,7 @@ class ImprestSurrenderDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Imprest Surrender AP Loader")
-        self.setMinimumWidth(640)
+        self.setMinimumWidth(440)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
@@ -126,9 +129,19 @@ class ImprestSurrenderDialog(QDialog):
             pass
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setSpacing(0)
+        outer.setContentsMargins(16, 16, 16, 16)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        _content = QWidget()
+        layout = QVBoxLayout(_content)
         layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(0, 0, 4, 0)
 
         intro_row = QHBoxLayout()
         intro_row.setSpacing(8)
@@ -216,8 +229,14 @@ class ImprestSurrenderDialog(QDialog):
         preview_layout.addWidget(self._preview)
         layout.addWidget(preview_group)
 
+        layout.addStretch()
+        scroll.setWidget(_content)
+        outer.addWidget(scroll, 1)
+
+        # ── Action buttons (always visible outside scroll) ──
         button_row = QHBoxLayout()
         button_row.setSpacing(10)
+        button_row.setContentsMargins(0, 8, 0, 0)
 
         close_btn = QPushButton("Close")
         close_btn.setMinimumWidth(104)
@@ -247,7 +266,7 @@ class ImprestSurrenderDialog(QDialog):
         self._load_btn.clicked.connect(self._load_into_grid)
         button_row.addWidget(self._load_btn)
         button_row.addStretch()
-        layout.addLayout(button_row)
+        outer.addLayout(button_row)
 
     def _set_busy(self, busy: bool):
         self._import_ifmis_btn.setEnabled(not busy)
@@ -466,13 +485,13 @@ class ImprestSurrenderDialog(QDialog):
     def _fit_to_screen(self):
         fit_dialog_to_screen(
             self,
-            min_width=760,
-            min_height=540,
-            preferred_width=940,
-            wide_width=1080,
+            min_width=560,
+            min_height=420,
+            preferred_width=720,
+            wide_width=860,
             margin_width=72,
-            margin_height=80,
-            extra_hint_width=40,
+            margin_height=72,
+            extra_hint_width=32,
             extra_hint_height=28,
         )
 

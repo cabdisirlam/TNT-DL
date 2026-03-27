@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -15,7 +16,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from kdl import __display_name__
@@ -64,7 +67,7 @@ class LoadSettingsDialog(QDialog):
         self._hourglass_before_load_control = True
 
         self.setWindowTitle(f"{__display_name__} - Load Settings")
-        self.setMinimumSize(720, 470)
+        self.setMinimumSize(440, 360)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
 
@@ -91,8 +94,18 @@ class LoadSettingsDialog(QDialog):
 
     def _build_ui(self):
         outer = QVBoxLayout(self)
-        outer.setSpacing(6)
+        outer.setSpacing(0)
         outer.setContentsMargins(8, 8, 8, 8)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        _content = QWidget()
+        _inner = QVBoxLayout(_content)
+        _inner.setSpacing(6)
+        _inner.setContentsMargins(0, 0, 4, 0)
 
         title_row = QHBoxLayout()
         title_row.setSpacing(8)
@@ -114,7 +127,7 @@ class LoadSettingsDialog(QDialog):
             )
         )
         title_row.addStretch()
-        outer.addLayout(title_row)
+        _inner.addLayout(title_row)
 
         body = QGridLayout()
         body.setHorizontalSpacing(8)
@@ -122,7 +135,7 @@ class LoadSettingsDialog(QDialog):
         body.setContentsMargins(0, 0, 0, 0)
         body.setColumnStretch(0, 1)
         body.setColumnStretch(1, 1)
-        outer.addLayout(body)
+        _inner.addLayout(body)
 
         target_group = QGroupBox("Target Application")
         tg = QGridLayout(target_group)
@@ -286,8 +299,14 @@ class LoadSettingsDialog(QDialog):
         pg.addWidget(popup_note)
         body.addWidget(popup_group, 2, 0, 1, 2)
 
+        _inner.addStretch()
+        scroll.setWidget(_content)
+        outer.addWidget(scroll, 1)
+
+        # ── Buttons + tip (always visible outside scroll) ──
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
+        btn_row.setContentsMargins(0, 8, 0, 0)
         btn_row.addStretch()
         button_height = 40
 
@@ -320,13 +339,13 @@ class LoadSettingsDialog(QDialog):
     def _fit_to_screen(self):
         fit_dialog_to_screen(
             self,
-            min_width=760,
-            min_height=500,
-            preferred_width=960,
-            wide_width=1100,
-            margin_width=64,
+            min_width=560,
+            min_height=420,
+            preferred_width=720,
+            wide_width=860,
+            margin_width=72,
             margin_height=72,
-            extra_hint_width=40,
+            extra_hint_width=32,
             extra_hint_height=28,
         )
 
