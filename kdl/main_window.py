@@ -1769,7 +1769,9 @@ class MainWindow(QMainWindow):
             return
         try:
             self.spreadsheet.load_from_rows(rows)
-            self.status_label.setText(f"Statement Output loaded: {len(rows)} row(s)")
+            self._convert_to_table_format()
+            if not self.status_label.text().strip():
+                self.status_label.setText(f"Statement Output loaded: {len(rows)} row(s)")
         except Exception as exc:
             self.status_label.setText("Statement Output load failed.")
             QMessageBox.critical(
