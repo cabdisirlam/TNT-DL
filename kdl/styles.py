@@ -595,6 +595,35 @@ def accent_button_qss(dark: bool = False) -> str:
     """
 
 
+def themed_button_qss(dark: bool = False) -> str:
+    """Secondary button that still uses the active app palette."""
+    p = _palette(dark)
+    return f"""
+        QPushButton {{
+            background-color: {p["BG_SURFACE"]};
+            color: {p["TEXT_PRIMARY"]};
+            border: 1px solid {p["ACCENT"]};
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 8px 18px;
+        }}
+        QPushButton:hover {{
+            background-color: {p["ACCENT_LIGHT"]};
+            border-color: {p["ACCENT_HOVER"]};
+        }}
+        QPushButton:pressed {{
+            background-color: {p["BG_ACTIVE"]};
+            border-color: {p["ACCENT_PRESSED"]};
+        }}
+        QPushButton:disabled {{
+            background-color: {p["BG_ELEVATED"]};
+            color: {p["TEXT_MUTED"]};
+            border-color: {p["BORDER_SUBTLE"]};
+        }}
+    """
+
+
 def dialog_qss(dark: bool = False) -> str:
     """Base style for all dialogs."""
     p = _palette(dark)

@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
-from kdl.styles import accent_button_qss, dialog_qss
+from kdl.styles import accent_button_qss, dialog_qss, themed_button_qss
 
 
 def _default_browse_dir() -> str:
@@ -331,6 +331,12 @@ class StatementConverterDialog(QDialog):
             pass
 
     def _build_ui(self):
+        from kdl.config_store import get_dark_mode
+
+        dark = get_dark_mode()
+        primary_btn_qss = accent_button_qss(dark=dark)
+        secondary_btn_qss = themed_button_qss(dark=dark)
+
         outer = QVBoxLayout(self)
         outer.setSpacing(0)
         outer.setContentsMargins(16, 16, 16, 16)
@@ -369,6 +375,7 @@ class StatementConverterDialog(QDialog):
         browse_btn = QPushButton("Browse...")
         browse_btn.setMinimumWidth(112)
         browse_btn.setMinimumHeight(38)
+        browse_btn.setStyleSheet(secondary_btn_qss)
         browse_btn.clicked.connect(self._browse_file)
         file_layout.addWidget(self._file_edit)
         file_layout.addWidget(browse_btn)
@@ -381,9 +388,13 @@ class StatementConverterDialog(QDialog):
         sel_row = QHBoxLayout()
         sel_all_btn = QPushButton("Select All")
         sel_all_btn.setMinimumWidth(108)
+        sel_all_btn.setMinimumHeight(36)
+        sel_all_btn.setStyleSheet(secondary_btn_qss)
         sel_all_btn.clicked.connect(self._select_all_sheets)
         sel_none_btn = QPushButton("Clear All")
         sel_none_btn.setMinimumWidth(108)
+        sel_none_btn.setMinimumHeight(36)
+        sel_none_btn.setStyleSheet(secondary_btn_qss)
         sel_none_btn.clicked.connect(self._select_no_sheets)
         sel_row.addWidget(sel_all_btn)
         sel_row.addWidget(sel_none_btn)
@@ -418,11 +429,9 @@ class StatementConverterDialog(QDialog):
         btn_row = QHBoxLayout()
         self._convert_btn = QPushButton("Convert Workbook")
         self._convert_btn.setEnabled(False)
-        from kdl.config_store import get_dark_mode
-
         self._convert_btn.setMinimumWidth(170)
         self._convert_btn.setMinimumHeight(38)
-        self._convert_btn.setStyleSheet(accent_button_qss(dark=get_dark_mode()))
+        self._convert_btn.setStyleSheet(primary_btn_qss)
         self._convert_btn.clicked.connect(self._run_conversion)
         btn_row.addStretch()
         btn_row.addWidget(self._convert_btn)
@@ -443,10 +452,13 @@ class StatementConverterDialog(QDialog):
 
         # ── Action row (always visible outside scroll) ──
         action_row = QHBoxLayout()
+        action_row.setSpacing(10)
         action_row.setContentsMargins(0, 8, 0, 0)
         self._load_grid_btn = QPushButton("Load Output to Grid")
         self._load_grid_btn.setMinimumWidth(158)
+        self._load_grid_btn.setMinimumHeight(38)
         self._load_grid_btn.setEnabled(False)
+        self._load_grid_btn.setStyleSheet(primary_btn_qss)
         self._load_grid_btn.setToolTip(
             "Load the converted Output sheet into the TNT DL grid and save the workbook."
         )
@@ -454,6 +466,8 @@ class StatementConverterDialog(QDialog):
 
         self._close_btn = QPushButton("Close")
         self._close_btn.setMinimumWidth(104)
+        self._close_btn.setMinimumHeight(38)
+        self._close_btn.setStyleSheet(secondary_btn_qss)
         self._close_btn.clicked.connect(self.accept)
 
         action_row.addWidget(self._load_grid_btn)
