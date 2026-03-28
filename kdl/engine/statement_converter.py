@@ -108,11 +108,13 @@ def _parse_date_cell(cell_value, cell_text: str = '') -> Optional[date]:
         s = s.split()[0]
 
     if '/' in s:
-        result = _parse_mdy(s, '/')
+        result = _parse_numeric_date(s, '/')
         if result is not None:
             return result
     if '-' in s:
         result = _parse_dmon_y(s, '-')
+        if result is None:
+            result = _parse_numeric_date(s, '-')
         if result is not None:
             return result
 
@@ -139,6 +141,38 @@ def _parse_mdy(s: str, sep: str) -> Optional[date]:
         return date(yy, mm, dd)
     except (ValueError, TypeError):
         return None
+
+
+def _parse_dmy(s: str, sep: str) -> Optional[date]:
+    parts = s.strip().split(sep)
+    if len(parts) != 3:
+        return None
+    try:
+        dd, mm, yy = int(parts[0]), int(parts[1]), int(parts[2])
+        if yy < 100:
+            yy += 2000
+        if not (1 <= mm <= 12 and 1 <= dd <= 31):
+            return None
+        return date(yy, mm, dd)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_numeric_date(s: str, sep: str) -> Optional[date]:
+    parts = s.strip().split(sep)
+    if len(parts) != 3 or not all(part.strip().isdigit() for part in parts):
+        return None
+
+    first = int(parts[0])
+    second = int(parts[1])
+
+    if first > 12 and second <= 12:
+        return _parse_dmy(s, sep)
+    if second > 12 and first <= 12:
+        return _parse_mdy(s, sep)
+
+    # Preserve existing behavior for ambiguous purely numeric dates.
+    return _parse_mdy(s, sep)
 
 
 def _parse_dmon_y(s: str, sep: str) -> Optional[date]:
