@@ -127,8 +127,14 @@ def read_text_with_fallbacks(filepath: str) -> str:
 
 def iter_csv_rows(filepath: str):
     text = read_text_with_fallbacks(filepath)
+    # Auto-detect delimiter (comma, semicolon, tab, pipe) from the first 4 KB
+    try:
+        dialect = csv.Sniffer().sniff(text[:4096], delimiters=',;\t|')
+        delimiter = dialect.delimiter
+    except csv.Error:
+        delimiter = ','
     with io.StringIO(text, newline="") as stream:
-        yield from csv.reader(stream)
+        yield from csv.reader(stream, delimiter=delimiter)
 
 
 def load_html_tables(filepath: str) -> list[list[list[str]]]:

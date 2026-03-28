@@ -1898,22 +1898,49 @@ class MainWindow(QMainWindow):
             return self._save_file()
         return True
 
-    def closeEvent(self, event: QCloseEvent):
+    def _shutdown_ui_state(self) -> bool:
+        """
+        Stop timers, dialogs, overlays, and worker threads so the app can exit cleanly.
+        Returns False when a running loader thread refuses to stop within the grace period.
+        """
         self._pending_load_result = None
         self._pending_load_thread = None
         self._deferred_load_result = None
+
+        self._refresh_timer.stop()
         self._progress_hide_timer.stop()
+
+        for dialog in self.findChildren(QDialog):
+            if dialog is self:
+                continue
+            try:
+                dialog.close()
+            except Exception:
+                pass
+
+        try:
+            self._load_overlay.hide()
+            self._load_overlay.close()
+        except Exception:
+            pass
+
         if self.loader_thread and self.loader_thread.isRunning():
             self.loader_thread.stop()
             self.loader_thread.wait(3000)
             if self.loader_thread.isRunning():
-                self._show_styled_message(
-                    "Please Wait",
-                    "Load thread is still stopping. Try closing again in a moment.",
-                    status="warning",
-                )
-                event.ignore()
-                return
+                return False
+
+        return True
+
+    def closeEvent(self, event: QCloseEvent):
+        if not self._shutdown_ui_state():
+            self._show_styled_message(
+                "Please Wait",
+                "Load thread is still stopping. Try closing again in a moment.",
+                status="warning",
+            )
+            event.ignore()
+            return
 
         if not self._ask_save_before_close(
             title="Exit NT_DL",

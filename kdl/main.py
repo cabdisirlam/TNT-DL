@@ -6,6 +6,8 @@ Application entry point.
 import sys
 import os
 import ctypes
+import threading
+import time
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -148,6 +150,22 @@ def _acquire_single_instance_mutex() -> tuple[int | None, bool]:
     return int(mutex), already_running
 
 
+def _start_exit_watchdog(timeout_seconds: float = 5.0) -> None:
+    """
+    Hard-stop the process if shutdown hangs after the UI has already started quitting.
+    This prevents stale hidden instances from surviving after the main window closes.
+    """
+    def _watchdog():
+        time.sleep(timeout_seconds)
+        os._exit(0)
+
+    threading.Thread(
+        target=_watchdog,
+        name="ntdl-exit-watchdog",
+        daemon=True,
+    ).start()
+
+
 def main():
     """Main application entry point."""
     _install_exception_hook()
@@ -162,11 +180,13 @@ def main():
     )
 
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(True)
     app._single_instance_mutex = mutex_handle
     if mutex_handle:
         app.aboutToQuit.connect(
             lambda handle=mutex_handle: ctypes.windll.kernel32.CloseHandle(handle)
         )
+    app.aboutToQuit.connect(_start_exit_watchdog)
 
     # Application metadata
     app.setApplicationName(__app_name__)

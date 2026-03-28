@@ -461,8 +461,9 @@ class LoaderThread(QThread):
         """
         Business rules for Per Row table mode:
         - Type column:
-          - Receipt/r => type 'r' (row loop tabs to next field before next send).
-          - Payment/p => Tab to next field (leave app default type).
+          - Receipt/r => type the full word "Receipt" directly into the LOV field.
+          - Payment/p => type the full word "Payment" directly into the LOV field.
+          Both become DATA cells so auto-tab handles field navigation normally.
         - No/Line column: numeric serials are treated as Tab (skip auto-numbered field).
         """
         if not self.form_mode or parsed.cell_type != CellType.DATA:
@@ -476,18 +477,15 @@ class LoaderThread(QThread):
         if self._form_type_col is not None and col_idx == self._form_type_col:
             if lowered in {"receipt", "r"}:
                 return ParsedCell(
-                    cell_type=CellType.KEYSTROKE,
+                    cell_type=CellType.DATA,
                     raw_value=parsed.raw_value,
-                    key_actions=[
-                        {"type": "key", "key": "down"},
-                        {"type": "type", "text": "r"},
-                    ],
+                    data_text="Receipt",
                 )
             if lowered in {"payment", "p"}:
                 return ParsedCell(
-                    cell_type=CellType.KEYSTROKE,
+                    cell_type=CellType.DATA,
                     raw_value=parsed.raw_value,
-                    key_actions=[{"type": "key", "key": "tab"}],
+                    data_text="Payment",
                 )
             return parsed
 

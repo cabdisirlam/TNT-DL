@@ -405,6 +405,14 @@ class DataSender:
                     text = action.get("text", "")
                     pyautogui.typewrite(text, interval=0.02)
 
+                elif action_type == "delay_ms":
+                    # Explicit inter-action delay (e.g. for LOV dropdowns that need time to open)
+                    ms = float(action.get("ms", 0))
+                    if ms > 0 and not self._sleep_interruptible(ms / 1000.0):
+                        self.last_error = "send_keystrokes delay interrupted"
+                        return False
+                    continue
+
                 _delay = 0.008 if self.load_control else self.speed_delay
                 if not self._sleep_interruptible(_delay):
                     self.last_error = "send_keystrokes interrupted"
@@ -542,6 +550,13 @@ class DataSender:
                 elif action_type == "type":
                     if not self._si_send_unicode(action.get("text", "")):
                         return False
+                elif action_type == "delay_ms":
+                    # Explicit inter-action delay (e.g. for LOV dropdowns that need time to open)
+                    ms = float(action.get("ms", 0))
+                    if ms > 0 and not self._sleep_interruptible(ms / 1000.0):
+                        self.last_error = "send_keystroke_fast delay interrupted"
+                        return False
+                    continue
                 # In fast_send_row_mode, use minimal 2ms settle per cell;
                 # the full delay is applied once at end-of-row instead.
                 if self.fast_send_row_mode:

@@ -17,10 +17,29 @@ set "INSTALL_DIR=%LOCALAPPDATA%\Programs\NT_DL"
 set "START_MENU_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\NT_DL"
 set "START_MENU_LINK=%START_MENU_DIR%\NT_DL.lnk"
 set "DESKTOP_LINK=%USERPROFILE%\Desktop\NT_DL.lnk"
+set "INSTALLED_LAUNCHER=%INSTALL_DIR%\NT_DL.exe"
+set "INSTALLED_APP=%INSTALL_DIR%\NT_DL_app.exe"
 
 rem Ensure old app instances do not lock binaries during upgrade.
-taskkill /F /IM NT_DL.exe >nul 2>&1
-taskkill /F /IM NT_DL_app.exe >nul 2>&1
+>>"%LOG_FILE%" echo Closing running NT_DL processes
+taskkill /F /T /IM NT_DL.exe /IM NT_DL_app.exe >nul 2>&1
+>>"%LOG_FILE%" echo taskkill_exit=%errorlevel%
+
+set "WAIT_OK=0"
+for /L %%I in (1,1,12) do (
+    tasklist /FI "IMAGENAME eq NT_DL.exe" 2>nul | find /I "NT_DL.exe" >nul
+    if errorlevel 1 (
+        tasklist /FI "IMAGENAME eq NT_DL_app.exe" 2>nul | find /I "NT_DL_app.exe" >nul
+        if errorlevel 1 (
+            set "WAIT_OK=1"
+            goto wait_done
+        )
+    )
+    timeout /t 1 /nobreak >nul
+)
+
+:wait_done
+>>"%LOG_FILE%" echo wait_ok=%WAIT_OK%
 
 if not exist "%INSTALL_DIR%" (
     mkdir "%INSTALL_DIR%" >nul 2>&1
@@ -30,13 +49,13 @@ if not exist "%INSTALL_DIR%" (
 
 set "COPY_OK=0"
 for /L %%I in (1,1,3) do (
-    del /F /Q "%INSTALL_DIR%\NT_DL.exe" >nul 2>&1
-    del /F /Q "%INSTALL_DIR%\NT_DL_app.exe" >nul 2>&1
-    copy /Y "%~dp0NT_DL.exe" "%INSTALL_DIR%\NT_DL.exe" >nul
+    del /F /Q "%INSTALLED_LAUNCHER%" >nul 2>&1
+    del /F /Q "%INSTALLED_APP%" >nul 2>&1
+    copy /Y "%~dp0NT_DL.exe" "%INSTALLED_LAUNCHER%" >nul
     if errorlevel 1 (
         >>"%LOG_FILE%" echo Copy NT_DL.exe failed on attempt %%I
     ) else (
-        copy /Y "%~dp0NT_DL_app.exe" "%INSTALL_DIR%\NT_DL_app.exe" >nul
+        copy /Y "%~dp0NT_DL_app.exe" "%INSTALLED_APP%" >nul
         if not errorlevel 1 (
             >>"%LOG_FILE%" echo Copied NT_DL.exe and NT_DL_app.exe on attempt %%I
             set "COPY_OK=1"
