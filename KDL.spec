@@ -53,7 +53,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='NT_DL',
+    name='NT_DL_app',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -10,12 +10,14 @@ set "START_MENU_LINK=%START_MENU_DIR%\NT_DL.lnk"
 set "DESKTOP_LINK=%USERPROFILE%\Desktop\NT_DL.lnk"
 
 taskkill /F /IM NT_DL.exe >nul 2>&1
+taskkill /F /IM NT_DL_app.exe >nul 2>&1
 
 del /F /Q "%START_MENU_LINK%" >nul 2>&1
 rmdir "%START_MENU_DIR%" >nul 2>&1
 del /F /Q "%DESKTOP_LINK%" >nul 2>&1
 
 del /F /Q "%INSTALL_DIR%\NT_DL.exe" >nul 2>&1
+del /F /Q "%INSTALL_DIR%\NT_DL_app.exe" >nul 2>&1
 del /F /Q "%INSTALL_DIR%\kdl_a.ico" >nul 2>&1
 
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\NT_DL" /f >nul 2>&1

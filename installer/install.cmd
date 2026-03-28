@@ -6,7 +6,7 @@ if /I "%~1"=="/quiet" set "QUIET=1"
 
 set "APP_NAME=NT_DL"
 set "APP_DISPLAY=NT_DL"
-set "APP_VERSION=1.1.72"
+set "APP_VERSION=1.1.73"
 set "PUBLISHER=NT_DL"
 set "LOG_FILE=%TEMP%\NT_DL_install.log"
 
@@ -18,8 +18,9 @@ set "START_MENU_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\NT_DL"
 set "START_MENU_LINK=%START_MENU_DIR%\NT_DL.lnk"
 set "DESKTOP_LINK=%USERPROFILE%\Desktop\NT_DL.lnk"
 
-rem Ensure old app instance does not lock NT_DL.exe during upgrade.
+rem Ensure old app instances do not lock binaries during upgrade.
 taskkill /F /IM NT_DL.exe >nul 2>&1
+taskkill /F /IM NT_DL_app.exe >nul 2>&1
 
 if not exist "%INSTALL_DIR%" (
     mkdir "%INSTALL_DIR%" >nul 2>&1
@@ -30,13 +31,19 @@ if not exist "%INSTALL_DIR%" (
 set "COPY_OK=0"
 for /L %%I in (1,1,3) do (
     del /F /Q "%INSTALL_DIR%\NT_DL.exe" >nul 2>&1
+    del /F /Q "%INSTALL_DIR%\NT_DL_app.exe" >nul 2>&1
     copy /Y "%~dp0NT_DL.exe" "%INSTALL_DIR%\NT_DL.exe" >nul
-    if not errorlevel 1 (
-        >>"%LOG_FILE%" echo Copied NT_DL.exe on attempt %%I
-        set "COPY_OK=1"
-        goto copy_done
+    if errorlevel 1 (
+        >>"%LOG_FILE%" echo Copy NT_DL.exe failed on attempt %%I
+    ) else (
+        copy /Y "%~dp0NT_DL_app.exe" "%INSTALL_DIR%\NT_DL_app.exe" >nul
+        if not errorlevel 1 (
+            >>"%LOG_FILE%" echo Copied NT_DL.exe and NT_DL_app.exe on attempt %%I
+            set "COPY_OK=1"
+            goto copy_done
+        )
+        >>"%LOG_FILE%" echo Copy NT_DL_app.exe failed on attempt %%I
     )
-    >>"%LOG_FILE%" echo Copy attempt %%I failed
     timeout /t 1 /nobreak >nul
 )
 

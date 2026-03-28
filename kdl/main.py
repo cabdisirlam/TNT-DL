@@ -116,7 +116,7 @@ def _install_exception_hook():
     sys.excepthook = _handle_exception
 
 
-def _activate_existing_instance():
+def _activate_existing_instance() -> bool:
     """Best-effort foreground activation for the already-running main window."""
     try:
         for hwnd, title in WindowManager.get_open_windows():
@@ -126,9 +126,10 @@ def _activate_existing_instance():
             if ctypes.windll.user32.IsIconic(hwnd):
                 ctypes.windll.user32.ShowWindow(hwnd, _SW_RESTORE)
             WindowManager.activate_window(hwnd)
-            return
+            return True
     except Exception:
         pass
+    return False
 
 
 def _acquire_single_instance_mutex() -> tuple[int | None, bool]:
@@ -152,8 +153,7 @@ def main():
     _install_exception_hook()
 
     mutex_handle, already_running = _acquire_single_instance_mutex()
-    if already_running:
-        _activate_existing_instance()
+    if already_running and _activate_existing_instance():
         return 0
 
     # High DPI support

@@ -9,9 +9,13 @@ if (-not $root) {
     $root = (Get-Location).Path
 }
 
-$exePath = Join-Path $root "dist\NT_DL.exe"
-if (-not (Test-Path $exePath)) {
-    throw "Missing dist\NT_DL.exe. Build the app first."
+$launcherExePath = Join-Path $root "dist\NT_DL.exe"
+$appExePath = Join-Path $root "dist\NT_DL_app.exe"
+if (-not (Test-Path $launcherExePath)) {
+    throw "Missing dist\NT_DL.exe. Build the launcher first."
+}
+if (-not (Test-Path $appExePath)) {
+    throw "Missing dist\NT_DL_app.exe. Build the app first."
 }
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -30,7 +34,8 @@ if (Test-Path $payloadDir) {
 }
 New-Item -ItemType Directory -Path $payloadDir | Out-Null
 
-Copy-Item -Path $exePath -Destination (Join-Path $payloadDir "NT_DL.exe") -Force
+Copy-Item -Path $launcherExePath -Destination (Join-Path $payloadDir "NT_DL.exe") -Force
+Copy-Item -Path $appExePath -Destination (Join-Path $payloadDir "NT_DL_app.exe") -Force
 Copy-Item -Path (Join-Path $root "installer\install.cmd") -Destination (Join-Path $payloadDir "install.cmd") -Force
 Copy-Item -Path (Join-Path $root "installer\uninstall.cmd") -Destination (Join-Path $payloadDir "uninstall.cmd") -Force
 Copy-Item -Path (Join-Path $root "kdl\assets\kdl_a.ico") -Destination (Join-Path $payloadDir "kdl_a.ico") -Force
@@ -120,13 +125,15 @@ SourceFiles0=$payloadDir
 %FILE2%=
 %FILE3%=
 %FILE4%=
+%FILE5%=
 
 [Strings]
 FILE0=launcher.exe
 FILE1=install.cmd
 FILE2=uninstall.cmd
 FILE3=NT_DL.exe
-FILE4=kdl_a.ico
+FILE4=NT_DL_app.exe
+FILE5=kdl_a.ico
 "@
 
 Set-Content -Path $sedPath -Value $sed -Encoding ASCII
