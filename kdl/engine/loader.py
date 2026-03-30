@@ -618,34 +618,8 @@ class LoaderThread(QThread):
     def _perform_end_of_row_action(self, rows_processed: int, is_last_row: bool = False) -> bool:
         eor_delay = max(0.0, float(self.sender.speed_delay))
         save_settle = max(0.1, float(self.sender.speed_delay))
-        _fast = self.sender.fast_send_row_mode
-
-        def _press_down() -> None:
-            if _fast:
-                self.sender._si_send_vk(0x28)   # VK_DOWN
-            else:
-                pyautogui.press('down')
-
-        def _press_enter() -> None:
-            if _fast:
-                self.sender._si_send_vk(0x0D)   # VK_RETURN
-            else:
-                pyautogui.press('enter')
-
-        def _press_tab() -> None:
-            if _fast:
-                self.sender._si_send_vk(0x09)   # VK_TAB
-            else:
-                pyautogui.press('tab')
-
-        def _ctrl_s() -> None:
-            if _fast:
-                self.sender._si_send_hotkey(['ctrl'], 's')
-            else:
-                pyautogui.hotkey('ctrl', 's')
-
         if self.end_of_row_action == "new_record":
-            _press_down()
+            pyautogui.press('down')
             return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action in ("new_record_save_n", "new_record_save_50"):
             completed_rows = rows_processed + 1
@@ -653,24 +627,24 @@ class LoaderThread(QThread):
             if completed_rows % interval == 0 or is_last_row:
                 if is_last_row and not self._wait_after_ui_action(0.5):
                     return False
-                _ctrl_s()
+                pyautogui.hotkey('ctrl', 's')
                 if not self._wait_after_ui_action(save_settle):
                     return False
-            _press_down()
+            pyautogui.press('down')
             return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action == "save_proceed":
             if is_last_row and not self._wait_after_ui_action(0.5):
                 return False
-            _ctrl_s()
+            pyautogui.hotkey('ctrl', 's')
             if not self._wait_after_ui_action(save_settle):
                 return False
-            _press_down()
+            pyautogui.press('down')
             return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action == "enter":
-            _press_enter()
+            pyautogui.press('enter')
             return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action == "tab":
-            _press_tab()
+            pyautogui.press('tab')
             return self._wait_after_ui_action(self.sender.speed_delay)
         elif self.end_of_row_action == "none":
             return self._wait_after_ui_action(0.0)
@@ -983,8 +957,7 @@ class LoaderThread(QThread):
                         if i in data_positions and data_positions and i != data_positions[-1]:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
-                                if not self._wait_after_ui_action(0.008):
-                                    break
+                                time.sleep(0.002)
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
