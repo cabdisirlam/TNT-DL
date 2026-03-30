@@ -39,6 +39,7 @@ class LoaderThread(QThread):
     )
     _FORM_HEADER_ALIASES = {
         "type": {"type", "line type", "transaction type", "trx type"},
+        "code": {"code", "transaction code", "trx code"},
         "no": {"no", "no.", "line", "line no", "line number", "serial", "serial no"},
     }
 
@@ -89,6 +90,7 @@ class LoaderThread(QThread):
                                      # duplicates data. Keep at 0; raise only for
                                      # pre-send activation failures, not mid-send ones.
         self._form_type_col = None
+        self._form_code_col = None
         self._form_no_col = None
         self._form_first_data_row = 0
 
@@ -352,6 +354,11 @@ class LoaderThread(QThread):
             return False
         return True
 
+    def _fast_send_popup_check_interval(self) -> float:
+        if self.sender.fast_send_row_mode:
+            return 0.05
+        return 0.15
+
     def run(self):
         """Main orchestrator for loading."""
         try:
@@ -361,11 +368,12 @@ class LoaderThread(QThread):
             except Exception:
                 self._esc_was_down = False
             self._start_esc_listener()
-            try:
-                self.sender.begin_clipboard_session()
-            except Exception as e:
-                self.loading_complete.emit(False, f"Loading failed: clipboard unavailable ({e})")
-                return
+            if self.sender.uses_clipboard_session():
+                try:
+                    self.sender.begin_clipboard_session()
+                except Exception as e:
+                    self.loading_complete.emit(False, f"Loading failed: clipboard unavailable ({e})")
+                    return
             mode = self.db_settings.get("mode", "ui_automation")
             if mode != "ui_automation":
                 self.progress_updated.emit(
@@ -421,6 +429,7 @@ class LoaderThread(QThread):
         No | Type | Number | Date | Date | Amount
         """
         self._form_type_col = None
+        self._form_code_col = None
         self._form_no_col = None
         self._form_first_data_row = self.start_row
 
@@ -435,10 +444,12 @@ class LoaderThread(QThread):
                 continue
             if self._form_type_col is None and name in self._FORM_HEADER_ALIASES["type"]:
                 self._form_type_col = idx
+            if self._form_code_col is None and name in self._FORM_HEADER_ALIASES["code"]:
+                self._form_code_col = idx
             if self._form_no_col is None and name in self._FORM_HEADER_ALIASES["no"]:
                 self._form_no_col = idx
 
-        if self._form_type_col is not None or self._form_no_col is not None:
+        if self._form_type_col is not None or self._form_code_col is not None or self._form_no_col is not None:
             self._form_first_data_row = max(self.start_row, 1)
             return
 
@@ -455,7 +466,15 @@ class LoaderThread(QThread):
                 if type_hits >= 1:
                     self._form_no_col = 0
                     self._form_type_col = 1
+                    self._form_code_col = 2
                     break
+
+    def _form_field_extra_settle(self, col_idx: int) -> float:
+        if not self.form_mode:
+            return 0.0
+        if self._form_code_col is not None and col_idx == self._form_code_col:
+            return max(float(self.sender.speed_delay), 0.03)
+        return 0.0
 
     def _apply_form_business_rules(self, row_idx: int, col_idx: int, parsed: ParsedCell) -> ParsedCell:
         """
@@ -599,8 +618,34 @@ class LoaderThread(QThread):
     def _perform_end_of_row_action(self, rows_processed: int, is_last_row: bool = False) -> bool:
         eor_delay = max(0.0, float(self.sender.speed_delay))
         save_settle = max(0.1, float(self.sender.speed_delay))
+        _fast = self.sender.fast_send_row_mode
+
+        def _press_down() -> None:
+            if _fast:
+                self.sender._si_send_vk(0x28)   # VK_DOWN
+            else:
+                pyautogui.press('down')
+
+        def _press_enter() -> None:
+            if _fast:
+                self.sender._si_send_vk(0x0D)   # VK_RETURN
+            else:
+                pyautogui.press('enter')
+
+        def _press_tab() -> None:
+            if _fast:
+                self.sender._si_send_vk(0x09)   # VK_TAB
+            else:
+                pyautogui.press('tab')
+
+        def _ctrl_s() -> None:
+            if _fast:
+                self.sender._si_send_hotkey(['ctrl'], 's')
+            else:
+                pyautogui.hotkey('ctrl', 's')
+
         if self.end_of_row_action == "new_record":
-            pyautogui.press('down')
+            _press_down()
             return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action in ("new_record_save_n", "new_record_save_50"):
             completed_rows = rows_processed + 1
@@ -608,24 +653,24 @@ class LoaderThread(QThread):
             if completed_rows % interval == 0 or is_last_row:
                 if is_last_row and not self._wait_after_ui_action(0.5):
                     return False
-                pyautogui.hotkey('ctrl', 's')
+                _ctrl_s()
                 if not self._wait_after_ui_action(save_settle):
                     return False
-            pyautogui.press('down')
+            _press_down()
             return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action == "save_proceed":
             if is_last_row and not self._wait_after_ui_action(0.5):
                 return False
-            pyautogui.hotkey('ctrl', 's')
+            _ctrl_s()
             if not self._wait_after_ui_action(save_settle):
                 return False
-            pyautogui.press('down')
+            _press_down()
             return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action == "enter":
-            pyautogui.press('enter')
+            _press_enter()
             return self._wait_after_ui_action(eor_delay)
         elif self.end_of_row_action == "tab":
-            pyautogui.press('tab')
+            _press_tab()
             return self._wait_after_ui_action(self.sender.speed_delay)
         elif self.end_of_row_action == "none":
             return self._wait_after_ui_action(0.0)
@@ -893,7 +938,8 @@ class LoaderThread(QThread):
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
-                                time.sleep(0.002)
+                                if not self._wait_after_ui_action(max(self.sender.speed_delay, 0.02)):
+                                    break
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
@@ -924,11 +970,21 @@ class LoaderThread(QThread):
                         if self.form_mode and receipt_token and (type_col_hit or early_col_fallback):
                             pending_tab_after_receipt = True
 
+                        # The Code field is validated by Oracle Forms on blur. If we
+                        # Tab away too quickly after a fast send, the last character in
+                        # values like TRFD/TRFC can be lost and the LOV opens to resolve
+                        # the now-partial code.
+                        extra_settle = self._form_field_extra_settle(col_idx)
+                        if self.sender.fast_send_row_mode and extra_settle > 0:
+                            if not self._wait_after_ui_action(extra_settle):
+                                break
+
                         # Auto-Tab only between plain data fields.
                         if i in data_positions and data_positions and i != data_positions[-1]:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
-                                time.sleep(0.002)
+                                if not self._wait_after_ui_action(max(self.sender.speed_delay, 0.008)):
+                                    break
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
@@ -1068,7 +1124,7 @@ class LoaderThread(QThread):
             return False
 
         now = time.time()
-        if now - self._last_popup_check_at < 0.15:
+        if now - self._last_popup_check_at < self._fast_send_popup_check_interval():
             return False
         self._last_popup_check_at = now
 

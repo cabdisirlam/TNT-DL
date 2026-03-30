@@ -216,6 +216,10 @@ class DataSender:
             self._clipboard_session_value = None
             self._clipboard_session_had_value = False
 
+    def uses_clipboard_session(self) -> bool:
+        """Fast Send row mode stays pure SendInput and does not need clipboard state."""
+        return not self.fast_send_row_mode
+
     def activate_target(self) -> bool:
         """Activate the target window. Returns True if successful."""
         # Fallback if user manually typed a title with no HWND
@@ -511,7 +515,10 @@ class DataSender:
             if not safe:
                 return True
             if not self._si_send_unicode(safe):
-                # Fallback to clipboard if SendInput fails
+                if self.fast_send_row_mode:
+                    self.last_error = (self.last_error or "SendInput text injection failed").strip()
+                    return False
+                # Non-row fast paths keep the historical fallback.
                 return self._send_data(text)
             # In fast_send_row_mode, use minimal 2ms settle per cell;
             # the full delay is applied once at end-of-row instead.
@@ -527,6 +534,8 @@ class DataSender:
             return self._wait_for_ready() if self.load_control else self._wait_if_hourglass()
         except Exception as e:
             self.last_error = f"send_data_fast: {e}"
+            if self.fast_send_row_mode:
+                return False
             return self._send_data(text)  # fallback
 
     def _send_keystroke_fast(self, parsed: ParsedCell) -> bool:
@@ -574,4 +583,6 @@ class DataSender:
             return True
         except Exception as e:
             self.last_error = f"send_keystroke_fast: {e}"
+            if self.fast_send_row_mode:
+                return False
             return self._send_keystrokes(parsed)  # fallback
