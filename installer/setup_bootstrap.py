@@ -31,9 +31,26 @@ def _message(text: str, is_error: bool = False) -> None:
 
 
 def _resource_dir() -> Path:
+    candidates = []
+    if getattr(sys, "frozen", False):
+        try:
+            candidates.append(Path(sys.executable).resolve().parent)
+        except Exception:
+            pass
     if hasattr(sys, "_MEIPASS"):
-        return Path(getattr(sys, "_MEIPASS"))
-    return Path(__file__).resolve().parent
+        candidates.append(Path(getattr(sys, "_MEIPASS")))
+    candidates.append(Path(__file__).resolve().parent)
+
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if all((candidate / name).exists() for name in PAYLOAD_FILES):
+            return candidate
+
+    return candidates[0]
 
 
 def _run() -> int:

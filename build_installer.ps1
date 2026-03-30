@@ -69,16 +69,13 @@ $pyArgs = @(
     "-m", "PyInstaller",
     "--noconfirm",
     "--clean",
-    "--onefile",
+    "--onedir",
     "--windowed",
     "--name", $installerName,
     "--icon", (Join-Path $root "kdl\assets\kdl_a.ico"),
     "--distpath", $installerDist,
     "--workpath", $installerWork,
     "--specpath", $installerSpec,
-    "--add-data", ($packageZipPath + ";."),
-    "--add-data", ((Join-Path $payloadDir "install.cmd") + ";."),
-    "--add-data", ((Join-Path $payloadDir "uninstall.cmd") + ";."),
     $bootstrapScript
 )
 
@@ -87,17 +84,36 @@ if ($LASTEXITCODE -ne 0) {
     throw "Installer build failed with exit code $LASTEXITCODE"
 }
 
-$installerExe = Join-Path $installerDist ($installerName + ".exe")
+$installerDir = Join-Path $installerDist $installerName
+$installerExe = Join-Path $installerDir ($installerName + ".exe")
 if (-not (Test-Path $installerExe)) {
     throw "Installer build failed: executable not produced."
 }
-$finalTarget = Join-Path $root ("dist\NT_DL-Setup-" + $Version + ".exe")
-Copy-Item -Path $installerExe -Destination $finalTarget -Force
 
-$staleSetupFiles = Get-ChildItem -Path (Join-Path $root "dist") -Filter "NT_DL-Setup-*.exe" -File -ErrorAction SilentlyContinue
-foreach ($staleFile in $staleSetupFiles) {
-    if ($staleFile.FullName -ne $finalTarget) {
-        Remove-Item -LiteralPath $staleFile.FullName -Force
+Copy-Item -Path $packageZipPath -Destination (Join-Path $installerDir "NT_DL_package.zip") -Force
+Copy-Item -Path (Join-Path $payloadDir "install.cmd") -Destination (Join-Path $installerDir "install.cmd") -Force
+Copy-Item -Path (Join-Path $payloadDir "uninstall.cmd") -Destination (Join-Path $installerDir "uninstall.cmd") -Force
+
+$finalDir = Join-Path $root ("dist\" + $installerName)
+if (Test-Path $finalDir) {
+    Remove-Item -LiteralPath $finalDir -Recurse -Force
+}
+Copy-Item -Path $installerDir -Destination $finalDir -Recurse -Force
+
+$finalZip = Join-Path $root ("dist\" + $installerName + ".zip")
+if (Test-Path $finalZip) {
+    Remove-Item -LiteralPath $finalZip -Force
+}
+Compress-Archive -LiteralPath $finalDir -DestinationPath $finalZip -Force
+
+$staleSetupArtifacts = Get-ChildItem -Path (Join-Path $root "dist") -Filter "NT_DL-Setup-*" -ErrorAction SilentlyContinue
+foreach ($staleArtifact in $staleSetupArtifacts) {
+    if ($staleArtifact.FullName -ne $finalDir -and $staleArtifact.FullName -ne $finalZip) {
+        if ($staleArtifact.PSIsContainer) {
+            Remove-Item -LiteralPath $staleArtifact.FullName -Recurse -Force
+        } else {
+            Remove-Item -LiteralPath $staleArtifact.FullName -Force
+        }
     }
 }
 
@@ -111,4 +127,5 @@ foreach ($legacyPath in $legacyReleaseFiles) {
     }
 }
 
-Write-Output "Installer created: $finalTarget"
+Write-Output "Installer directory created: $finalDir"
+Write-Output "Installer zip created: $finalZip"
