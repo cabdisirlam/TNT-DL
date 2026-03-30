@@ -9,6 +9,7 @@ set "APP_DISPLAY=NT_DL"
 set "APP_VERSION=1.1.73"
 set "PUBLISHER=NT_DL"
 set "LOG_FILE=%TEMP%\NT_DL_install.log"
+set "EXIT_CODE=1"
 
 >"%LOG_FILE%" echo [%date% %time%] NT_DL install start
 >>"%LOG_FILE%" echo SourceDir=%~dp0
@@ -17,8 +18,8 @@ set "INSTALL_DIR=%LOCALAPPDATA%\Programs\NT_DL"
 set "START_MENU_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\NT_DL"
 set "START_MENU_LINK=%START_MENU_DIR%\NT_DL.lnk"
 set "DESKTOP_LINK=%USERPROFILE%\Desktop\NT_DL.lnk"
-set "INSTALLED_LAUNCHER=%INSTALL_DIR%\NT_DL.exe"
-set "INSTALLED_APP=%INSTALL_DIR%\NT_DL_app.exe"
+set "SOURCE_ROOT=%~dp0app\NT_DL"
+set "INSTALLED_EXE=%INSTALL_DIR%\NT_DL.exe"
 
 rem Ensure old app instances do not lock binaries during upgrade.
 >>"%LOG_FILE%" echo Closing running NT_DL processes
@@ -29,11 +30,8 @@ set "WAIT_OK=0"
 for /L %%I in (1,1,12) do (
     tasklist /FI "IMAGENAME eq NT_DL.exe" 2>nul | find /I "NT_DL.exe" >nul
     if errorlevel 1 (
-        tasklist /FI "IMAGENAME eq NT_DL_app.exe" 2>nul | find /I "NT_DL_app.exe" >nul
-        if errorlevel 1 (
-            set "WAIT_OK=1"
-            goto wait_done
-        )
+        set "WAIT_OK=1"
+        goto wait_done
     )
     ping 127.0.0.1 -n 2 >nul
 )
@@ -47,56 +45,41 @@ if not exist "%INSTALL_DIR%" (
 )
 >>"%LOG_FILE%" echo InstallDir=%INSTALL_DIR%
 
-if not exist "%~dp0NT_DL.exe" (
-    >>"%LOG_FILE%" echo Missing payload: %~dp0NT_DL.exe
-    cmd /c exit /b 2
+if not exist "%SOURCE_ROOT%" (
+    >>"%LOG_FILE%" echo Missing payload folder: %SOURCE_ROOT%
+    set "EXIT_CODE=2"
     goto error
 )
-if not exist "%~dp0NT_DL_app.exe" (
-    >>"%LOG_FILE%" echo Missing payload: %~dp0NT_DL_app.exe
-    cmd /c exit /b 3
+if not exist "%SOURCE_ROOT%\NT_DL.exe" (
+    >>"%LOG_FILE%" echo Missing payload exe: %SOURCE_ROOT%\NT_DL.exe
+    set "EXIT_CODE=3"
     goto error
 )
 if not exist "%~dp0uninstall.cmd" (
     >>"%LOG_FILE%" echo Missing payload: %~dp0uninstall.cmd
-    cmd /c exit /b 4
+    set "EXIT_CODE=4"
     goto error
 )
 
-set "COPY_OK=0"
-for /L %%I in (1,1,3) do (
-    del /F /Q "%INSTALLED_LAUNCHER%" >nul 2>&1
-    del /F /Q "%INSTALLED_APP%" >nul 2>&1
-    copy /Y "%~dp0NT_DL.exe" "%INSTALLED_LAUNCHER%" >nul
-    if errorlevel 1 (
-        >>"%LOG_FILE%" echo Copy NT_DL.exe failed on attempt %%I
-    ) else (
-        copy /Y "%~dp0NT_DL_app.exe" "%INSTALLED_APP%" >nul
-        if not errorlevel 1 (
-            >>"%LOG_FILE%" echo Copied NT_DL.exe and NT_DL_app.exe on attempt %%I
-            set "COPY_OK=1"
-            goto copy_done
-        )
-        >>"%LOG_FILE%" echo Copy NT_DL_app.exe failed on attempt %%I
-    )
-    ping 127.0.0.1 -n 2 >nul
-)
-
-:copy_done
-if not "%COPY_OK%"=="1" (
-    cmd /c exit /b 5
+robocopy "%SOURCE_ROOT%" "%INSTALL_DIR%" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NC /NS >nul
+set "ROBOCOPY_EXIT=%errorlevel%"
+>>"%LOG_FILE%" echo robocopy_exit=%ROBOCOPY_EXIT%
+if %ROBOCOPY_EXIT% GEQ 8 (
+    set "EXIT_CODE=5"
     goto error
 )
 
-if exist "%~dp0kdl_a.ico" copy /Y "%~dp0kdl_a.ico" "%INSTALL_DIR%\kdl_a.ico" >nul
 copy /Y "%~dp0uninstall.cmd" "%INSTALL_DIR%\uninstall.cmd" >nul
-if errorlevel 1 goto error
->>"%LOG_FILE%" echo Copied uninstall.cmd and icon
+if errorlevel 1 (
+    set "EXIT_CODE=6"
+    goto error
+)
+>>"%LOG_FILE%" echo Copied app folder and uninstall.cmd
 
 if not exist "%START_MENU_DIR%" mkdir "%START_MENU_DIR%" >nul 2>&1
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%START_MENU_LINK%'); $s.TargetPath='%INSTALL_DIR%\NT_DL.exe'; $s.WorkingDirectory='%INSTALL_DIR%'; if (Test-Path '%INSTALL_DIR%\kdl_a.ico') { $s.IconLocation='%INSTALL_DIR%\kdl_a.ico' }; $s.Save()" >nul 2>&1
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%DESKTOP_LINK%'); $s.TargetPath='%INSTALL_DIR%\NT_DL.exe'; $s.WorkingDirectory='%INSTALL_DIR%'; if (Test-Path '%INSTALL_DIR%\kdl_a.ico') { $s.IconLocation='%INSTALL_DIR%\kdl_a.ico' }; $s.Save()" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%START_MENU_LINK%'); $s.TargetPath='%INSTALLED_EXE%'; $s.WorkingDirectory='%INSTALL_DIR%'; if (Test-Path '%INSTALLED_EXE%') { $s.IconLocation='%INSTALLED_EXE%' }; $s.Save()" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%DESKTOP_LINK%'); $s.TargetPath='%INSTALLED_EXE%'; $s.WorkingDirectory='%INSTALL_DIR%'; if (Test-Path '%INSTALLED_EXE%') { $s.IconLocation='%INSTALLED_EXE%' }; $s.Save()" >nul 2>&1
 
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\NT_DL" /v DisplayName /t REG_SZ /d "%APP_DISPLAY%" /f >nul 2>&1
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\NT_DL" /v DisplayVersion /t REG_SZ /d "%APP_VERSION%" /f >nul 2>&1
@@ -117,13 +100,13 @@ echo.
 echo NT_DL installed successfully.
 echo Location: %INSTALL_DIR%
 >>"%LOG_FILE%" echo Install success (interactive)
-start "" "%INSTALL_DIR%\NT_DL.exe"
+start "" "%INSTALLED_EXE%"
 exit /b 0
 
 :error
->>"%LOG_FILE%" echo Install failed with errorlevel %errorlevel%
-if "%QUIET%"=="1" exit /b 1
+>>"%LOG_FILE%" echo Install failed with exit_code %EXIT_CODE%
+if "%QUIET%"=="1" exit /b %EXIT_CODE%
 echo.
 echo NT_DL installation failed.
 echo Please run setup again. Log: %LOG_FILE%
-exit /b 1
+exit /b %EXIT_CODE%

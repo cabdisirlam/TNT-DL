@@ -50,10 +50,9 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
-    name='NT_DL_app',
+    exclude_binaries=True,
+    name='NT_DL',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -67,4 +66,14 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['kdl\\assets\\kdl_a.ico'],
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='NT_DL',
 )

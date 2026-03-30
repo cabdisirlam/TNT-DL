@@ -5,12 +5,13 @@ import subprocess
 import sys
 import tempfile
 import traceback
+import zipfile
 from pathlib import Path
 
 
 APP_NAME = "NT_DL"
 TITLE = "NT_DL Setup"
-PAYLOAD_FILES = ("NT_DL_payload.dat", "NT_DL_app.exe", "install.cmd", "uninstall.cmd", "kdl_a.ico")
+PAYLOAD_FILES = ("NT_DL_package.zip", "install.cmd", "uninstall.cmd")
 BOOT_LOG = Path(os.environ.get("TEMP", str(Path.home()))) / "NT_DL_setup_bootstrap.log"
 
 
@@ -40,6 +41,7 @@ def _run() -> int:
     src_dir = _resource_dir()
     _log(f"resource_dir={src_dir}")
     temp_dir = Path(tempfile.mkdtemp(prefix="nt_dl_setup_"))
+    payload_dir = temp_dir / "app"
     _log(f"work_temp_dir={temp_dir}")
     try:
         for name in PAYLOAD_FILES:
@@ -48,9 +50,14 @@ def _run() -> int:
                 _log(f"missing payload file: {src}")
                 _message(f"Installer payload missing: {name}", is_error=True)
                 return 2
-            dest_name = "NT_DL.exe" if name == "NT_DL_payload.dat" else name
-            shutil.copy2(src, temp_dir / dest_name)
-            _log(f"copied {name} -> {dest_name}")
+            shutil.copy2(src, temp_dir / name)
+            _log(f"copied {name}")
+
+        payload_zip = temp_dir / "NT_DL_package.zip"
+        payload_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(payload_zip, "r") as zf:
+            zf.extractall(payload_dir)
+        _log(f"extracted {payload_zip.name} -> {payload_dir}")
 
         result = subprocess.run(
             ["cmd", "/c", "install.cmd", "/quiet"],
