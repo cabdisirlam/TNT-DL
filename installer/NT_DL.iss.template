@@ -23,8 +23,8 @@ PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
-ArchitecturesAllowed=x86 x64 arm64 arm64ec
-ArchitecturesInstallIn64BitMode=x64 arm64 arm64ec
+ArchitecturesAllowed=x86 x64 arm64
+ArchitecturesInstallIn64BitMode=x64 arm64
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
