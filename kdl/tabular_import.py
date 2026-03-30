@@ -379,6 +379,13 @@ def _ado_cell_value(value):
         return value
     if isinstance(value, date):
         return datetime.combine(value, datetime.min.time())
+    if isinstance(value, str):
+        text = value.strip()
+        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d-%b-%y", "%d-%b-%Y"):
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
     return value
 
 
