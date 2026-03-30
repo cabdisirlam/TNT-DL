@@ -10,7 +10,7 @@ AppId={{A3F2C1D4-8B6E-4F9A-BC12-5E7D0A3F9C21}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={localappdata}\Programs\NT_DL
+DefaultDirName={autopf}\NT_DL
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=@@OUTPUTDIR@@
@@ -19,11 +19,12 @@ SetupIconFile={#IconFile}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x86 x64 arm64 arm64ec
+ArchitecturesInstallIn64BitMode=x64 arm64 arm64ec
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

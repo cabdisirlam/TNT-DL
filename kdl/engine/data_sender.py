@@ -99,7 +99,7 @@ def _si_make_ki(vk: int = 0, scan: int = 0, flags: int = 0) -> _INPUT:
     inp._input.ki.wScan = scan
     inp._input.ki.dwFlags = flags
     inp._input.ki.time = 0
-    inp._input.ki.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+    inp._input.ki.dwExtraInfo = ctypes.cast(0, ctypes.POINTER(ctypes.c_ulong))
     return inp
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -983,7 +983,7 @@ class LoaderThread(QThread):
                         if i in data_positions and data_positions and i != data_positions[-1]:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
-                                if not self._wait_after_ui_action(max(self.sender.speed_delay, 0.008)):
+                                if not self._wait_after_ui_action(0.008):
                                     break
                             else:
                                 pyautogui.press('tab')
