@@ -41,7 +41,7 @@ def _run() -> int:
     src_dir = _resource_dir()
     _log(f"resource_dir={src_dir}")
     temp_dir = Path(tempfile.mkdtemp(prefix="nt_dl_setup_"))
-    payload_dir = temp_dir / "app"
+    payload_dir = temp_dir / "app" / APP_NAME
     _log(f"work_temp_dir={temp_dir}")
     try:
         for name in PAYLOAD_FILES:

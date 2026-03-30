@@ -1,5 +1,6 @@
 param(
-    [string]$Version = ""
+    [string]$Version = "",
+    [string]$AppDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,13 +10,17 @@ if (-not $root) {
     $root = (Get-Location).Path
 }
 
-$appDirPath = Join-Path $root "dist\NT_DL"
+if ([string]::IsNullOrWhiteSpace($AppDir)) {
+    $appDirPath = Join-Path $root "dist\NT_DL"
+} else {
+    $appDirPath = $AppDir
+}
 if (-not (Test-Path $appDirPath)) {
-    throw "Missing dist\NT_DL. Build the onedir app first."
+    throw "Missing app directory: $appDirPath"
 }
 $appExePath = Join-Path $appDirPath "NT_DL.exe"
 if (-not (Test-Path $appExePath)) {
-    throw "Missing dist\NT_DL\NT_DL.exe. Build the onedir app first."
+    throw "Missing NT_DL.exe in app directory: $appDirPath"
 }
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
