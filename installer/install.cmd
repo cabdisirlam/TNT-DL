@@ -61,6 +61,9 @@ if not exist "%~dp0uninstall.cmd" (
     goto error
 )
 
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-Item -LiteralPath '%INSTALL_DIR%\NT_DL_app.exe' -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '%INSTALL_DIR%\kdl_a.ico' -Force -ErrorAction SilentlyContinue" >nul 2>&1
+>>"%LOG_FILE%" echo Removed legacy onefile leftovers if present
+
 robocopy "%SOURCE_ROOT%" "%INSTALL_DIR%" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NC /NS >nul
 set "ROBOCOPY_EXIT=%errorlevel%"
 >>"%LOG_FILE%" echo robocopy_exit=%ROBOCOPY_EXIT%
@@ -69,7 +72,7 @@ if %ROBOCOPY_EXIT% GEQ 8 (
     goto error
 )
 
-copy /Y "%~dp0uninstall.cmd" "%INSTALL_DIR%\uninstall.cmd" >nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Copy-Item -LiteralPath '%~dp0uninstall.cmd' -Destination '%INSTALL_DIR%\uninstall.cmd' -Force" >nul 2>&1
 if errorlevel 1 (
     set "EXIT_CODE=6"
     goto error
