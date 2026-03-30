@@ -288,19 +288,14 @@ class _ConverterWorker(QThread):
             source_kind = detect_source_format(self.filepath)
 
             if source_kind in ("csv", "html"):
-                if source_kind == "csv":
-                    wb = openpyxl.Workbook()
-                    ws = wb.active
-                    sheet_name = os.path.splitext(os.path.basename(self.filepath))[0]
-                    ws.title = sheet_name
-                    for row_vals in iter_csv_rows(self.filepath):
-                        ws.append(row_vals)
-                    self.sheet_names = [sheet_name]
-                else:
-                    wb = _build_workbook_from_html(self.filepath)
-                    self.sheet_names = [name for name in self.sheet_names if name in wb.sheetnames]
-                    if not self.sheet_names:
-                        self.sheet_names = list(wb.sheetnames)
+                wb = load_workbook_from_source(
+                    self.filepath,
+                    data_only=True,
+                    keep_links=False,
+                )
+                self.sheet_names = [name for name in self.sheet_names if name in wb.sheetnames]
+                if not self.sheet_names:
+                    self.sheet_names = list(wb.sheetnames)
                 self._convert_loaded_workbook(
                     wb,
                     convert_statement,

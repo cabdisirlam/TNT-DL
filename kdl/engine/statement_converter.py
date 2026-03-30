@@ -71,15 +71,19 @@ def _find_txn_header_row(ws: Worksheet) -> int:
 
 
 def _normalize_row13_headers(ws: Worksheet):
-    ws.cell(row=HEADER_ROW, column=1, value="Date")
-    ws.cell(row=HEADER_ROW, column=2, value="Transaction Reference")
-    ws.cell(row=HEADER_ROW, column=3, value="Transaction Details")
-    ws.cell(row=HEADER_ROW, column=4, value="Transaction Type")
-    ws.cell(row=HEADER_ROW, column=5, value="Originator Reference")
-    ws.cell(row=HEADER_ROW, column=6, value="Debit")
-    ws.cell(row=HEADER_ROW, column=7, value="Credit")
-    ws.cell(row=HEADER_ROW, column=8, value="Closing Balance")
-    ws.row_dimensions[HEADER_ROW].font = Font(bold=True)
+    headers = [
+        "Date",
+        "Transaction Reference",
+        "Transaction Details",
+        "Transaction Type",
+        "Originator Reference",
+        "Debit",
+        "Credit",
+        "Closing Balance",
+    ]
+    for column_index, header in enumerate(headers, start=1):
+        cell = ws.cell(row=HEADER_ROW, column=column_index, value=header)
+        cell.font = Font(bold=True)
 
 
 def _safe_double(value) -> float:
@@ -264,23 +268,33 @@ def _write_rows_to_sheet(ws_out: Worksheet, rows: List[List]):
     for index, row_vals in enumerate(rows, start=OUTPUT_FIRST_ROW):
         for col_index, value in enumerate(row_vals, start=1):
             out_value = value
+            number_format = None
             if row_vals[:3] == ["tab", "tab", "trfd"]:
                 if col_index in (7, 9) and isinstance(value, str):
                     parsed = _parse_dmon_y(value, "-")
                     out_value = parsed if parsed is not None else value
+                    if parsed is not None:
+                        number_format = "dd-mmm-yyyy"
                 elif col_index == 11:
                     parsed_num = _parse_number(value)
                     out_value = parsed_num if parsed_num is not None else value
                 elif col_index == 5 and str(value).strip().isdigit():
                     out_value = int(str(value).strip())
+                    number_format = "0"
             elif len(row_vals) >= 5 and row_vals[:5] == ["tab", "*dn", "r", "tab", "trfc"]:
                 if col_index in (9, 11) and isinstance(value, str):
                     parsed = _parse_dmon_y(value, "-")
                     out_value = parsed if parsed is not None else value
+                    if parsed is not None:
+                        number_format = "dd-mmm-yyyy"
                 elif col_index == 13:
                     parsed_num = _parse_number(value)
                     out_value = parsed_num if parsed_num is not None else value
-            ws_out.cell(row=index, column=col_index, value=out_value)
+                elif col_index == 7:
+                    number_format = "@"
+            cell = ws_out.cell(row=index, column=col_index, value=out_value)
+            if number_format:
+                cell.number_format = number_format
 
 
 def _write_audit_header(ws_audit: Worksheet):
@@ -356,6 +370,8 @@ def _write_audit_summary(
         ws_audit.cell(row=2, column=2, value="N/A (No Closing Balance column detected)")
         ws_audit.cell(row=3, column=2, value=additions_cred)
         ws_audit.cell(row=4, column=2, value=outs_deb)
+        ws_audit.cell(row=3, column=2).number_format = "#,##0.00"
+        ws_audit.cell(row=4, column=2).number_format = "#,##0.00"
     else:
         ws_audit.cell(row=2, column=2, value=float(opening_balance))
         ws_audit.cell(row=3, column=2, value=additions_cred)
@@ -363,6 +379,9 @@ def _write_audit_summary(
         ws_audit.cell(row=5, column=2, value=float(closing_calc))
         ws_audit.cell(row=6, column=2, value="N/A" if closing_stmt is None else float(closing_stmt))
         ws_audit.cell(row=7, column=2, value="N/A" if variance is None else float(variance))
+        for row_index in range(2, 8):
+            if isinstance(ws_audit.cell(row=row_index, column=2).value, (int, float)):
+                ws_audit.cell(row=row_index, column=2).number_format = "#,##0.00"
 
 
 def _get_or_create_sheet(wb: Workbook, sheet_name: str) -> Worksheet:
