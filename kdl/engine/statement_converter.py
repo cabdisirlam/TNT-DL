@@ -1,27 +1,28 @@
 """
-Bank Statement Converter — Python port of Build_Statement_Output VBA macro.
-Reads a bank statement sheet from an openpyxl workbook and writes
-Output + Audit_Skipped sheets back into the same workbook.
+Bank Statement Converter.
+Direct Python port of the Build_Statement_Output VBA macro logic.
 """
 
-from datetime import date, datetime, timedelta
-from typing import Optional, List, Dict
 from dataclasses import dataclass, field
+from datetime import date, datetime
+from typing import Dict, List, Optional
 
 try:
     import openpyxl
     from openpyxl import Workbook
-    from openpyxl.worksheet.worksheet import Worksheet
     from openpyxl.styles import Font
+    from openpyxl.worksheet.worksheet import Worksheet
 except ImportError:
     openpyxl = None
 
-# ── Constants ──────────────────────────────────────────────
-DN_PREFIX_CELL = r"\*s"
-OUTPUT_FIRST_ROW = 2
+
 HEADER_ROW = 13
+DATA_START_ROW = 14
 AUDIT_DETAIL_HEADER_ROW = 9
 AUDIT_DETAIL_FIRST_ROW = 10
+DN_PREFIX_CELL = r"\*s"
+OUTPUT_LAST_COL = 16
+OUTPUT_FIRST_ROW = 2
 
 
 @dataclass
@@ -36,147 +37,118 @@ class ConversionResult:
     closing_balance_stmt: Optional[float] = None
     closing_balance_calc: Optional[float] = None
     variance: Optional[float] = None
-    output_data: List[List] = field(default_factory=list)   # rows for TNT DL grid
-    audit_rows: List[List] = field(default_factory=list)    # skipped-row detail records
+    output_data: List[List] = field(default_factory=list)
+    audit_rows: List[List] = field(default_factory=list)
     saved_path: str = ""
 
 
-# ── Number helpers ─────────────────────────────────────────
+def _normalize_header_text(value) -> str:
+    text = str(value or "").replace("\xa0", " ").replace("\r", " ").replace("\n", " ").strip()
+    while "  " in text:
+        text = text.replace("  ", " ")
+    return text.upper()
 
-def _safe_double(v) -> float:
-    if v is None:
-        return 0.0
-    if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).strip().replace(',', '')
-    if len(s) >= 2 and s[0] == '(' and s[-1] == ')':
-        s = '-' + s[1:-1]
+
+def _find_header_col(ws: Worksheet, hdr_row: int, header_text: str) -> int:
+    want = _normalize_header_text(header_text)
+    for col in range(1, ws.max_column + 1):
+        if _normalize_header_text(ws.cell(row=hdr_row, column=col).value) == want:
+            return col
+    return 0
+
+
+def _find_txn_header_row(ws: Worksheet) -> int:
+    last_row = max(1, ws.max_row)
+    for row_num in range(1, last_row + 1):
+        if (
+            _find_header_col(ws, row_num, "Date") > 0
+            and _find_header_col(ws, row_num, "Transaction Details") > 0
+            and _find_header_col(ws, row_num, "Debit") > 0
+            and _find_header_col(ws, row_num, "Credit") > 0
+        ):
+            return row_num
+    return 0
+
+
+def _normalize_row13_headers(ws: Worksheet):
+    ws.cell(row=HEADER_ROW, column=1, value="Date")
+    ws.cell(row=HEADER_ROW, column=2, value="Transaction Reference")
+    ws.cell(row=HEADER_ROW, column=3, value="Transaction Details")
+    ws.cell(row=HEADER_ROW, column=4, value="Transaction Type")
+    ws.cell(row=HEADER_ROW, column=5, value="Originator Reference")
+    ws.cell(row=HEADER_ROW, column=6, value="Debit")
+    ws.cell(row=HEADER_ROW, column=7, value="Credit")
+    ws.cell(row=HEADER_ROW, column=8, value="Closing Balance")
+    ws.row_dimensions[HEADER_ROW].font = Font(bold=True)
+
+
+def _safe_double(value) -> float:
+    parsed = _parse_number(value)
+    return float(parsed) if parsed is not None else 0.0
+
+
+def _parse_number(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    if len(text) >= 2 and text[0] == "(" and text[-1] == ")":
+        text = "-" + text[1:-1]
     try:
-        return float(s)
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _parse_number(v):
-    """Return float or None."""
-    if v is None:
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).strip().replace(',', '')
-    if s == '':
-        return None
-    if len(s) >= 2 and s[0] == '(' and s[-1] == ')':
-        s = '-' + s[1:-1]
-    try:
-        return float(s)
-    except (ValueError, TypeError):
+        return float(text)
+    except (TypeError, ValueError):
         return None
 
 
-# ── Date helpers ───────────────────────────────────────────
-
-_EXCEL_EPOCH = date(1899, 12, 30)   # Excel serial-date epoch (accounts for 1900 bug)
-
-
-def _parse_date_cell(cell_value, cell_text: str = '') -> Optional[date]:
-    """Parse date from cell value or text. Supports date objects, M/D/YYYY, D-MMM-YYYY,
-    and raw Excel serial numbers (int/float) that openpyxl sometimes returns."""
-    if isinstance(cell_value, datetime):
-        return cell_value.date()
-    if isinstance(cell_value, date):
-        return cell_value
-
-    # openpyxl occasionally returns the raw Excel serial integer for date cells
-    if isinstance(cell_value, (int, float)) and not isinstance(cell_value, bool):
-        serial = int(cell_value)
-        if 1 <= serial <= 2958465:          # valid Excel date range (1900-01-01 to 9999-12-31)
-            try:
-                return _EXCEL_EPOCH + timedelta(days=serial)
-            except (OverflowError, ValueError):
-                pass
-
-    # Try text-based parsing
-    s = str(cell_value).strip() if cell_value is not None else ''
-    if not s or s == '####':
-        s = cell_text.strip()
-    if not s:
-        return None
-
-    # Strip time portion if present
-    if ' ' in s:
-        s = s.split()[0]
-
-    if '/' in s:
-        result = _parse_numeric_date(s, '/')
-        if result is not None:
-            return result
-    if '-' in s:
-        result = _parse_dmon_y(s, '-')
-        if result is None:
-            result = _parse_numeric_date(s, '-')
-        if result is not None:
-            return result
-
-    # Last resort: try Python's own ISO / flexible parser
-    try:
-        from datetime import datetime as _dt
-        return _dt.fromisoformat(s).date()
-    except (ValueError, TypeError):
-        pass
-
-    return None
+def _cell_display_text(cell) -> str:
+    text_value = getattr(cell, "text", None)
+    if text_value not in (None, ""):
+        return str(text_value).strip()
+    return str(cell.value or "").strip()
 
 
-def _parse_mdy(s: str, sep: str) -> Optional[date]:
-    parts = s.strip().split(sep)
+def _month_text_to_num(mon: str) -> int:
+    mon = str(mon or "").strip().lower()
+    mapping = {
+        "jan": 1,
+        "feb": 2,
+        "mar": 3,
+        "apr": 4,
+        "may": 5,
+        "jun": 6,
+        "jul": 7,
+        "aug": 8,
+        "sep": 9,
+        "oct": 10,
+        "nov": 11,
+        "dec": 12,
+    }
+    return mapping.get(mon[:3], 0)
+
+
+def _parse_mdy(text: str, sep: str):
+    parts = text.strip().split(sep)
     if len(parts) != 3:
         return None
     try:
-        mm, dd, yy = int(parts[0]), int(parts[1]), int(parts[2])
+        mm = int(parts[0])
+        dd = int(parts[1])
+        yy = int(parts[2])
         if yy < 100:
             yy += 2000
-        if not (1 <= mm <= 12 and 1 <= dd <= 31):
+        if mm < 1 or mm > 12 or dd < 1 or dd > 31:
             return None
         return date(yy, mm, dd)
-    except (ValueError, TypeError):
+    except (TypeError, ValueError):
         return None
 
 
-def _parse_dmy(s: str, sep: str) -> Optional[date]:
-    parts = s.strip().split(sep)
-    if len(parts) != 3:
-        return None
-    try:
-        dd, mm, yy = int(parts[0]), int(parts[1]), int(parts[2])
-        if yy < 100:
-            yy += 2000
-        if not (1 <= mm <= 12 and 1 <= dd <= 31):
-            return None
-        return date(yy, mm, dd)
-    except (ValueError, TypeError):
-        return None
-
-
-def _parse_numeric_date(s: str, sep: str) -> Optional[date]:
-    parts = s.strip().split(sep)
-    if len(parts) != 3 or not all(part.strip().isdigit() for part in parts):
-        return None
-
-    first = int(parts[0])
-    second = int(parts[1])
-
-    if first > 12 and second <= 12:
-        return _parse_dmy(s, sep)
-    if second > 12 and first <= 12:
-        return _parse_mdy(s, sep)
-
-    # Preserve existing behavior for ambiguous purely numeric dates.
-    return _parse_mdy(s, sep)
-
-
-def _parse_dmon_y(s: str, sep: str) -> Optional[date]:
-    parts = s.strip().split(sep)
+def _parse_dmon_y(text: str, sep: str):
+    parts = text.strip().split(sep)
     if len(parts) != 3:
         return None
     try:
@@ -185,487 +157,459 @@ def _parse_dmon_y(s: str, sep: str) -> Optional[date]:
         yy = int(parts[2])
         if yy < 100:
             yy += 2000
-        if not (1 <= mm <= 12 and 1 <= dd <= 31):
+        if mm < 1 or mm > 12 or dd < 1 or dd > 31:
             return None
         return date(yy, mm, dd)
-    except (ValueError, TypeError):
+    except (TypeError, ValueError):
         return None
 
 
-_MONTH_MAP = {
-    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
-    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
-}
+def _parse_date_cell(cell) -> Optional[date]:
+    value = cell.value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+
+    text = str(cell.value).strip() if cell.value is not None else ""
+    if text in ("", "####"):
+        text = _cell_display_text(cell)
+    if not text:
+        return None
+    if " " in text:
+        text = text.split(" ", 1)[0]
+
+    if "/" in text:
+        return _parse_mdy(text, "/")
+    if "-" in text:
+        return _parse_dmon_y(text, "-")
+    return None
 
 
-def _month_text_to_num(mon: str) -> int:
-    return _MONTH_MAP.get(mon.strip().lower()[:3], 0)
+def _strip_leading_zeros(text: str) -> str:
+    value = str(text or "").strip()
+    if not value:
+        return ""
+    stripped = value.lstrip("0")
+    return stripped if stripped else ""
 
 
-# ── Doc number extraction ──────────────────────────────────
-
-def _extract_doc_no_10(details: str, *, strip_leading_zeros: bool = True) -> str:
-    """Extract rightmost 10-digit run from details."""
+def _extract_doc_no_10(details: str) -> str:
+    details = str(details or "").strip()
     if not details:
-        return ''
-    best10 = ''
-    run = ''
-    for ch in str(details):
+        return ""
+
+    run = ""
+    best10 = ""
+    for ch in details:
         if ch.isdigit():
             run += ch
         else:
             if len(run) >= 10:
                 best10 = run[-10:]
-            run = ''
+            run = ""
     if len(run) >= 10:
         best10 = run[-10:]
+
     if not best10:
-        return ''
-    if not strip_leading_zeros:
-        return best10
-    return best10.lstrip('0') or ''
+        return ""
+    return _strip_leading_zeros(best10)
 
 
-# ── Header helpers ─────────────────────────────────────────
-
-def _normalize_header(s: str) -> str:
-    s = str(s).replace('\xa0', ' ').replace('\r', ' ').replace('\n', ' ').strip()
-    while '  ' in s:
-        s = s.replace('  ', ' ')
-    return s.upper()
+def _fmt_date(dt_value: date) -> str:
+    return dt_value.strftime("%d-%b-%Y")
 
 
-def _find_header_col(ws: Worksheet, hdr_row: int, header_text: str) -> int:
-    """Return 1-based column index or 0 if not found."""
-    want = _normalize_header(header_text)
-    for col in range(1, ws.max_column + 1):
-        val = ws.cell(row=hdr_row, column=col).value
-        if val is not None and _normalize_header(str(val)) == want:
-            return col
-    return 0
-
-
-def _find_txn_header_row(ws: Worksheet) -> int:
-    """Auto-detect the header row (must have Date, Transaction Details, Debit, Credit)."""
-    for r in range(1, min(30, ws.max_row + 1)):
-        if (
-            _find_header_col(ws, r, 'Date') > 0
-            and _find_header_col(ws, r, 'Transaction Details') > 0
-            and _find_header_col(ws, r, 'Debit') > 0
-            and _find_header_col(ws, r, 'Credit') > 0
-        ):
-            return r
-    return 0
-
-
-def _normalize_row13_headers(ws: Worksheet):
-    """Mirror the VBA fallback that rewrites row 13 headers in-place."""
-    headers = [
-        'Date',
-        'Transaction Reference',
-        'Transaction Details',
-        'Transaction Type',
-        'Originator Reference',
-        'Debit',
-        'Credit',
-        'Closing Balance',
-    ]
-    for c, header in enumerate(headers, 1):
-        ws.cell(row=HEADER_ROW, column=c, value=header)
-
-
-def _row13_has_expected_layout(ws: Worksheet) -> bool:
-    expected = {
-        1: 'Date',
-        2: 'Transaction Reference',
-        3: 'Transaction Details',
-        4: 'Transaction Type',
-        5: 'Originator Reference',
-        6: 'Debit',
-        7: 'Credit',
-        8: 'Closing Balance',
-    }
-    for col, text in expected.items():
-        if _normalize_header(ws.cell(row=HEADER_ROW, column=col).value) != _normalize_header(text):
-            return False
-    return True
-
-
-# ── Output row builders (return plain lists, no worksheet I/O) ─────────────
-
-def _fmt_date(d: date) -> str:
-    months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    return f"{d.day:02d}-{months[d.month - 1]}-{d.year}"
-
-
-def _make_payment_row(doc_no, dt: date, amt: float) -> list:
+def _make_payment_row(doc_no, dt_value: date, amount: float) -> list:
     return [
-        'tab',
-        'tab',
-        'trfd',
-        'tab',
-        str(doc_no) if doc_no else '',
-        'tab',
-        _fmt_date(dt),
-        'tab',
-        _fmt_date(dt),
-        'tab',
-        amt,
-        'tab',
+        "tab",
+        "tab",
+        "trfd",
+        "tab",
+        str(doc_no) if doc_no else "",
+        "tab",
+        _fmt_date(dt_value),
+        "tab",
+        _fmt_date(dt_value),
+        "tab",
+        amount,
+        "tab",
         DN_PREFIX_CELL,
-        '*dn',
+        "*dn",
     ]
 
 
-def _make_receipt_row(doc_no: str, dt: date, amt: float) -> list:
+def _make_receipt_row(doc_no: str, dt_value: date, amount: float) -> list:
     return [
-        'tab',
-        '*dn',
-        'r',
-        'tab',
-        'trfc',
-        'tab',
+        "tab",
+        "*dn",
+        "r",
+        "tab",
+        "trfc",
+        "tab",
         doc_no,
-        'tab',
-        _fmt_date(dt),
-        'tab',
-        _fmt_date(dt),
-        'tab',
-        amt,
-        'tab',
+        "tab",
+        _fmt_date(dt_value),
+        "tab",
+        _fmt_date(dt_value),
+        "tab",
+        amount,
+        "tab",
         DN_PREFIX_CELL,
-        '*dn',
+        "*dn",
     ]
 
 
-def _write_rows_to_sheet(ws_out: Worksheet, rows: list[list]):
-    """Write keystroke-format rows to ws_out starting at row 2, leaving row 1 blank."""
-    for i, row_vals in enumerate(rows):
-        for c, val in enumerate(row_vals, 1):
-            out_val = val
+def _write_rows_to_sheet(ws_out: Worksheet, rows: List[List]):
+    for index, row_vals in enumerate(rows, start=OUTPUT_FIRST_ROW):
+        for col_index, value in enumerate(row_vals, start=1):
+            out_value = value
+            if row_vals[:3] == ["tab", "tab", "trfd"]:
+                if col_index in (7, 9) and isinstance(value, str):
+                    parsed = _parse_dmon_y(value, "-")
+                    out_value = parsed if parsed is not None else value
+                elif col_index == 11:
+                    parsed_num = _parse_number(value)
+                    out_value = parsed_num if parsed_num is not None else value
+                elif col_index == 5 and str(value).strip().isdigit():
+                    out_value = int(str(value).strip())
+            elif len(row_vals) >= 5 and row_vals[:5] == ["tab", "*dn", "r", "tab", "trfc"]:
+                if col_index in (9, 11) and isinstance(value, str):
+                    parsed = _parse_dmon_y(value, "-")
+                    out_value = parsed if parsed is not None else value
+                elif col_index == 13:
+                    parsed_num = _parse_number(value)
+                    out_value = parsed_num if parsed_num is not None else value
+            ws_out.cell(row=index, column=col_index, value=out_value)
 
-            # Preserve the VBA-style typed worksheet output while keeping output_data
-            # as simple row lists for the TNT DL grid.
-            if len(row_vals) >= 14:
-                is_payment = (
-                    str(row_vals[0]).lower() == 'tab'
-                    and str(row_vals[1]).lower() == 'tab'
-                    and str(row_vals[2]).lower() == 'trfd'
-                )
-                is_receipt = (
-                    str(row_vals[0]).lower() == 'tab'
-                    and str(row_vals[1]).lower() == '*dn'
-                    and str(row_vals[2]).lower() == 'r'
-                    and str(row_vals[4]).lower() == 'trfc'
-                )
-
-                if is_payment:
-                    if c == 5 and str(val).strip().isdigit():
-                        out_val = int(str(val).strip())
-                    elif c in (7, 9) and isinstance(val, str):
-                        out_val = _parse_dmon_y(val, '-') or val
-                    elif c == 11:
-                        num = _parse_number(val)
-                        out_val = num if num is not None else val
-                elif is_receipt:
-                    if c in (9, 11) and isinstance(val, str):
-                        out_val = _parse_dmon_y(val, '-') or val
-                    elif c == 13:
-                        num = _parse_number(val)
-                        out_val = num if num is not None else val
-
-            ws_out.cell(row=i + OUTPUT_FIRST_ROW, column=c, value=out_val)
-
-
-# ── Audit writers ──────────────────────────────────────────
 
 def _write_audit_header(ws_audit: Worksheet):
     headers = [
-        'Row#', 'Date (Raw)', 'Reference', 'Transaction Type',
-        'Transaction Details', 'Debit (Raw)', 'Credit (Raw)',
-        'Debit (Parsed)', 'Credit (Parsed)', 'Skip Reason'
+        "Row#",
+        "Date (Raw)",
+        "Reference",
+        "Transaction Type",
+        "Transaction Details",
+        "Debit (Raw)",
+        "Credit (Raw)",
+        "Debit (Parsed)",
+        "Credit (Parsed)",
+        "Skip Reason",
     ]
-    for c, h in enumerate(headers, 1):
-        cell = ws_audit.cell(row=AUDIT_DETAIL_HEADER_ROW, column=c, value=h)
+    for col_index, header in enumerate(headers, start=1):
+        cell = ws_audit.cell(row=AUDIT_DETAIL_HEADER_ROW, column=col_index, value=header)
         cell.font = Font(bold=True)
 
 
-def _add_audit(ws_audit: Worksheet, audit_row: int, row_num: int,
-               raw_date: str, raw_ref, txn_type: str, details: str,
-               raw_debit, raw_credit, reason: str):
-    vals = [row_num, raw_date, raw_ref, txn_type, details,
-            raw_debit, raw_credit,
-            _safe_double(raw_debit), _safe_double(raw_credit), reason]
-    for c, v in enumerate(vals, 1):
-        ws_audit.cell(row=audit_row, column=c, value=v)
-
-
-def _write_audit_summary(ws_audit: Worksheet, opening, additions, outs,
-                          closing_calc, closing_stmt, variance):
-    labels = [
-        'BANK RECONCILIATION SUMMARY',
-        'Opening Balance',
-        'Additions (Receipts/Credits Captured)',
-        'Less: Outs (Payments/Debits Captured)',
-        'Closing Balance (Calculated)',
-        'Closing Balance (Statement)',
-        'Closing Match (Statement - Calculated)',
+def _add_audit(
+    ws_audit: Worksheet,
+    audit_row: int,
+    row_num: int,
+    raw_date: str,
+    raw_ref,
+    txn_type: str,
+    details: str,
+    raw_debit,
+    raw_credit,
+    reason: str,
+):
+    values = [
+        row_num,
+        raw_date,
+        raw_ref,
+        txn_type,
+        details,
+        raw_debit,
+        raw_credit,
+        _safe_double(raw_debit),
+        _safe_double(raw_credit),
+        reason,
     ]
-    for i, lbl in enumerate(labels):
-        c = ws_audit.cell(row=i + 1, column=1, value=lbl)
-        if i == 0:
-            c.font = Font(bold=True)
+    for col_index, value in enumerate(values, start=1):
+        ws_audit.cell(row=audit_row, column=col_index, value=value)
 
-    if opening is None:
-        ws_audit.cell(row=2, column=2, value='N/A (No Closing Balance column detected)')
-        ws_audit.cell(row=3, column=2, value=additions)
-        ws_audit.cell(row=4, column=2, value=outs)
+
+def _write_audit_summary(
+    ws_audit: Worksheet,
+    opening_balance,
+    additions_cred: float,
+    outs_deb: float,
+    closing_calc,
+    closing_stmt,
+    variance,
+):
+    labels = [
+        "BANK RECONCILIATION SUMMARY",
+        "Opening Balance",
+        "Additions (Receipts/Credits Captured)",
+        "Less: Outs (Payments/Debits Captured)",
+        "Closing Balance (Calculated)",
+        "Closing Balance (Statement)",
+        "Closing Match (Statement - Calculated)",
+    ]
+    for row_index, label in enumerate(labels, start=1):
+        cell = ws_audit.cell(row=row_index, column=1, value=label)
+        if row_index == 1:
+            cell.font = Font(bold=True)
+
+    if opening_balance is None:
+        ws_audit.cell(row=2, column=2, value="N/A (No Closing Balance column detected)")
+        ws_audit.cell(row=3, column=2, value=additions_cred)
+        ws_audit.cell(row=4, column=2, value=outs_deb)
     else:
-        ws_audit.cell(row=2, column=2, value=opening)
-        ws_audit.cell(row=3, column=2, value=additions)
-        ws_audit.cell(row=4, column=2, value=outs)
-        ws_audit.cell(row=5, column=2, value=closing_calc)
-        ws_audit.cell(row=6, column=2, value=closing_stmt if closing_stmt is not None else 'N/A')
-        ws_audit.cell(row=7, column=2, value=variance if variance is not None else 'N/A')
+        ws_audit.cell(row=2, column=2, value=float(opening_balance))
+        ws_audit.cell(row=3, column=2, value=additions_cred)
+        ws_audit.cell(row=4, column=2, value=outs_deb)
+        ws_audit.cell(row=5, column=2, value=float(closing_calc))
+        ws_audit.cell(row=6, column=2, value="N/A" if closing_stmt is None else float(closing_stmt))
+        ws_audit.cell(row=7, column=2, value="N/A" if variance is None else float(variance))
 
 
-# ── Sheet helper ───────────────────────────────────────────
-
-def _get_or_create_sheet(wb: Workbook, name: str) -> Worksheet:
-    if name in wb.sheetnames:
-        idx = wb.sheetnames.index(name)
-        del wb[name]
-        return wb.create_sheet(title=name, index=idx)
-    return wb.create_sheet(title=name)
+def _get_or_create_sheet(wb: Workbook, sheet_name: str) -> Worksheet:
+    if sheet_name in wb.sheetnames:
+        return wb[sheet_name]
+    return wb.create_sheet(title=sheet_name)
 
 
-# ── Main converter ─────────────────────────────────────────
+def _clear_sheet(ws: Worksheet):
+    ws.delete_rows(1, ws.max_row or 1)
+    ws.delete_cols(1, ws.max_column or 1)
+
+
+def _add_row_to_amount_map(mapping: Dict[str, List[int]], ref10: str, amount: float, row_num: int):
+    key = f"{ref10}|{amount:.2f}"
+    mapping.setdefault(key, []).append(row_num)
+
+
+def _sort_key(row_vals: List):
+    if len(row_vals) > 8 and row_vals[8]:
+        return _parse_dmon_y(str(row_vals[8]), "-") or date.min
+    if len(row_vals) > 6 and row_vals[6]:
+        return _parse_dmon_y(str(row_vals[6]), "-") or date.min
+    return date.min
+
 
 def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -> ConversionResult:
-    """
-    Run the full conversion on wb[sheet_name].
-    Writes Output and Audit_Skipped sheets into wb.
-    Returns ConversionResult with output_data for loading into the TNT DL grid.
-    """
     if openpyxl is None:
-        return ConversionResult(success=False, message='openpyxl not installed.')
-
+        return ConversionResult(success=False, message="openpyxl not installed.")
     if sheet_name not in wb.sheetnames:
         return ConversionResult(success=False, message=f'Sheet "{sheet_name}" not found.')
 
     ws = wb[sheet_name]
 
-    # 1) Find header row
     hdr_row = _find_txn_header_row(ws)
     if hdr_row == 0:
         _normalize_row13_headers(ws)
         hdr_row = HEADER_ROW
 
-    # Some CBK statements arrive with row 13 shifted (for example blank column B
-    # and the rest of the headers moved one column right). The VBA macro fixes
-    # that by rewriting row 13, so do the same here.
-    if hdr_row == HEADER_ROW and not _row13_has_expected_layout(ws):
-        _normalize_row13_headers(ws)
-        hdr_row = HEADER_ROW
+    col_date = _find_header_col(ws, hdr_row, "Date")
+    col_ref = _find_header_col(ws, hdr_row, "Transaction Reference")
+    col_details = _find_header_col(ws, hdr_row, "Transaction Details")
+    col_type = _find_header_col(ws, hdr_row, "Transaction Type")
+    col_debit = _find_header_col(ws, hdr_row, "Debit")
+    col_credit = _find_header_col(ws, hdr_row, "Credit")
+    col_bal = _find_header_col(ws, hdr_row, "Closing Balance")
+    if col_bal == 0:
+        col_bal = _find_header_col(ws, hdr_row, "Balance")
 
-    if hdr_row == 0:
+    if col_date == 0 or col_details == 0 or col_debit == 0 or col_credit == 0:
         return ConversionResult(
             success=False,
-            message='Required columns not found (Date, Transaction Details, Debit, Credit).'
+            message="Required columns not found (Date, Transaction Details, Debit, Credit).",
         )
-    data_start = hdr_row + 1
 
-    # 2) Map columns
-    col_date = _find_header_col(ws, hdr_row, 'Date')
-    col_ref = _find_header_col(ws, hdr_row, 'Transaction Reference')
-    col_details = _find_header_col(ws, hdr_row, 'Transaction Details')
-    col_type = _find_header_col(ws, hdr_row, 'Transaction Type')
-    col_debit = _find_header_col(ws, hdr_row, 'Debit')
-    col_credit = _find_header_col(ws, hdr_row, 'Credit')
-    col_bal = _find_header_col(ws, hdr_row, 'Closing Balance')
-    if col_bal == 0:
-        col_bal = _find_header_col(ws, hdr_row, 'Balance')
-
-    # 3) Last data row
-    last_row = ws.max_row
-    while last_row >= data_start and ws.cell(row=last_row, column=col_date).value is None:
+    last_row = ws.cell(row=ws.max_row, column=col_date).row
+    while last_row >= DATA_START_ROW and not str(ws.cell(row=last_row, column=col_date).value or "").strip():
         last_row -= 1
-    if last_row < data_start:
-        return ConversionResult(success=False, message='No data rows found.')
+    if last_row < DATA_START_ROW:
+        return ConversionResult(success=False, message="No data rows found.")
 
-    # 4) Create output sheets
-    ws_out = _get_or_create_sheet(wb, 'Output')
-    ws_audit = _get_or_create_sheet(wb, 'Audit_Skipped')
+    ws_audit = _get_or_create_sheet(wb, "Audit_Skipped")
+    ws_out = _get_or_create_sheet(wb, "Output")
+    _clear_sheet(ws_audit)
+    _clear_sheet(ws_out)
     _write_audit_header(ws_audit)
 
-    # 5) Opening / closing balance
-    opening_bal = None
-    closing_bal_stmt = None
-    if col_bal > 0:
-        for r in range(data_start, last_row + 1):
-            v = _parse_number(ws.cell(row=r, column=col_bal).value)
-            if v is not None:
-                fb = v
-                fd = _safe_double(ws.cell(row=r, column=col_debit).value)
-                fc = _safe_double(ws.cell(row=r, column=col_credit).value)
-                opening_bal = fb - fc + fd
-                break
-        for r in range(last_row, data_start - 1, -1):
-            v = _parse_number(ws.cell(row=r, column=col_bal).value)
-            if v is not None:
-                closing_bal_stmt = v
-                break
-
-    # 6) Contra matching (only when skip_contra=True)
+    audit_row = AUDIT_DETAIL_FIRST_ROW
+    output_data: List[List] = []
+    receipts: List[List] = []
+    audit_rows: List[List] = []
     skip_row: Dict[int, str] = {}
-    if skip_contra:
-        deb_map: Dict[str, List[int]] = {}
-        cr_map: Dict[str, List[int]] = {}
+    skip_tally: Dict[str, int] = {}
+    total_debits = 0.0
+    total_credits = 0.0
 
-        for r in range(data_start, last_row + 1):
-            details = str(ws.cell(row=r, column=col_details).value or '')
+    opening_balance = None
+    closing_balance_stmt = None
+    if col_bal > 0:
+        first_bal_row = 0
+        last_bal_row = 0
+        for row_num in range(DATA_START_ROW, last_row + 1):
+            if _parse_number(ws.cell(row=row_num, column=col_bal).value) is not None:
+                first_bal_row = row_num
+                break
+        for row_num in range(last_row, DATA_START_ROW - 1, -1):
+            if _parse_number(ws.cell(row=row_num, column=col_bal).value) is not None:
+                last_bal_row = row_num
+                break
+
+        if first_bal_row > 0:
+            first_bal = float(_parse_number(ws.cell(row=first_bal_row, column=col_bal).value))
+            first_debit = _safe_double(ws.cell(row=first_bal_row, column=col_debit).value)
+            first_credit = _safe_double(ws.cell(row=first_bal_row, column=col_credit).value)
+            opening_balance = first_bal - first_credit + first_debit
+
+        if last_bal_row > 0:
+            closing_balance_stmt = float(_parse_number(ws.cell(row=last_bal_row, column=col_bal).value))
+
+    if skip_contra:
+        debit_map: Dict[str, List[int]] = {}
+        credit_map: Dict[str, List[int]] = {}
+        for row_num in range(DATA_START_ROW, last_row + 1):
+            details = str(ws.cell(row=row_num, column=col_details).value or "")
             ref10 = _extract_doc_no_10(details)
             if not ref10:
                 continue
-            d = _safe_double(ws.cell(row=r, column=col_debit).value)
-            c = _safe_double(ws.cell(row=r, column=col_credit).value)
-            key = f'{ref10}|{amt:.2f}' if (amt := max(d, c)) > 0 else ''
-            if not key:
+            debit_value = _safe_double(ws.cell(row=row_num, column=col_debit).value)
+            credit_value = _safe_double(ws.cell(row=row_num, column=col_credit).value)
+            if debit_value > 0 and credit_value == 0:
+                _add_row_to_amount_map(debit_map, ref10, debit_value, row_num)
+            elif credit_value > 0 and debit_value == 0:
+                _add_row_to_amount_map(credit_map, ref10, credit_value, row_num)
+
+        for key in debit_map.keys():
+            if key not in credit_map:
                 continue
-            if d > 0 and c == 0:
-                deb_map.setdefault(key, []).append(r)
-            elif c > 0 and d == 0:
-                cr_map.setdefault(key, []).append(r)
+            pairs = min(len(debit_map[key]), len(credit_map[key]))
+            for index in range(pairs):
+                skip_row[debit_map[key][index]] = "CONTRA_MATCHED_DETAILS10_AMOUNT"
+                skip_row[credit_map[key][index]] = "CONTRA_MATCHED_DETAILS10_AMOUNT"
 
-        for key in deb_map:
-            if key in cr_map:
-                pairs = min(len(deb_map[key]), len(cr_map[key]))
-                for i in range(pairs):
-                    skip_row[deb_map[key][i]] = 'CONTRA_MATCHED_DETAILS10_AMOUNT'
-                    skip_row[cr_map[key][i]] = 'CONTRA_MATCHED_DETAILS10_AMOUNT'
-
-    # 7) Build output rows in memory (no worksheet I/O yet)
-    payment_rows: List[list] = []
-    receipt_rows: List[list] = []
-    audit_detail_rows: List[list] = []   # collected in memory for multi-sheet merge
-    audit_row = AUDIT_DETAIL_FIRST_ROW
-    skip_tally: Dict[str, int] = {}
-    tot_deb = 0.0
-    tot_cred = 0.0
-
-    for r in range(data_start, last_row + 1):
-        raw_date_val = ws.cell(row=r, column=col_date).value
-        raw_date_text = str(raw_date_val or '')
-        raw_ref = ws.cell(row=r, column=col_ref).value if col_ref else ''
-        raw_debit = ws.cell(row=r, column=col_debit).value
-        raw_credit = ws.cell(row=r, column=col_credit).value
-        details = str(ws.cell(row=r, column=col_details).value or '')
-        txn_type = str(ws.cell(row=r, column=col_type).value or '') if col_type else ''
+    for row_num in range(DATA_START_ROW, last_row + 1):
+        raw_date_text = _cell_display_text(ws.cell(row=row_num, column=col_date))
+        raw_ref = ws.cell(row=row_num, column=col_ref).value if col_ref > 0 else ""
+        raw_debit = ws.cell(row=row_num, column=col_debit).value
+        raw_credit = ws.cell(row=row_num, column=col_credit).value
+        details = str(ws.cell(row=row_num, column=col_details).value or "")
+        txn_type = str(ws.cell(row=row_num, column=col_type).value or "") if col_type > 0 else ""
         ref10 = _extract_doc_no_10(details)
 
-        def _audit(reason: str, ref=raw_ref):
+        def add_audit(reason: str, reference_value):
             nonlocal audit_row
-            vals = [r, raw_date_text, ref, txn_type, details,
-                    raw_debit, raw_credit,
-                    _safe_double(raw_debit), _safe_double(raw_credit), reason]
-            audit_detail_rows.append(vals)
-            _add_audit(ws_audit, audit_row, r, raw_date_text, ref,
-                       txn_type, details, raw_debit, raw_credit, reason)
-            skip_tally[reason] = skip_tally.get(reason, 0) + 1
+            record = [
+                row_num,
+                raw_date_text,
+                reference_value,
+                txn_type,
+                details,
+                raw_debit,
+                raw_credit,
+                _safe_double(raw_debit),
+                _safe_double(raw_credit),
+                reason,
+            ]
+            audit_rows.append(record)
+            _add_audit(
+                ws_audit,
+                audit_row,
+                row_num,
+                raw_date_text,
+                reference_value,
+                txn_type,
+                details,
+                raw_debit,
+                raw_credit,
+                reason,
+            )
             audit_row += 1
+            skip_tally[reason] = skip_tally.get(reason, 0) + 1
 
-        if r in skip_row:
-            _audit(skip_row[r], ref=ref10)
+        if row_num in skip_row:
+            add_audit(skip_row[row_num], ref10)
             continue
 
-        dt = _parse_date_cell(raw_date_val, raw_date_text)
-        if dt is None:
-            _audit('BLANK_OR_INVALID_DATE')
+        parsed_date = _parse_date_cell(ws.cell(row=row_num, column=col_date))
+        if parsed_date is None:
+            add_audit("BLANK_OR_INVALID_DATE", raw_ref)
             continue
 
-        d2 = _safe_double(raw_debit)
-        c2 = _safe_double(raw_credit)
+        debit_value = _safe_double(raw_debit)
+        credit_value = _safe_double(raw_credit)
 
-        if d2 > 0 and c2 > 0:
-            _audit('BOTH_DEBIT_AND_CREDIT_PRESENT')
+        if debit_value > 0 and credit_value > 0:
+            add_audit("BOTH_DEBIT_AND_CREDIT_PRESENT", raw_ref)
+            continue
+        if debit_value == 0 and credit_value == 0:
+            add_audit("ZERO_OR_NON_NUMERIC_AMOUNT", raw_ref)
             continue
 
-        if d2 == 0 and c2 == 0:
-            _audit('ZERO_OR_NON_NUMERIC_AMOUNT')
-            continue
+        if debit_value > 0 and credit_value == 0:
+            output_data.append(_make_payment_row(ref10, parsed_date, debit_value))
+            total_debits += debit_value
+        elif credit_value > 0 and debit_value == 0:
+            doc_no_receipt = str(raw_ref).strip() if raw_ref is not None else ""
+            if not doc_no_receipt:
+                doc_no_receipt = "BNK is Blank"
+            receipts.append(_make_receipt_row(doc_no_receipt, parsed_date, credit_value))
+            total_credits += credit_value
 
-        if d2 > 0 and c2 == 0:
-            payment_rows.append(_make_payment_row(ref10, dt, d2))
-            tot_deb += d2
-        elif c2 > 0 and d2 == 0:
-            doc_no_rec = str(raw_ref).strip() if raw_ref else ''
-            if not doc_no_rec:
-                doc_no_rec = 'BNK is Blank'
-            receipt_rows.append(_make_receipt_row(doc_no_rec, dt, c2))
-            tot_cred += c2
+    for receipt_row in receipts:
+        output_data.append(receipt_row)
 
-    # 8) Sort combined rows by date in Python, then write to worksheet once
-    def _sort_key(row_vals: list) -> date:
-        # Keystroke format: value date is column I (index 8), payment date fallback is G (index 6).
-        v = row_vals[8] if len(row_vals) > 8 and row_vals[8] else row_vals[6]
-        if isinstance(v, str):
-            try:
-                return _parse_dmon_y(v, '-') or date.min
-            except Exception:
-                return date.min
-        if isinstance(v, (date, datetime)):
-            return v.date() if isinstance(v, datetime) else v
-        return date.min
-
-    output_data = payment_rows + receipt_rows
     output_data.sort(key=_sort_key)
     _write_rows_to_sheet(ws_out, output_data)
 
-    # 9) Audit summary
-    closing_calc = None
+    closing_balance_calc = None
     variance = None
-    if opening_bal is not None:
-        closing_calc = opening_bal + tot_cred - tot_deb
-        if closing_bal_stmt is not None:
-            variance = closing_bal_stmt - closing_calc
+    if opening_balance is not None:
+        closing_balance_calc = float(opening_balance) + total_credits - total_debits
+        if closing_balance_stmt is not None:
+            variance = float(closing_balance_stmt) - float(closing_balance_calc)
 
-    _write_audit_summary(ws_audit, opening_bal, tot_cred, tot_deb,
-                          closing_calc, closing_bal_stmt, variance)
+    _write_audit_summary(
+        ws_audit,
+        opening_balance,
+        total_credits,
+        total_debits,
+        closing_balance_calc,
+        closing_balance_stmt,
+        variance,
+    )
 
-    skipped = audit_row - AUDIT_DETAIL_FIRST_ROW
+    ws_out.column_dimensions["A"].width = ws_out.column_dimensions["A"].width or 12
 
-    msg_parts = [
-        'Conversion complete.',
-        f'Output rows: {len(output_data)}',
-        f'Skipped rows: {skipped}',
-        f'Total Debits: {tot_deb:,.2f}',
-        f'Total Credits: {tot_cred:,.2f}',
+    message_lines = [
+        "Conversion complete.",
+        f"Output rows: {len(output_data)}",
+        f"Skipped rows: {len(audit_rows)}",
+        f"Total Debits: {total_debits:,.2f}",
+        f"Total Credits: {total_credits:,.2f}",
     ]
-    if opening_bal is not None:
-        msg_parts.append(f'Opening Balance: {opening_bal:,.2f}')
-    if closing_bal_stmt is not None:
-        msg_parts.append(f'Statement Closing: {closing_bal_stmt:,.2f}')
-    if closing_calc is not None:
-        msg_parts.append(f'Calculated Closing: {closing_calc:,.2f}')
+    if opening_balance is not None:
+        message_lines.append(f"Opening Balance: {opening_balance:,.2f}")
+    if closing_balance_stmt is not None:
+        message_lines.append(f"Statement Closing: {closing_balance_stmt:,.2f}")
+    if closing_balance_calc is not None:
+        message_lines.append(f"Calculated Closing: {closing_balance_calc:,.2f}")
     if variance is not None:
-        msg_parts.append(f'Variance: {variance:,.2f}')
+        message_lines.append(f"Variance: {variance:,.2f}")
     if skip_tally:
-        msg_parts.append('\nSkip breakdown:')
-        for reason, cnt in sorted(skip_tally.items(), key=lambda x: -x[1]):
-            msg_parts.append(f'  {reason}: {cnt}')
+        message_lines.append("")
+        message_lines.append("Skip breakdown:")
+        for reason, count in sorted(skip_tally.items(), key=lambda item: (-item[1], item[0])):
+            message_lines.append(f"  {reason}: {count}")
 
     return ConversionResult(
         success=True,
-        message='\n'.join(msg_parts),
+        message="\n".join(message_lines),
         output_rows=len(output_data),
-        skipped_rows=skipped,
-        total_debits=tot_deb,
-        total_credits=tot_cred,
-        opening_balance=opening_bal,
-        closing_balance_stmt=closing_bal_stmt,
-        closing_balance_calc=closing_calc,
+        skipped_rows=len(audit_rows),
+        total_debits=total_debits,
+        total_credits=total_credits,
+        opening_balance=opening_balance,
+        closing_balance_stmt=closing_balance_stmt,
+        closing_balance_calc=closing_balance_calc,
         variance=variance,
         output_data=output_data,
-        audit_rows=audit_detail_rows,
+        audit_rows=audit_rows,
     )

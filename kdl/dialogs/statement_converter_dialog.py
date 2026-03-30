@@ -361,8 +361,8 @@ class _ConverterWorker(QThread):
                     if self.result is not None:
                         self.result.message += (
                             "\n\nLarge workbook fallback used. "
-                            "The converted result will be saved as a separate "
-                            "_converted.xlsx copy so the original workbook stays unchanged."
+                            "The converted result will be saved as a "
+                            "_converted.xlsx reference workbook in Downloads."
                         )
                     return
                 except Exception as fallback_exc:
@@ -541,7 +541,7 @@ class StatementConverterDialog(QDialog):
         self._load_grid_btn.setEnabled(False)
         self._load_grid_btn.setStyleSheet(primary_btn_qss)
         self._load_grid_btn.setToolTip(
-            "Load the converted Output sheet into the TNT DL grid and save the workbook."
+            "Load the converted Output sheet into the TNT DL grid and save a _converted.xlsx reference workbook in Downloads."
         )
         self._load_grid_btn.clicked.connect(self._load_into_grid)
 
@@ -708,7 +708,7 @@ class StatementConverterDialog(QDialog):
         if result.success:
             self._load_grid_btn.setEnabled(bool(result.output_data))
             self._result_text.append(
-                '\nClick "Load Output to Grid" to load the result and save the workbook.'
+                '\nClick "Load Output to Grid" to load the result and save a _converted.xlsx reference workbook in Downloads.'
             )
 
     def _load_into_grid(self):
@@ -717,10 +717,13 @@ class StatementConverterDialog(QDialog):
 
         if self._wb is not None:
             filepath = self._file_edit.text().strip()
-            source_ext = os.path.splitext(filepath)[1].lower()
-            save_path = filepath
-            if self._save_as_copy or source_ext in (".xls", ".csv", ".html", ".htm"):
-                save_path = os.path.splitext(filepath)[0] + "_converted.xlsx"
+            downloads_dir = _default_browse_dir()
+            source_name = os.path.splitext(os.path.basename(filepath))[0]
+            if source_name.lower().endswith("_converted"):
+                output_name = source_name + ".xlsx"
+            else:
+                output_name = source_name + "_converted.xlsx"
+            save_path = os.path.join(downloads_dir, output_name)
             saved_name = None
             try:
                 self._wb.save(save_path)
@@ -747,12 +750,9 @@ class StatementConverterDialog(QDialog):
                 self._result_text.append(f"\nSave failed: {exc}")
 
             if saved_name:
-                if save_path != filepath:
-                    self._result_text.append(
-                        f"Saved to: {saved_name} (source file kept unchanged)"
-                    )
-                else:
-                    self._result_text.append(f"Saved to: {saved_name}")
+                self._result_text.append(
+                    f"Saved to: {saved_name} (reference workbook in Downloads)"
+                )
 
             close_wb = getattr(self._wb, "close", None)
             if callable(close_wb):
