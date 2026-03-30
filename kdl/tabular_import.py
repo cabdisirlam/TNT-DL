@@ -357,9 +357,11 @@ def list_legacy_xls_sheet_names(filepath: str) -> list[str]:
     try:
         conn, _ = _open_legacy_xls_connection(filepath)
         names = []
+        seen: set[str] = set()
         for table_name in _iter_legacy_xls_tables(conn):
             name = _extract_ado_sheet_name(table_name)
-            if name:
+            if name and name not in seen:
+                seen.add(name)
                 names.append(name)
         if not names:
             raise RuntimeError("No worksheets were found in the selected .xls workbook.")

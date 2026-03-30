@@ -10,6 +10,7 @@ if (-not $root) {
     $root = (Get-Location).Path
 }
 
+# ── Resolve app directory ──────────────────────────────────────────────────────
 if ([string]::IsNullOrWhiteSpace($AppDir)) {
     $appDirPath = Join-Path $root "dist\NT_DL"
 } else {
@@ -23,6 +24,7 @@ if (-not (Test-Path $appExePath)) {
     throw "Missing NT_DL.exe in app directory: $appDirPath"
 }
 
+# ── Read version from kdl\__init__.py ─────────────────────────────────────────
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $initPath = Join-Path $root "kdl\__init__.py"
     $initText = Get-Content $initPath -Raw
@@ -33,99 +35,87 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = $m.Groups[1].Value
 }
 
-$payloadDir = Join-Path $env:TEMP "kdl_installer_payload"
-if (Test-Path $payloadDir) {
-    Remove-Item -Path $payloadDir -Recurse -Force
-}
-New-Item -ItemType Directory -Path $payloadDir | Out-Null
-
-$packageZipPath = Join-Path $payloadDir "NT_DL_package.zip"
-Compress-Archive -Path (Join-Path $appDirPath "*") -DestinationPath $packageZipPath -Force
-Copy-Item -Path (Join-Path $root "installer\install.cmd") -Destination (Join-Path $payloadDir "install.cmd") -Force
-Copy-Item -Path (Join-Path $root "installer\uninstall.cmd") -Destination (Join-Path $payloadDir "uninstall.cmd") -Force
-
-$installCmdPath = Join-Path $payloadDir "install.cmd"
-$installCmd = Get-Content -Path $installCmdPath -Raw
-$installCmd = [regex]::Replace($installCmd, 'set "APP_VERSION=.*"', ('set "APP_VERSION=' + $Version + '"'))
-Set-Content -Path $installCmdPath -Value $installCmd -Encoding ASCII
-
-$bootstrapScript = Join-Path $root "installer\setup_bootstrap.py"
-if (-not (Test-Path $bootstrapScript)) {
-    throw "Missing installer\setup_bootstrap.py"
-}
-
-$installerBuild = Join-Path $env:TEMP "nt_dl_setup_build"
-if (Test-Path $installerBuild) {
-    Remove-Item -Path $installerBuild -Recurse -Force
-}
-New-Item -ItemType Directory -Path $installerBuild | Out-Null
-
-$installerDist = Join-Path $installerBuild "dist"
-$installerWork = Join-Path $installerBuild "build"
-$installerSpec = Join-Path $installerBuild "spec"
-$installerName = "NT_DL-Setup-$Version"
-
-$pyArgs = @(
-    "-m", "PyInstaller",
-    "--noconfirm",
-    "--clean",
-    "--onedir",
-    "--windowed",
-    "--name", $installerName,
-    "--icon", (Join-Path $root "kdl\assets\kdl_a.ico"),
-    "--distpath", $installerDist,
-    "--workpath", $installerWork,
-    "--specpath", $installerSpec,
-    $bootstrapScript
+# ── Locate Inno Setup compiler (ISCC.exe) ─────────────────────────────────────
+$isccPaths = @(
+    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+    "C:\Program Files\Inno Setup 6\ISCC.exe",
+    "C:\Program Files (x86)\Inno Setup 5\ISCC.exe",
+    "C:\Program Files\Inno Setup 5\ISCC.exe"
 )
+$iscc = $null
+foreach ($p in $isccPaths) {
+    if (Test-Path $p) { $iscc = $p; break }
+}
 
-& python @pyArgs
+# Auto-download and silently install Inno Setup if not found
+if (-not $iscc) {
+    Write-Output "Inno Setup not found - downloading installer..."
+    $isSetupExe = Join-Path $env:TEMP "innosetup_install.exe"
+    $isUrl = "https://jrsoftware.org/download.php/is.exe"
+    try {
+        Invoke-WebRequest -Uri $isUrl -OutFile $isSetupExe -UseBasicParsing
+    } catch {
+        throw "Could not download Inno Setup from $isUrl : $_"
+    }
+    Write-Output "Installing Inno Setup silently..."
+    Start-Process -FilePath $isSetupExe -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait
+    Remove-Item $isSetupExe -Force -ErrorAction SilentlyContinue
+
+    foreach ($p in $isccPaths) {
+        if (Test-Path $p) { $iscc = $p; break }
+    }
+    if (-not $iscc) {
+        throw "Inno Setup installation completed but ISCC.exe was not found. Please install Inno Setup manually from https://jrsoftware.org/isinfo.php"
+    }
+    Write-Output "Inno Setup installed: $iscc"
+}
+
+# ── Build the .iss script from template ───────────────────────────────────────
+$templatePath = Join-Path $root "installer\NT_DL.iss.template"
+if (-not (Test-Path $templatePath)) {
+    throw "Missing installer template: $templatePath"
+}
+
+$iconFile = Join-Path $root "kdl\assets\kdl_a.ico"
+$outputDir = Join-Path $root "dist"
+$issContent = Get-Content $templatePath -Raw
+$issContent = $issContent -replace "@@VERSION@@",  $Version
+$issContent = $issContent -replace "@@APPDIR@@",   $appDirPath.TrimEnd('\')
+$issContent = $issContent -replace "@@ICONFILE@@",  $iconFile
+$issContent = $issContent -replace "@@OUTPUTDIR@@", $outputDir
+
+$issFile = Join-Path $env:TEMP "NT_DL_$Version.iss"
+Set-Content -Path $issFile -Value $issContent -Encoding UTF8
+
+# ── Compile with Inno Setup ────────────────────────────────────────────────────
+Write-Output "Compiling installer with Inno Setup..."
+& $iscc $issFile
 if ($LASTEXITCODE -ne 0) {
-    throw "Installer build failed with exit code $LASTEXITCODE"
+    throw "Inno Setup compilation failed (exit $LASTEXITCODE)"
+}
+Remove-Item $issFile -Force -ErrorAction SilentlyContinue
+
+# ── Verify output ──────────────────────────────────────────────────────────────
+$finalExe = Join-Path $outputDir "NT_DL-Setup-$Version.exe"
+if (-not (Test-Path $finalExe)) {
+    throw "Installer build completed but output EXE not found: $finalExe"
 }
 
-$installerDir = Join-Path $installerDist $installerName
-$installerExe = Join-Path $installerDir ($installerName + ".exe")
-if (-not (Test-Path $installerExe)) {
-    throw "Installer build failed: executable not produced."
-}
-
-Copy-Item -Path $packageZipPath -Destination (Join-Path $installerDir "NT_DL_package.zip") -Force
-Copy-Item -Path (Join-Path $payloadDir "install.cmd") -Destination (Join-Path $installerDir "install.cmd") -Force
-Copy-Item -Path (Join-Path $payloadDir "uninstall.cmd") -Destination (Join-Path $installerDir "uninstall.cmd") -Force
-
-$finalDir = Join-Path $root ("dist\" + $installerName)
-if (Test-Path $finalDir) {
-    Remove-Item -LiteralPath $finalDir -Recurse -Force
-}
-Copy-Item -Path $installerDir -Destination $finalDir -Recurse -Force
-
-$finalZip = Join-Path $root ("dist\" + $installerName + ".zip")
-if (Test-Path $finalZip) {
-    Remove-Item -LiteralPath $finalZip -Force
-}
-Compress-Archive -LiteralPath $finalDir -DestinationPath $finalZip -Force
-
-$staleSetupArtifacts = Get-ChildItem -Path (Join-Path $root "dist") -Filter "NT_DL-Setup-*" -ErrorAction SilentlyContinue
-foreach ($staleArtifact in $staleSetupArtifacts) {
-    if ($staleArtifact.FullName -ne $finalDir -and $staleArtifact.FullName -ne $finalZip) {
-        if ($staleArtifact.PSIsContainer) {
-            Remove-Item -LiteralPath $staleArtifact.FullName -Recurse -Force
-        } else {
-            Remove-Item -LiteralPath $staleArtifact.FullName -Force
-        }
+# ── Clean up old setup artifacts (folders and zips from old bootstrap approach) ─
+$staleItems = Get-ChildItem -Path $outputDir -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "NT_DL-Setup-*" -and $_.FullName -ne $finalExe }
+foreach ($item in $staleItems) {
+    if ($item.PSIsContainer) {
+        Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    } else {
+        Remove-Item -LiteralPath $item.FullName -Force -ErrorAction SilentlyContinue
     }
 }
 
-$legacyReleaseFiles = @(
-    (Join-Path $root "dist\NT_DL.exe"),
-    (Join-Path $root "dist\NT_DL_app.exe")
-)
-foreach ($legacyPath in $legacyReleaseFiles) {
-    if (Test-Path $legacyPath) {
-        Remove-Item -LiteralPath $legacyPath -Force
-    }
+# ── Clean up legacy release files ─────────────────────────────────────────────
+foreach ($legacy in @("dist\NT_DL.exe", "dist\NT_DL_app.exe")) {
+    $lp = Join-Path $root $legacy
+    if (Test-Path $lp) { Remove-Item -LiteralPath $lp -Force }
 }
 
-Write-Output "Installer directory created: $finalDir"
-Write-Output "Installer zip created: $finalZip"
+Write-Output "Installer created: $finalExe"

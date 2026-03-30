@@ -1,0 +1,46 @@
+#define AppName    "NT DL Multipurpose Tool"
+#define AppExeName "NT_DL.exe"
+#define AppPublisher "NT DL"
+#define AppVersion "@@VERSION@@"
+#define AppDir     "@@APPDIR@@"
+#define IconFile   "@@ICONFILE@@"
+
+[Setup]
+AppId={{A3F2C1D4-8B6E-4F9A-BC12-5E7D0A3F9C21}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher={#AppPublisher}
+DefaultDirName={localappdata}\Programs\NT_DL
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+OutputDir=@@OUTPUTDIR@@
+OutputBaseFilename=NT_DL-Setup-{#AppVersion}
+SetupIconFile={#IconFile}
+Compression=lzma2/ultra64
+SolidCompression=yes
+WizardStyle=modern
+PrivilegesRequired=lowest
+UninstallDisplayIcon={app}\{#AppExeName}
+UninstallDisplayName={#AppName}
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
+
+[Files]
+Source: "{#AppDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
+Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
+Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+
+[Run]
+Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
