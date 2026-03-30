@@ -10,7 +10,7 @@ from pathlib import Path
 
 APP_NAME = "NT_DL"
 TITLE = "NT_DL Setup"
-PAYLOAD_FILES = ("NT_DL_payload.dat", "install.cmd", "uninstall.cmd", "kdl_a.ico")
+PAYLOAD_FILES = ("NT_DL_payload.dat", "NT_DL_app.exe", "install.cmd", "uninstall.cmd", "kdl_a.ico")
 BOOT_LOG = Path(os.environ.get("TEMP", str(Path.home()))) / "NT_DL_setup_bootstrap.log"
 
 

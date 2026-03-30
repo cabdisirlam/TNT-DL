@@ -34,7 +34,7 @@ if (Test-Path $payloadDir) {
 }
 New-Item -ItemType Directory -Path $payloadDir | Out-Null
 
-Copy-Item -Path $launcherExePath -Destination (Join-Path $payloadDir "NT_DL.exe") -Force
+Copy-Item -Path $launcherExePath -Destination (Join-Path $payloadDir "NT_DL_payload.dat") -Force
 Copy-Item -Path $appExePath -Destination (Join-Path $payloadDir "NT_DL_app.exe") -Force
 Copy-Item -Path (Join-Path $root "installer\install.cmd") -Destination (Join-Path $payloadDir "install.cmd") -Force
 Copy-Item -Path (Join-Path $root "installer\uninstall.cmd") -Destination (Join-Path $payloadDir "uninstall.cmd") -Force
@@ -45,114 +45,51 @@ $installCmd = Get-Content -Path $installCmdPath -Raw
 $installCmd = [regex]::Replace($installCmd, 'set "APP_VERSION=.*"', ('set "APP_VERSION=' + $Version + '"'))
 Set-Content -Path $installCmdPath -Value $installCmd -Encoding ASCII
 
-$launcherScript = Join-Path $root "installer\iexpress_launcher.py"
-if (-not (Test-Path $launcherScript)) {
-    throw "Missing installer\iexpress_launcher.py"
+$bootstrapScript = Join-Path $root "installer\setup_bootstrap.py"
+if (-not (Test-Path $bootstrapScript)) {
+    throw "Missing installer\setup_bootstrap.py"
 }
 
-$launcherBuild = Join-Path $env:TEMP "nt_dl_launcher_build"
-if (Test-Path $launcherBuild) {
-    Remove-Item -Path $launcherBuild -Recurse -Force
+$installerBuild = Join-Path $env:TEMP "nt_dl_setup_build"
+if (Test-Path $installerBuild) {
+    Remove-Item -Path $installerBuild -Recurse -Force
 }
-New-Item -ItemType Directory -Path $launcherBuild | Out-Null
+New-Item -ItemType Directory -Path $installerBuild | Out-Null
 
-$launcherDist = Join-Path $launcherBuild "dist"
-$launcherWork = Join-Path $launcherBuild "build"
-$launcherSpec = Join-Path $launcherBuild "spec"
-$launcherName = "NT_DL_InstallerLauncher"
+$installerDist = Join-Path $installerBuild "dist"
+$installerWork = Join-Path $installerBuild "build"
+$installerSpec = Join-Path $installerBuild "spec"
+$installerName = "NT_DL-Setup-$Version"
 
 $pyArgs = @(
     "-m", "PyInstaller",
     "--noconfirm",
     "--clean",
     "--onefile",
-    "--console",
-    "--name", $launcherName,
-    "--distpath", $launcherDist,
-    "--workpath", $launcherWork,
-    "--specpath", $launcherSpec,
-    $launcherScript
+    "--windowed",
+    "--name", $installerName,
+    "--icon", (Join-Path $root "kdl\assets\kdl_a.ico"),
+    "--distpath", $installerDist,
+    "--workpath", $installerWork,
+    "--specpath", $installerSpec,
+    "--add-data", ((Join-Path $payloadDir "NT_DL_payload.dat") + ";."),
+    "--add-data", ((Join-Path $payloadDir "NT_DL_app.exe") + ";."),
+    "--add-data", ((Join-Path $payloadDir "install.cmd") + ";."),
+    "--add-data", ((Join-Path $payloadDir "uninstall.cmd") + ";."),
+    "--add-data", ((Join-Path $payloadDir "kdl_a.ico") + ";."),
+    $bootstrapScript
 )
 
 & python @pyArgs
 if ($LASTEXITCODE -ne 0) {
-    throw "Launcher build failed with exit code $LASTEXITCODE"
+    throw "Installer build failed with exit code $LASTEXITCODE"
 }
 
-$launcherExe = Join-Path $launcherDist ($launcherName + ".exe")
-if (-not (Test-Path $launcherExe)) {
-    throw "Launcher build failed: executable not produced."
+$installerExe = Join-Path $installerDist ($installerName + ".exe")
+if (-not (Test-Path $installerExe)) {
+    throw "Installer build failed: executable not produced."
 }
-Copy-Item -Path $launcherExe -Destination (Join-Path $payloadDir "launcher.exe") -Force
-
-$tempTarget = Join-Path $env:TEMP ("NT_DL-Setup-" + $Version + ".exe")
-if (Test-Path $tempTarget) {
-    Remove-Item -Path $tempTarget -Force
-}
-
-$sedPath = Join-Path $env:TEMP "NT_DL_Setup.sed"
-$sed = @"
-[Version]
-Class=IEXPRESS
-SEDVersion=3
-
-[Options]
-PackagePurpose=InstallApp
-ShowInstallProgramWindow=0
-HideExtractAnimation=1
-UseLongFileName=1
-InsideCompressed=1
-CAB_FixedSize=0
-CAB_ResvCodeSigning=0
-RebootMode=N
-InstallPrompt=
-DisplayLicense=
-FinishMessage=NT_DL installation completed.
-TargetName=$tempTarget
-FriendlyName=NT_DL Setup
-AppLaunched=launcher.exe
-PostInstallCmd=<None>
-AdminQuietInstCmd=launcher.exe
-UserQuietInstCmd=launcher.exe
-SourceFiles=SourceFiles
-
-[SourceFiles]
-SourceFiles0=$payloadDir
-
-[SourceFiles0]
-%FILE0%=
-%FILE1%=
-%FILE2%=
-%FILE3%=
-%FILE4%=
-%FILE5%=
-
-[Strings]
-FILE0=launcher.exe
-FILE1=install.cmd
-FILE2=uninstall.cmd
-FILE3=NT_DL.exe
-FILE4=NT_DL_app.exe
-FILE5=kdl_a.ico
-"@
-
-Set-Content -Path $sedPath -Value $sed -Encoding ASCII
-
-$iexpress = Join-Path $env:WINDIR "System32\iexpress.exe"
-if (-not (Test-Path $iexpress)) {
-    throw "IExpress not found at $iexpress"
-}
-
-& $iexpress /N /Q $sedPath | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "IExpress failed with exit code $LASTEXITCODE"
-}
-
-if (-not (Test-Path $tempTarget)) {
-    throw "Installer build failed: setup executable not produced."
-}
-
 $finalTarget = Join-Path $root ("dist\NT_DL-Setup-" + $Version + ".exe")
-Copy-Item -Path $tempTarget -Destination $finalTarget -Force
+Copy-Item -Path $installerExe -Destination $finalTarget -Force
 
 Write-Output "Installer created: $finalTarget"

@@ -23,7 +23,7 @@ for /L %%I in (1,1,12) do (
         tasklist /FI "IMAGENAME eq NT_DL_app.exe" 2>nul | find /I "NT_DL_app.exe" >nul
         if errorlevel 1 goto cleanup_done
     )
-    timeout /t 1 /nobreak >nul
+    ping 127.0.0.1 -n 2 >nul
 )
 
 :cleanup_done
@@ -43,5 +43,5 @@ if "%QUIET%"=="0" (
     echo NT_DL uninstalled.
 )
 
-start "" cmd /c "timeout /t 2 /nobreak >nul & del /f /q \"%INSTALL_DIR%\uninstall.cmd\" >nul 2>&1 & rmdir /s /q \"%INSTALL_DIR%\" >nul 2>&1 & rmdir /s /q \"%RUNTIME_TEMP_DIR%\" >nul 2>&1 & rmdir /s /q \"%APPDATA_SETTINGS_DIR%\" >nul 2>&1 & rmdir /s /q \"%LOCALAPPDATA_SETTINGS_DIR%\" >nul 2>&1 & rmdir /s /q \"%HOME_SETTINGS_DIR%\" >nul 2>&1"
+start "" cmd /c "ping 127.0.0.1 -n 3 >nul & del /f /q \"%INSTALL_DIR%\uninstall.cmd\" >nul 2>&1 & rmdir /s /q \"%INSTALL_DIR%\" >nul 2>&1 & rmdir /s /q \"%RUNTIME_TEMP_DIR%\" >nul 2>&1 & rmdir /s /q \"%APPDATA_SETTINGS_DIR%\" >nul 2>&1 & rmdir /s /q \"%LOCALAPPDATA_SETTINGS_DIR%\" >nul 2>&1 & rmdir /s /q \"%HOME_SETTINGS_DIR%\" >nul 2>&1"
 exit /b 0

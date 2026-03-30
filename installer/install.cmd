@@ -35,7 +35,7 @@ for /L %%I in (1,1,12) do (
             goto wait_done
         )
     )
-    timeout /t 1 /nobreak >nul
+    ping 127.0.0.1 -n 2 >nul
 )
 
 :wait_done
@@ -46,6 +46,22 @@ if not exist "%INSTALL_DIR%" (
     if errorlevel 1 goto error
 )
 >>"%LOG_FILE%" echo InstallDir=%INSTALL_DIR%
+
+if not exist "%~dp0NT_DL.exe" (
+    >>"%LOG_FILE%" echo Missing payload: %~dp0NT_DL.exe
+    cmd /c exit /b 2
+    goto error
+)
+if not exist "%~dp0NT_DL_app.exe" (
+    >>"%LOG_FILE%" echo Missing payload: %~dp0NT_DL_app.exe
+    cmd /c exit /b 3
+    goto error
+)
+if not exist "%~dp0uninstall.cmd" (
+    >>"%LOG_FILE%" echo Missing payload: %~dp0uninstall.cmd
+    cmd /c exit /b 4
+    goto error
+)
 
 set "COPY_OK=0"
 for /L %%I in (1,1,3) do (
@@ -63,11 +79,14 @@ for /L %%I in (1,1,3) do (
         )
         >>"%LOG_FILE%" echo Copy NT_DL_app.exe failed on attempt %%I
     )
-    timeout /t 1 /nobreak >nul
+    ping 127.0.0.1 -n 2 >nul
 )
 
 :copy_done
-if not "%COPY_OK%"=="1" goto error
+if not "%COPY_OK%"=="1" (
+    cmd /c exit /b 5
+    goto error
+)
 
 if exist "%~dp0kdl_a.ico" copy /Y "%~dp0kdl_a.ico" "%INSTALL_DIR%\kdl_a.ico" >nul
 copy /Y "%~dp0uninstall.cmd" "%INSTALL_DIR%\uninstall.cmd" >nul
