@@ -615,8 +615,8 @@ class LoaderThread(QThread):
 
         return "\t".join(row_tokens), True
 
-    def _perform_end_of_row_action(self, rows_processed: int, is_last_row: bool = False) -> bool:
-        eor_delay = max(0.0, float(self.sender.speed_delay))
+    def _perform_end_of_row_action(self, rows_processed: int, is_last_row: bool = False, eor_delay_override: float = -1.0) -> bool:
+        eor_delay = eor_delay_override if eor_delay_override >= 0 else max(0.0, float(self.sender.speed_delay))
         save_settle = max(0.1, float(self.sender.speed_delay))
         if self.end_of_row_action == "new_record":
             pyautogui.press('down')
@@ -893,6 +893,7 @@ class LoaderThread(QThread):
                         if parsed.cell_type == CellType.DATA
                     ]
                     pending_tab_after_receipt = False
+                    row_is_receipt = False
 
                     for i, (col_idx, parsed) in enumerate(row_cells):
                         if self._is_stop_requested():
@@ -952,6 +953,7 @@ class LoaderThread(QThread):
                         early_col_fallback = self._form_type_col is None and col_idx <= 2
                         if self.form_mode and receipt_token and (type_col_hit or early_col_fallback):
                             pending_tab_after_receipt = True
+                            row_is_receipt = True
 
                         # The Code field is validated by Oracle Forms on blur. If we
                         # Tab away too quickly after a fast send, the last character in
@@ -987,7 +989,8 @@ class LoaderThread(QThread):
                     and not self._stop_requested
                     and row_had_activity
                 ):
-                    if not self._perform_end_of_row_action(rows_processed, is_last_row=(row_idx == self.end_row)):
+                    _eor_override = 0.03 if (self.sender.fast_send_row_mode and row_is_receipt) else -1.0
+                    if not self._perform_end_of_row_action(rows_processed, is_last_row=(row_idx == self.end_row), eor_delay_override=_eor_override):
                         break
 
             else:
