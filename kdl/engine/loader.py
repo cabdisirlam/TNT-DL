@@ -909,7 +909,16 @@ class LoaderThread(QThread):
 
                         # Receipt flow: after sending type-ahead 'r' in Type column,
                         # move to the next field just before next cell send.
-                        if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
+                        # Do NOT send an extra TAB if the current cell is already an
+                        # explicit tab keystroke — bank statement rows embed their own
+                        # "tab" cells and firing on top produces a double-TAB that
+                        # shifts all subsequent fields one column right.
+                        _cur_is_tab = (
+                            parsed.cell_type == CellType.KEYSTROKE
+                            and parsed.key_actions
+                            and parsed.key_actions[0].get("key", "").lower() == "tab"
+                        )
+                        if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY and not _cur_is_tab:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
                                 if not self._wait_after_ui_action(max(self.sender.speed_delay, 0.02)):
@@ -918,7 +927,7 @@ class LoaderThread(QThread):
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
                                     break
-                            pending_tab_after_receipt = False
+                        pending_tab_after_receipt = False
 
                         success = self._send_cell_with_retry(parsed)
                         # In fast-send mode skip per-cell signals for successes to
