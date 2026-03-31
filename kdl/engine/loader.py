@@ -944,7 +944,7 @@ class LoaderThread(QThread):
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
-                                time.sleep(0.002)
+                                time.sleep(0.03)  # Oracle type-ahead needs ~30ms to commit
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
