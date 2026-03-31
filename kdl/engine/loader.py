@@ -974,7 +974,11 @@ class LoaderThread(QThread):
                         if _is_fast_receipt:
                             # Skip send_cell — don't type 'r'.  Type field already has
                             # Payment selected from the previous TAB; one VK_DOWN selects
-                            # Receipt.  No LOV, no popup, no timing dependency.
+                            # Receipt.  Wait for Oracle to fully activate the Type field
+                            # dropdown before sending VK_DOWN — the hourglass from the
+                            # previous TAB may have cleared while the dropdown was still
+                            # initialising, so a 30ms floor + hourglass re-poll is needed.
+                            self._smart_tab_settle(0.03)
                             self.sender._si_send_vk(0x28)  # VK_DOWN → Receipt
                             success = True
                         else:
