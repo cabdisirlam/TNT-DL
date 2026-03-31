@@ -949,7 +949,37 @@ class LoaderThread(QThread):
                                 break
                             pending_tab_after_receipt = False
 
-                        success = self._send_cell_with_retry(parsed)
+                        # Receipt fast-send: detect before sending so we can skip
+                        # typing 'r' entirely.  The correct Oracle sequence is:
+                        #   TAB (previous auto-tab lands on Type field, Payment selected)
+                        #   → VK_DOWN (navigates to Receipt)
+                        #   → TAB (commits, moves to Code field)
+                        # Typing 'r' opens an LOV popup which behaves inconsistently
+                        # (cached after 2 receipts, timing-dependent) — avoid it.
+                        raw_norm = str(parsed.raw_value or "").strip().lower()
+                        _type_col_hit = self._form_type_col is not None and col_idx == self._form_type_col
+                        _early_col_fallback = self._form_type_col is None and col_idx <= 2
+                        _is_fast_receipt = False
+                        if (self.form_mode and self.sender.fast_send_row_mode
+                                and parsed.cell_type == CellType.KEYSTROKE
+                                and (_type_col_hit or _early_col_fallback)):
+                            if raw_norm in {"receipt", "r", r"\r"}:
+                                _is_fast_receipt = True
+                            elif any(
+                                a.get("type") == "type" and str(a.get("text", "")).lower() == "r"
+                                for a in parsed.key_actions
+                            ):
+                                _is_fast_receipt = True
+
+                        if _is_fast_receipt:
+                            # Skip send_cell — don't type 'r'.  Type field already has
+                            # Payment selected from the previous TAB; one VK_DOWN selects
+                            # Receipt.  No LOV, no popup, no timing dependency.
+                            self.sender._si_send_vk(0x28)  # VK_DOWN → Receipt
+                            success = True
+                        else:
+                            success = self._send_cell_with_retry(parsed)
+
                         # In fast-send mode skip per-cell signals for successes to
                         # prevent the Qt event-queue backlog that freezes the overlay.
                         if not _is_fast or not success:
@@ -959,41 +989,16 @@ class LoaderThread(QThread):
                             break
 
                         raw_norm = str(parsed.raw_value or "").strip().lower()
-                        receipt_token = False
-                        if parsed.cell_type == CellType.KEYSTROKE:
-                            if raw_norm in {"receipt", "r", r"\r"}:
-                                receipt_token = True
-                            elif any(
-                                a.get("type") == "type" and str(a.get("text", "")).lower() == "r"
-                                for a in parsed.key_actions
-                            ):
-                                receipt_token = True
                         type_col_hit = self._form_type_col is not None and col_idx == self._form_type_col
                         early_col_fallback = self._form_type_col is None and col_idx <= 2
-                        if self.form_mode and receipt_token and (type_col_hit or early_col_fallback):
-                            if self.sender.fast_send_row_mode:
-                                # Wait until the Type LOV popup is actually the foreground
-                                # window before sending VK_DOWN.  Cursor hourglass is not a
-                                # reliable signal — Oracle can clear it while the LOV list is
-                                # still loading.  detect_blocking_popup() returns non-empty
-                                # only when a same-process popup (the LOV) has taken focus,
-                                # which is exactly when VK_DOWN will land in the list.
-                                # 10ms seed so the first poll isn't before Oracle even starts
-                                # opening the popup; then poll every 5ms up to 2s.
-                                time.sleep(0.01)
-                                _lov_deadline = time.time() + 2.0
-                                try:
-                                    while time.time() < _lov_deadline:
-                                        if WindowManager.detect_blocking_popup(
-                                                self.sender.target_hwnd,
-                                                self.sender.target_title):
-                                            break
-                                        time.sleep(0.005)
-                                except Exception:
-                                    pass
-                                self.sender._si_send_vk(0x28)  # VK_DOWN — LOV has focus
-                                time.sleep(0.02)  # let selection register before TAB
-                            else:
+                        if (self.form_mode and not _is_fast_receipt
+                                and parsed.cell_type == CellType.KEYSTROKE
+                                and (type_col_hit or early_col_fallback)):
+                            receipt_token = raw_norm in {"receipt", "r", r"\r"} or any(
+                                a.get("type") == "type" and str(a.get("text", "")).lower() == "r"
+                                for a in parsed.key_actions
+                            )
+                            if receipt_token and not self.sender.fast_send_row_mode:
                                 pending_tab_after_receipt = True
 
                         # Auto-Tab only between plain data fields.
