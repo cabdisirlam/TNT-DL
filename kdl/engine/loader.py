@@ -972,13 +972,22 @@ class LoaderThread(QThread):
                         early_col_fallback = self._form_type_col is None and col_idx <= 2
                         if self.form_mode and receipt_token and (type_col_hit or early_col_fallback):
                             if self.sender.fast_send_row_mode:
-                                # One VK_DOWN explicitly navigates to 'Receipt' in the
-                                # Type LOV dropdown — identical pattern to Payment but with
-                                # this single extra step.  No delays: SendInput queues the
-                                # keystroke; Oracle processes it in strict sequence after 'r',
-                                # regardless of internet speed.
-                                self.sender._si_send_vk(0x28)  # VK_DOWN
-                                time.sleep(0.05)  # let Oracle register the selection before TAB
+                                # Wait for Oracle to finish opening the Type LOV after 'r'.
+                                # Seed delay (20ms) ensures we don't race past a fast hourglass
+                                # before the first poll; then poll until cursor is clear.
+                                # Fast connections: no hourglass after seed → fires immediately.
+                                # Slow connections: hourglass detected → waits it out (≤2s).
+                                time.sleep(0.02)
+                                _lov_deadline = time.time() + 2.0
+                                try:
+                                    while time.time() < _lov_deadline:
+                                        if not WindowManager.is_cursor_hourglass():
+                                            break
+                                        time.sleep(0.005)
+                                except Exception:
+                                    pass
+                                self.sender._si_send_vk(0x28)  # VK_DOWN — LOV is ready
+                                time.sleep(0.02)  # brief settle so selection registers
                             else:
                                 pending_tab_after_receipt = True
 
