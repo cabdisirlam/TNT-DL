@@ -939,14 +939,24 @@ class LoaderThread(QThread):
 
                         self._check_pause()
 
-                        # Receipt flow: after sending type-ahead 'r' in Type column,
-                        # move to the next field just before next cell send.
-                        # A 0.03s settle gives IFMIS time to commit the LOV
-                        # "Receipt" selection before the next keystroke arrives.
+                        # Receipt flow: after typing 'r' in the Type LOV, we may need
+                        # to send a confirming TAB — but ONLY if IFMIS is still processing
+                        # the LOV query (slow internet → hourglass visible).
+                        # On fast internet, Oracle auto-selects "Receipt" and advances focus
+                        # to Code before this block runs.  Sending an extra TAB in that case
+                        # would skip the Code field and put data in the wrong column.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             if self.sender.fast_send_row_mode:
-                                self.sender._si_send_vk(0x09)  # VK_TAB
-                                time.sleep(0.03)   # was 0.002 – too fast for LOV commit
+                                # 1. Brief settle so IFMIS can begin the LOV round-trip.
+                                time.sleep(0.008)
+                                if WindowManager.is_cursor_hourglass():
+                                    # Slow internet path: LOV query in flight.
+                                    # Wait for it to complete then confirm with TAB.
+                                    self._smart_tab_settle(0.005)   # wait until not busy
+                                    self.sender._si_send_vk(0x09)  # VK_TAB — commit LOV
+                                    time.sleep(0.008)              # settle after LOV commit
+                                # else: fast internet — Oracle already committed Receipt
+                                #       and moved focus to Code; extra TAB not needed.
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
