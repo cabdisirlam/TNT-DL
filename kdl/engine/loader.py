@@ -468,14 +468,9 @@ class LoaderThread(QThread):
                     break
 
     def _form_field_extra_settle(self, col_idx: int) -> float:
-        if not self.form_mode:
+        if not self.form_mode or self.sender.fast_send_row_mode:
             return 0.0
-        if (
-            (self._form_code_col is not None and col_idx == self._form_code_col)
-            or (self._form_type_col is not None and col_idx == self._form_type_col)
-        ):
-            if self.sender.fast_send_row_mode:
-                return 0.03
+        if self._form_code_col is not None and col_idx == self._form_code_col:
             return max(float(self.sender.speed_delay), 0.03)
         return 0.0
 
@@ -912,16 +907,7 @@ class LoaderThread(QThread):
 
                         # Receipt flow: after sending type-ahead 'r' in Type column,
                         # move to the next field just before next cell send.
-                        # Do NOT send an extra TAB if the current cell is already an
-                        # explicit tab keystroke — bank statement rows embed their own
-                        # "tab" cells and firing on top produces a double-TAB that
-                        # shifts all subsequent fields one column right.
-                        _cur_is_tab = (
-                            parsed.cell_type == CellType.KEYSTROKE
-                            and parsed.key_actions
-                            and parsed.key_actions[0].get("key", "").lower() == "tab"
-                        )
-                        if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY and not _cur_is_tab:
+                        if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
                                 time.sleep(0.002)
@@ -929,7 +915,7 @@ class LoaderThread(QThread):
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
                                     break
-                        pending_tab_after_receipt = False
+                            pending_tab_after_receipt = False
 
                         success = self._send_cell_with_retry(parsed)
                         # In fast-send mode skip per-cell signals for successes to
@@ -955,27 +941,8 @@ class LoaderThread(QThread):
                         if self.form_mode and receipt_token and (type_col_hit or early_col_fallback):
                             pending_tab_after_receipt = True
 
-                        # The Code field is validated by Oracle Forms on blur. If we
-                        # Tab away too quickly after a fast send, the last character in
-                        # values like TRFD/TRFC can be lost and the LOV opens to resolve
-                        # the now-partial code.
-                        extra_settle = self._form_field_extra_settle(col_idx)
-                        if self.sender.fast_send_row_mode and extra_settle > 0:
-                            if not self._wait_after_ui_action(extra_settle):
-                                break
-
-                        # Auto-Tab only between plain data fields AND only when the
-                        # immediately following cell is not already an explicit tab
-                        # keystroke. Bank statement rows embed explicit "tab" cells
-                        # between every field; firing auto-Tab on top of those produces
-                        # a double-Tab that shifts all subsequent fields by one column.
-                        next_is_tab = (
-                            i + 1 < len(row_cells)
-                            and row_cells[i + 1][1].cell_type == CellType.KEYSTROKE
-                            and row_cells[i + 1][1].key_actions
-                            and row_cells[i + 1][1].key_actions[0].get("key", "").lower() == "tab"
-                        )
-                        if i in data_positions and data_positions and i != data_positions[-1] and not next_is_tab:
+                        # Auto-Tab only between plain data fields.
+                        if i in data_positions and data_positions and i != data_positions[-1]:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
                                 time.sleep(0.002)

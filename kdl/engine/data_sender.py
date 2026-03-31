@@ -166,7 +166,7 @@ class DataSender:
                 return False
             if self._is_stop_requested():
                 return False
-            time.sleep(max(0, min(0.001, end_time - time.time())))
+            time.sleep(max(0, min(0.01, end_time - time.time())))
         return True
 
     def set_target(self, hwnd: int, title: str):
@@ -515,17 +515,12 @@ class DataSender:
             if not safe:
                 return True
             if not self._si_send_unicode(safe):
-                if self.fast_send_row_mode:
-                    self.last_error = (self.last_error or "SendInput text injection failed").strip()
-                    return False
-                # Non-row fast paths keep the historical fallback.
+                # Fallback to clipboard if SendInput fails
                 return self._send_data(text)
             # In fast_send_row_mode, use minimal 2ms settle per cell;
             # the full delay is applied once at end-of-row instead.
             if self.fast_send_row_mode:
-                # Direct sleep — avoids _sleep_interruptible loop overhead at 2ms granularity.
-                time.sleep(0.002)
-                return True
+                _delay = 0.002
             elif self.load_control:
                 _delay = 0.008
             else:
@@ -536,8 +531,6 @@ class DataSender:
             return self._wait_for_ready() if self.load_control else self._wait_if_hourglass()
         except Exception as e:
             self.last_error = f"send_data_fast: {e}"
-            if self.fast_send_row_mode:
-                return False
             return self._send_data(text)  # fallback
 
     def _send_keystroke_fast(self, parsed: ParsedCell) -> bool:
@@ -561,37 +554,21 @@ class DataSender:
                 elif action_type == "type":
                     if not self._si_send_unicode(action.get("text", "")):
                         return False
-                elif action_type == "delay_ms":
-                    # Explicit inter-action delay (e.g. for LOV dropdowns that need time to open)
-                    ms = float(action.get("ms", 0))
-                    if ms > 0 and not self._sleep_interruptible(ms / 1000.0):
-                        self.last_error = "send_keystroke_fast delay interrupted"
-                        return False
-                    continue
                 # In fast_send_row_mode, use minimal 2ms settle per cell;
                 # the full delay is applied once at end-of-row instead.
                 if self.fast_send_row_mode:
-                    # Direct sleep — avoids _sleep_interruptible loop overhead at 2ms granularity.
-                    time.sleep(0.002)
+                    _delay = 0.002
                 elif self.load_control:
                     _delay = 0.008
-                    if not self._sleep_interruptible(_delay):
-                        self.last_error = "send_keystroke_fast interrupted"
-                        return False
-                    ready = self._wait_for_ready()
-                    if not ready:
-                        return False
                 else:
                     _delay = self.speed_delay
-                    if not self._sleep_interruptible(_delay):
-                        self.last_error = "send_keystroke_fast interrupted"
-                        return False
-                    ready = self._wait_if_hourglass()
-                    if not ready:
-                        return False
+                if not self._sleep_interruptible(_delay):
+                    self.last_error = "send_keystroke_fast interrupted"
+                    return False
+                ready = self._wait_for_ready() if self.load_control else self._wait_if_hourglass()
+                if not ready:
+                    return False
             return True
         except Exception as e:
             self.last_error = f"send_keystroke_fast: {e}"
-            if self.fast_send_row_mode:
-                return False
             return self._send_keystrokes(parsed)  # fallback
