@@ -43,6 +43,14 @@ class LoaderThread(QThread):
         "no": {"no", "no.", "line", "line no", "line number", "serial", "serial no"},
     }
 
+    # Regex to detect date-like content in a cell (used to pick settling delay).
+    _DATE_RE = re.compile(
+        r'\b\d{1,2}[-/]\w{2,3}[-/]\d{2,4}\b'   # e.g. 11-FEB-2026, 06/Feb/26
+        r'|\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b'    # e.g. 2026-02-11
+        r'|\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b', # e.g. 11/02/2026
+        re.IGNORECASE,
+    )
+
     # Signals
     progress_updated = Signal(int, int, str)  # current_row, total_rows, status_msg
     cell_processed = Signal(int, int, bool)   # row, col, success
@@ -356,6 +364,32 @@ class LoaderThread(QThread):
 
     def _fast_send_popup_check_interval(self) -> float:
         return 0.15
+
+    @staticmethod
+    def _cell_looks_like_date(parsed: ParsedCell) -> bool:
+        """Return True if the cell content looks like a date value."""
+        if parsed.cell_type != CellType.DATA:
+            return False
+        return bool(LoaderThread._DATE_RE.search(parsed.data_text or ""))
+
+    def _smart_tab_settle(self, min_delay: float, busy_timeout: float = 0.3) -> None:
+        """
+        Post-Tab settle for fast-send form mode.
+        Sleeps min_delay (floor), then polls Windows cursor until IFMIS is
+        no longer busy (hourglass / app-starting) — or until busy_timeout.
+        Falls through immediately when IFMIS is already ready, so normal
+        rows pay only min_delay with zero extra overhead.
+        Handles date auto-fill, grid scrolls, and LOV commits transparently.
+        """
+        time.sleep(min_delay)
+        deadline = time.time() + busy_timeout
+        try:
+            while time.time() < deadline:
+                if not WindowManager.is_cursor_hourglass():
+                    break
+                time.sleep(0.002)
+        except Exception:
+            pass  # cursor check failure — min_delay was our only protection
 
     def run(self):
         """Main orchestrator for loading."""
@@ -944,12 +978,16 @@ class LoaderThread(QThread):
                             pending_tab_after_receipt = True
 
                         # Auto-Tab only between plain data fields.
-                        # 0.01s settle lets IFMIS complete any auto-fill (e.g. Value Date
-                        # copied from Transaction Date) before the next field value arrives.
+                        # Date cells (risky): 0.005s floor so IFMIS can begin auto-fill
+                        # before the next value arrives.  All other cells: 0.002s floor.
+                        # After either floor, _smart_tab_settle polls the cursor and only
+                        # waits longer when IFMIS actually shows busy (hourglass), e.g.
+                        # date-to-date auto-fill, grid scroll, or LOV queries.
                         if i in data_positions and data_positions and i != data_positions[-1]:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
-                                time.sleep(0.01)   # was 0.002 – too fast for IFMIS auto-fill
+                                _min = 0.005 if self._cell_looks_like_date(parsed) else 0.002
+                                self._smart_tab_settle(_min)
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
