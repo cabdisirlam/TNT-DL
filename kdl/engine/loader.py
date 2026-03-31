@@ -944,10 +944,12 @@ class LoaderThread(QThread):
                             pending_tab_after_receipt = True
 
                         # Auto-Tab only between plain data fields.
+                        # 0.01s settle lets IFMIS complete any auto-fill (e.g. Value Date
+                        # copied from Transaction Date) before the next field value arrives.
                         if i in data_positions and data_positions and i != data_positions[-1]:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
-                                time.sleep(0.002)
+                                time.sleep(0.01)   # was 0.002 – too fast for IFMIS auto-fill
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
