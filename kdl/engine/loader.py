@@ -356,7 +356,7 @@ class LoaderThread(QThread):
 
     def _fast_send_popup_check_interval(self) -> float:
         if self.sender.fast_send_row_mode:
-            return 0.5
+            return 0.15
         return 0.15
 
     def run(self):
@@ -1031,6 +1031,9 @@ class LoaderThread(QThread):
                 if row_had_activity:
                     partial_row_loaded = True
                 break
+
+            if not row_had_activity:
+                continue
 
             rows_processed += 1
             elapsed = self._format_elapsed(started_at)
