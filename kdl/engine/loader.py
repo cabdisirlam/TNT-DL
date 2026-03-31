@@ -939,49 +939,19 @@ class LoaderThread(QThread):
 
                         self._check_pause()
 
-                        # Receipt flow (fast-send): all hourglass/delay logic removed.
-                        # Fast-send mode now injects VK_DOWN after 'r' (below), so
-                        # pending_tab_after_receipt is never set in that path.
-                        # This block only handles the non-fast-send (pyautogui) mode.
+                        # Receipt flow: before sending the next cell, fire the lazy TAB
+                        # that commits the 'r' type-ahead Oracle auto-selected as Receipt.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
-                            pyautogui.press('tab')
-                            if not self._wait_after_ui_action(self.sender.speed_delay):
-                                break
+                            if self.sender.fast_send_row_mode:
+                                self.sender._si_send_vk(0x09)  # VK_TAB
+                                time.sleep(0.002)
+                            else:
+                                pyautogui.press('tab')
+                                if not self._wait_after_ui_action(self.sender.speed_delay):
+                                    break
                             pending_tab_after_receipt = False
 
-                        # Receipt fast-send: detect before sending so we can skip
-                        # typing 'r' entirely.  The correct Oracle sequence is:
-                        #   TAB (previous auto-tab lands on Type field, Payment selected)
-                        #   → VK_DOWN (navigates to Receipt)
-                        #   → TAB (commits, moves to Code field)
-                        # Typing 'r' opens an LOV popup which behaves inconsistently
-                        # (cached after 2 receipts, timing-dependent) — avoid it.
-                        raw_norm = str(parsed.raw_value or "").strip().lower()
-                        _type_col_hit = self._form_type_col is not None and col_idx == self._form_type_col
-                        _early_col_fallback = self._form_type_col is None and col_idx <= 2
-                        _is_fast_receipt = False
-                        if (self.form_mode and self.sender.fast_send_row_mode
-                                and parsed.cell_type == CellType.KEYSTROKE
-                                and (_type_col_hit or _early_col_fallback)):
-                            if raw_norm in {"receipt", "r", r"\r"}:
-                                _is_fast_receipt = True
-                            elif any(
-                                a.get("type") == "type" and str(a.get("text", "")).lower() == "r"
-                                for a in parsed.key_actions
-                            ):
-                                _is_fast_receipt = True
-
-                        if _is_fast_receipt:
-                            # Skip send_cell — don't type 'r'.  Type field already has
-                            # Payment selected from the previous TAB; one VK_DOWN selects
-                            # Receipt.  80ms floor covers normal dropdown activation time;
-                            # busy_timeout=1s waits out grid-scroll server round-trips where
-                            # Oracle takes longer to re-activate the field.
-                            self._smart_tab_settle(0.08, busy_timeout=1.0)
-                            self.sender._si_send_vk(0x28)  # VK_DOWN → Receipt
-                            success = True
-                        else:
-                            success = self._send_cell_with_retry(parsed)
+                        success = self._send_cell_with_retry(parsed)
 
                         # In fast-send mode skip per-cell signals for successes to
                         # prevent the Qt event-queue backlog that freezes the overlay.
@@ -994,14 +964,12 @@ class LoaderThread(QThread):
                         raw_norm = str(parsed.raw_value or "").strip().lower()
                         type_col_hit = self._form_type_col is not None and col_idx == self._form_type_col
                         early_col_fallback = self._form_type_col is None and col_idx <= 2
-                        if (self.form_mode and not _is_fast_receipt
-                                and parsed.cell_type == CellType.KEYSTROKE
-                                and (type_col_hit or early_col_fallback)):
+                        if self.form_mode and parsed.cell_type == CellType.KEYSTROKE and (type_col_hit or early_col_fallback):
                             receipt_token = raw_norm in {"receipt", "r", r"\r"} or any(
                                 a.get("type") == "type" and str(a.get("text", "")).lower() == "r"
                                 for a in parsed.key_actions
                             )
-                            if receipt_token and not self.sender.fast_send_row_mode:
+                            if receipt_token:
                                 pending_tab_after_receipt = True
 
                         # Auto-Tab only between plain data fields.
