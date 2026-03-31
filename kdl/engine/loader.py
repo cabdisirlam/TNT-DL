@@ -473,6 +473,8 @@ class LoaderThread(QThread):
         if not self.form_mode:
             return 0.0
         if self._form_code_col is not None and col_idx == self._form_code_col:
+            if self.sender.fast_send_row_mode:
+                return 0.03
             return max(float(self.sender.speed_delay), 0.03)
         return 0.0
 
