@@ -953,7 +953,7 @@ class LoaderThread(QThread):
                                     _popup = WindowManager.detect_blocking_popup(
                                         self.sender.target_hwnd, self.sender.target_title)
                                     if _popup:
-                                        self.sender._si_send_vk(0x1B)  # Escape — close LOV
+                                        self.sender._si_send_vk(0x0D)  # Enter — accept Receipt in LOV
                                 except Exception:
                                     pass
                                 # Wait for cursor to settle (type-ahead or post-Escape)
