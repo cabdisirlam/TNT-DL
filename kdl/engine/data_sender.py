@@ -166,7 +166,7 @@ class DataSender:
                 return False
             if self._is_stop_requested():
                 return False
-            time.sleep(max(0, min(0.01, end_time - time.time())))
+            time.sleep(max(0, min(0.001, end_time - time.time())))
         return True
 
     def set_target(self, hwnd: int, title: str):
@@ -523,7 +523,9 @@ class DataSender:
             # In fast_send_row_mode, use minimal 2ms settle per cell;
             # the full delay is applied once at end-of-row instead.
             if self.fast_send_row_mode:
-                _delay = 0.002
+                # Direct sleep — avoids _sleep_interruptible loop overhead at 2ms granularity.
+                time.sleep(0.002)
+                return True
             elif self.load_control:
                 _delay = 0.008
             else:
@@ -569,17 +571,24 @@ class DataSender:
                 # In fast_send_row_mode, use minimal 2ms settle per cell;
                 # the full delay is applied once at end-of-row instead.
                 if self.fast_send_row_mode:
-                    _delay = 0.002
+                    # Direct sleep — avoids _sleep_interruptible loop overhead at 2ms granularity.
+                    time.sleep(0.002)
                 elif self.load_control:
                     _delay = 0.008
+                    if not self._sleep_interruptible(_delay):
+                        self.last_error = "send_keystroke_fast interrupted"
+                        return False
+                    ready = self._wait_for_ready()
+                    if not ready:
+                        return False
                 else:
                     _delay = self.speed_delay
-                if not self._sleep_interruptible(_delay):
-                    self.last_error = "send_keystroke_fast interrupted"
-                    return False
-                ready = self._wait_for_ready() if self.load_control else self._wait_if_hourglass()
-                if not ready:
-                    return False
+                    if not self._sleep_interruptible(_delay):
+                        self.last_error = "send_keystroke_fast interrupted"
+                        return False
+                    ready = self._wait_if_hourglass()
+                    if not ready:
+                        return False
             return True
         except Exception as e:
             self.last_error = f"send_keystroke_fast: {e}"

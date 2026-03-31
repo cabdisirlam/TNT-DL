@@ -1,4 +1,4 @@
-﻿"""
+"""
 KDL Loader Engine
 Main loading orchestrator that iterates through spreadsheet rows,
 parses each cell, and sends data to the target application.
@@ -679,6 +679,9 @@ class LoaderThread(QThread):
         _is_fast = self.sender.fast_send_row_mode
         _FAST_OVERLAY_INTERVAL = 0.15   # seconds between overlay refreshes
         _last_overlay_update = 0.0
+        # Fast send: skip activate_target() per-row if target was just confirmed.
+        # Re-verify only after popup detection (focus may have shifted).
+        _target_confirmed = False
 
         for row_idx in range(self.start_row, self.end_row + 1):
             if self._is_stop_requested():
@@ -707,11 +710,20 @@ class LoaderThread(QThread):
                 if self._is_stop_requested():
                     break
                 self._check_pause()
+                _target_confirmed = False  # popup may have shifted focus — re-verify
 
             if self.form_mode:
-                if not self.sender.activate_target():
-                    self.loading_complete.emit(False, "Lost focus on target window - stopped.")
-                    return
+                # In fast send, skip the Win32 activate call if we already confirmed
+                # the target is focused — it hasn't changed between rows.
+                if _is_fast and _target_confirmed:
+                    need_activate = False
+                else:
+                    need_activate = True
+                if need_activate:
+                    if not self.sender.activate_target():
+                        self.loading_complete.emit(False, "Lost focus on target window - stopped.")
+                        return
+                    _target_confirmed = True
 
                 if self.load_mode == "imprest_surrender":
                     from kdl.engine.imprest_surrender_engine import (
