@@ -953,8 +953,18 @@ class LoaderThread(QThread):
                             if not self._wait_after_ui_action(extra_settle):
                                 break
 
-                        # Auto-Tab only between plain data fields.
-                        if i in data_positions and data_positions and i != data_positions[-1]:
+                        # Auto-Tab only between plain data fields AND only when the
+                        # immediately following cell is not already an explicit tab
+                        # keystroke. Bank statement rows embed explicit "tab" cells
+                        # between every field; firing auto-Tab on top of those produces
+                        # a double-Tab that shifts all subsequent fields by one column.
+                        next_is_tab = (
+                            i + 1 < len(row_cells)
+                            and row_cells[i + 1][1].cell_type == CellType.KEYSTROKE
+                            and row_cells[i + 1][1].key_actions
+                            and row_cells[i + 1][1].key_actions[0].get("key", "").lower() == "tab"
+                        )
+                        if i in data_positions and data_positions and i != data_positions[-1] and not next_is_tab:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
                                 time.sleep(0.002)
