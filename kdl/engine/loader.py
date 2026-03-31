@@ -939,28 +939,14 @@ class LoaderThread(QThread):
 
                         self._check_pause()
 
-                        # Receipt flow: after typing 'r' in the Type LOV, we may need
-                        # to send a confirming TAB — but ONLY if IFMIS is still processing
-                        # the LOV query (slow internet → hourglass visible).
-                        # On fast internet, Oracle auto-selects "Receipt" and advances focus
-                        # to Code before this block runs.  Sending an extra TAB in that case
-                        # would skip the Code field and put data in the wrong column.
+                        # Receipt flow (fast-send): all hourglass/delay logic removed.
+                        # Fast-send mode now injects VK_DOWN after 'r' (below), so
+                        # pending_tab_after_receipt is never set in that path.
+                        # This block only handles the non-fast-send (pyautogui) mode.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
-                            if self.sender.fast_send_row_mode:
-                                # 1. Brief settle so IFMIS can begin the LOV round-trip.
-                                time.sleep(0.008)
-                                if WindowManager.is_cursor_hourglass():
-                                    # Slow internet path: LOV query in flight.
-                                    # Wait for it to complete then confirm with TAB.
-                                    self._smart_tab_settle(0.005)   # wait until not busy
-                                    self.sender._si_send_vk(0x09)  # VK_TAB — commit LOV
-                                    time.sleep(0.008)              # settle after LOV commit
-                                # else: fast internet — Oracle already committed Receipt
-                                #       and moved focus to Code; extra TAB not needed.
-                            else:
-                                pyautogui.press('tab')
-                                if not self._wait_after_ui_action(self.sender.speed_delay):
-                                    break
+                            pyautogui.press('tab')
+                            if not self._wait_after_ui_action(self.sender.speed_delay):
+                                break
                             pending_tab_after_receipt = False
 
                         success = self._send_cell_with_retry(parsed)
@@ -985,7 +971,15 @@ class LoaderThread(QThread):
                         type_col_hit = self._form_type_col is not None and col_idx == self._form_type_col
                         early_col_fallback = self._form_type_col is None and col_idx <= 2
                         if self.form_mode and receipt_token and (type_col_hit or early_col_fallback):
-                            pending_tab_after_receipt = True
+                            if self.sender.fast_send_row_mode:
+                                # One VK_DOWN explicitly navigates to 'Receipt' in the
+                                # Type LOV dropdown — identical pattern to Payment but with
+                                # this single extra step.  No delays: SendInput queues the
+                                # keystroke; Oracle processes it in strict sequence after 'r',
+                                # regardless of internet speed.
+                                self.sender._si_send_vk(0x28)  # VK_DOWN
+                            else:
+                                pending_tab_after_receipt = True
 
                         # Auto-Tab only between plain data fields.
                         # Date cells (risky): 0.005s floor so IFMIS can begin auto-fill
