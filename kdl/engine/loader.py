@@ -978,6 +978,7 @@ class LoaderThread(QThread):
                                 # keystroke; Oracle processes it in strict sequence after 'r',
                                 # regardless of internet speed.
                                 self.sender._si_send_vk(0x28)  # VK_DOWN
+                                time.sleep(0.05)  # let Oracle register the selection before TAB
                             else:
                                 pending_tab_after_receipt = True
 
