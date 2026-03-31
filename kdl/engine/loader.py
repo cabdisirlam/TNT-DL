@@ -907,10 +907,12 @@ class LoaderThread(QThread):
 
                         # Receipt flow: after sending type-ahead 'r' in Type column,
                         # move to the next field just before next cell send.
+                        # A 0.03s settle gives IFMIS time to commit the LOV
+                        # "Receipt" selection before the next keystroke arrives.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             if self.sender.fast_send_row_mode:
                                 self.sender._si_send_vk(0x09)  # VK_TAB
-                                time.sleep(0.002)
+                                time.sleep(0.03)   # was 0.002 – too fast for LOV commit
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
