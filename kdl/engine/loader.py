@@ -972,22 +972,27 @@ class LoaderThread(QThread):
                         early_col_fallback = self._form_type_col is None and col_idx <= 2
                         if self.form_mode and receipt_token and (type_col_hit or early_col_fallback):
                             if self.sender.fast_send_row_mode:
-                                # Wait for Oracle to finish opening the Type LOV after 'r'.
-                                # Seed delay (20ms) ensures we don't race past a fast hourglass
-                                # before the first poll; then poll until cursor is clear.
-                                # Fast connections: no hourglass after seed → fires immediately.
-                                # Slow connections: hourglass detected → waits it out (≤2s).
-                                time.sleep(0.02)
+                                # Wait until the Type LOV popup is actually the foreground
+                                # window before sending VK_DOWN.  Cursor hourglass is not a
+                                # reliable signal — Oracle can clear it while the LOV list is
+                                # still loading.  detect_blocking_popup() returns non-empty
+                                # only when a same-process popup (the LOV) has taken focus,
+                                # which is exactly when VK_DOWN will land in the list.
+                                # 10ms seed so the first poll isn't before Oracle even starts
+                                # opening the popup; then poll every 5ms up to 2s.
+                                time.sleep(0.01)
                                 _lov_deadline = time.time() + 2.0
                                 try:
                                     while time.time() < _lov_deadline:
-                                        if not WindowManager.is_cursor_hourglass():
+                                        if WindowManager.detect_blocking_popup(
+                                                self.sender.target_hwnd,
+                                                self.sender.target_title):
                                             break
                                         time.sleep(0.005)
                                 except Exception:
                                     pass
-                                self.sender._si_send_vk(0x28)  # VK_DOWN — LOV is ready
-                                time.sleep(0.02)  # brief settle so selection registers
+                                self.sender._si_send_vk(0x28)  # VK_DOWN — LOV has focus
+                                time.sleep(0.02)  # let selection register before TAB
                             else:
                                 pending_tab_after_receipt = True
 
