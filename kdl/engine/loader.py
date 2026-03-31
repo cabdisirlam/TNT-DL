@@ -939,12 +939,26 @@ class LoaderThread(QThread):
 
                         self._check_pause()
 
-                        # Receipt flow: before sending the next cell, fire the lazy TAB
-                        # that commits the 'r' type-ahead Oracle auto-selected as Receipt.
+                        # Receipt flow: before sending the next cell, commit the 'r'
+                        # type-ahead.  'r' can either:
+                        #   A) type-ahead auto-select Receipt (no popup) — cursor settles,
+                        #      TAB commits.
+                        #   B) open an LOV popup — TAB would land inside it and corrupt
+                        #      the row.  Detect popup → Escape to close (Oracle keeps
+                        #      Receipt selected) → cursor settle → TAB commits.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             if self.sender.fast_send_row_mode:
-                                self.sender._si_send_vk(0x09)  # VK_TAB
-                                time.sleep(0.03)  # Oracle type-ahead needs ~30ms to commit
+                                # Check if 'r' opened a popup (slow/cold cache)
+                                try:
+                                    _popup = WindowManager.detect_blocking_popup(
+                                        self.sender.target_hwnd, self.sender.target_title)
+                                    if _popup:
+                                        self.sender._si_send_vk(0x1B)  # Escape — close LOV
+                                except Exception:
+                                    pass
+                                # Wait for cursor to settle (type-ahead or post-Escape)
+                                self._smart_tab_settle(0.01)
+                                self.sender._si_send_vk(0x09)  # VK_TAB — commit Receipt
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
