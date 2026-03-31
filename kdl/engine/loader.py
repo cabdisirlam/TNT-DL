@@ -356,7 +356,7 @@ class LoaderThread(QThread):
 
     def _fast_send_popup_check_interval(self) -> float:
         if self.sender.fast_send_row_mode:
-            return 0.15
+            return 0.05
         return 0.15
 
     def run(self):
