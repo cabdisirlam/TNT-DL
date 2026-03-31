@@ -977,7 +977,7 @@ class LoaderThread(QThread):
                             # Receipt.  80ms floor covers normal dropdown activation time;
                             # busy_timeout=1s waits out grid-scroll server round-trips where
                             # Oracle takes longer to re-activate the field.
-                            self._smart_tab_settle(0.08, busy_timeout=1.0)
+                            self._smart_tab_settle(0.05, busy_timeout=1.0)
                             self.sender._si_send_vk(0x28)  # VK_DOWN → Receipt
                             success = True
                         else:
