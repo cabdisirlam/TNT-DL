@@ -29,7 +29,10 @@ from kdl.dialogs.database_setup_dialog import DatabaseSetupDialog
 from kdl.dialogs.load_result_dialog import LoadResultDialog
 from kdl.dialogs.financial_report_dialog import FinancialReportDialog
 from kdl.dialogs.budget_dialog import BudgetDialog
+from kdl.dialogs.load_history_dialog import LoadHistoryDialog
 from kdl.engine.loader import LoaderThread
+from kdl.engine.load_history import append_history_entry
+from kdl.engine.resume_state import save_resume_row, clear_resume_row
 from kdl.engine.keystroke_parser import KeystrokeParser
 from kdl.engine.validation import validate_ifmis_data
 from kdl.window.window_manager import WindowManager
@@ -311,6 +314,7 @@ class MainWindow(QMainWindow):
         self._last_load_settings: dict = {}
         self._last_started_row: int = -1
         self._load_row_results: dict = {}
+        self._load_start_time: float = 0.0
         self._freeze_header_enabled: bool = False
         self._apply_saved_settings()
 
@@ -878,6 +882,15 @@ class MainWindow(QMainWindow):
         )
         self.imprest_btn.setToolTip("Imprest Surrender AP Invoice Loader")
         toolbar.addAction(self.imprest_btn)
+
+        self.history_btn = QAction(
+            self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
+            "Load History",
+            self,
+            triggered=self._open_load_history,
+        )
+        self.history_btn.setToolTip("View Load History")
+        toolbar.addAction(self.history_btn)
 
         toolbar.addSeparator()
 
@@ -1743,6 +1756,10 @@ class MainWindow(QMainWindow):
         dlg.load_into_grid.connect(self._load_imprest_output_into_grid)
         dlg.exec()
 
+    def _open_load_history(self):
+        dlg = LoadHistoryDialog(parent=self)
+        dlg.exec()
+
     def _load_imprest_output_into_grid(self, rows: list):
         if not rows:
             return
@@ -1968,7 +1985,8 @@ class MainWindow(QMainWindow):
             target_title=self.window_combo.currentText(),
             target_hwnd=self.window_combo.currentData(),
             command_group=self.command_group_combo.currentText(),
-            parent=self
+            parent=self,
+            workbook=self.current_file or "",
         )
 
         # Keep current Start popup flow, but prefill from Tools defaults.
@@ -2127,9 +2145,11 @@ class MainWindow(QMainWindow):
 
     def _execute_load(self, settings: dict):
         """Execute the data load with given settings."""
+        import time as _time
         self._last_load_settings = dict(settings)
         self._load_row_results = {}
         self._last_started_row = -1
+        self._load_start_time = _time.time()
         grid_data = self.spreadsheet.get_grid_data()
 
         # Keep latest settings as defaults for next Start popup.
@@ -2274,6 +2294,7 @@ class MainWindow(QMainWindow):
             use_fast_send=load_mode in ("fast_send", "imprest_surrender"),
             popup_stop_on_error=settings.get("popup_behavior", "pause") == "stop",
             load_control=settings.get("load_control", False),
+            dry_run=settings.get("dry_run", False),
         )
         self.loader_thread.parser.shortcuts = self.parser.shortcuts
 
@@ -2565,6 +2586,10 @@ class MainWindow(QMainWindow):
 
     def _on_row_started(self, row):
         self._last_started_row = row
+        # Persist resume position (skip for dry runs — nothing was actually sent)
+        if self._last_load_settings and not self._last_load_settings.get("dry_run"):
+            save_resume_row(self.current_file or "", row,
+                            self._last_load_settings.get("load_mode", ""))
         should_highlight_row = (
             not self._load_visual_compact
             or row == self._overlay_start_row
@@ -2648,19 +2673,63 @@ class MainWindow(QMainWindow):
         if self._deferred_load_result is None:
             return
 
+        import time as _time
         success, message = self._deferred_load_result
         self._deferred_load_result = None
         self.status_label.setText(message)
-        self._apply_load_row_colors()
+
+        s = self._last_load_settings
+        is_dry = bool(s.get("dry_run", False))
+
+        self._apply_load_row_colors(dry_run=is_dry)
+
+        # ── Load history ──
+        try:
+            from_row = s.get("from_row", 0)
+            to_row = s.get("to_row", 0)
+            success_rows = sum(1 for v in self._load_row_results.values() if v)
+            failed_rows = sum(1 for v in self._load_row_results.values() if not v)
+            duration = max(0.0, _time.time() - self._load_start_time)
+            if is_dry:
+                result_str = "dry_run"
+            elif success:
+                result_str = "success"
+            elif "stopped" in message.lower():
+                result_str = "stopped"
+            else:
+                result_str = "error"
+            append_history_entry(
+                workbook=self.current_file or "",
+                load_mode=s.get("load_mode", ""),
+                start_row=from_row,
+                end_row=to_row,
+                success_rows=success_rows,
+                failed_rows=failed_rows,
+                duration_sec=duration,
+                target_title=s.get("target_title", ""),
+                result=result_str,
+                dry_run=is_dry,
+            )
+        except Exception:
+            pass
+
+        # ── Resume state ──
+        if success and not is_dry:
+            clear_resume_row(self.current_file or "")
+
         self.showNormal()
         self.raise_()
         self.activateWindow()
         self._show_load_result(success, message)
 
-    def _apply_load_row_colors(self):
-        """Apply green/red row highlights based on per-row load results."""
-        for row, ok in self._load_row_results.items():
-            self.spreadsheet.highlight_row_result(row, ok)
+    def _apply_load_row_colors(self, dry_run: bool = False):
+        """Apply green/red (or blue for dry run) row highlights based on per-row load results."""
+        if dry_run:
+            for row in self._load_row_results:
+                self.spreadsheet.highlight_row_result(row, True, color_override="#3399ff")
+        else:
+            for row, ok in self._load_row_results.items():
+                self.spreadsheet.highlight_row_result(row, ok)
 
     def _toggle_freeze_header(self, checked: bool):
         self._freeze_header_enabled = checked

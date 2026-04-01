@@ -75,6 +75,9 @@ class LoaderThread(QThread):
         self.load_mode = "per_cell"
         self.end_of_row_action = "none"  # What to do at end of each row
 
+        # Dry run — simulate without sending anything
+        self.dry_run = False
+
         # Control flags
         self._stop_requested = False
         self._pause_requested = False
@@ -108,7 +111,7 @@ class LoaderThread(QThread):
                   form_mode=False, load_mode="per_cell", end_of_row_action="none",
                   window_delay=0.1, save_interval=50, db_settings=None,
                   popup_stop_on_error=False, use_fast_send=False,
-                  load_control=False):
+                  load_control=False, dry_run=False):
         """Configure the loader before starting."""
         self.grid_data = grid_data
         self.start_row = start_row
@@ -137,6 +140,7 @@ class LoaderThread(QThread):
         self._popup_stop_on_error = bool(popup_stop_on_error)
         self.sender.use_fast_send = bool(use_fast_send)
         self.sender.fast_send_row_mode = (self.load_mode == "fast_send")
+        self.dry_run = bool(dry_run)
 
         self._stop_requested = False
         self._pause_requested = False
@@ -436,6 +440,10 @@ class LoaderThread(QThread):
         # mechanism handles the real recovery path.
         if self._is_stop_requested():
             return False
+        if self.dry_run:
+            # Dry run: simulate a small delay then report success without sending.
+            time.sleep(0.001)
+            return True
         return self.sender.send_cell(parsed)
 
     def _parse_cell_for_column(self, col_idx: int, cell_value, is_delay: bool = False) -> ParsedCell:
@@ -695,15 +703,16 @@ class LoaderThread(QThread):
 
         self.progress_updated.emit(0, total_rows, f"Starting load... (0/{total_rows})")
 
-        # Initial delay to let user switch to target
-        if not self._interruptible_delay(1.5):
-            self.loading_complete.emit(False, self._build_stopped_message(0, total_rows, started_at))
-            return
+        if not self.dry_run:
+            # Initial delay to let user switch to target
+            if not self._interruptible_delay(1.5):
+                self.loading_complete.emit(False, self._build_stopped_message(0, total_rows, started_at))
+                return
 
-        # Activate target window
-        if not self.sender.activate_target():
-            self.loading_complete.emit(False, "Failed to activate target window")
-            return
+            # Activate target window
+            if not self.sender.activate_target():
+                self.loading_complete.emit(False, "Failed to activate target window")
+                return
 
         # Fast-send mode emits signals at a throttled interval to avoid flooding
         # the Qt main-thread event queue with thousands of queued signals, which
@@ -741,7 +750,7 @@ class LoaderThread(QThread):
                 self._check_pause()
 
             if self.form_mode:
-                if not self.sender.activate_target():
+                if not self.dry_run and not self.sender.activate_target():
                     self.loading_complete.emit(False, "Lost focus on target window - stopped.")
                     return
 

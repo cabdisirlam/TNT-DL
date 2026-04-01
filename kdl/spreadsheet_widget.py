@@ -1693,11 +1693,13 @@ class SpreadsheetWidget(QTableWidget):
 
     # ── Row Result Coloring ────────────────────────────────
 
-    def highlight_row_result(self, row: int, success: bool):
-        """Color row green (success) or red (error) after a load."""
+    def highlight_row_result(self, row: int, success: bool, color_override: str = ""):
+        """Color row green (success), red (error), or a custom color after a load."""
         from kdl.config_store import get_dark_mode
         dark = get_dark_mode()
-        if success:
+        if color_override:
+            color = QColor(color_override)
+        elif success:
             color = QColor("#1B4332") if dark else QColor("#D4EDDA")
         else:
             color = QColor("#4A1919") if dark else QColor("#F8D7DA")

@@ -25,6 +25,7 @@ from kdl import __display_name__
 from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import TEXT_MUTED, accent_button_qss, dialog_qss
 from kdl.window.window_manager import WindowManager
+from kdl.engine.resume_state import get_resume_row
 
 
 APP_TYPES = [
@@ -58,13 +59,16 @@ class LoadSettingsDialog(QDialog):
     load_requested = Signal(dict)
 
     def __init__(self, max_rows: int = 0, target_title: str = "",
-                 target_hwnd=None, command_group: str = "", parent=None):
+                 target_hwnd=None, command_group: str = "", parent=None,
+                 workbook: str = ""):
         super().__init__(parent)
         self.max_rows = max_rows
         self._target_title = target_title
         self._target_hwnd = target_hwnd
         self._command_group = command_group
         self._hourglass_before_load_control = True
+        self._workbook = workbook or ""
+        self._resume_row = get_resume_row(self._workbook) if self._workbook else None
 
         self.setWindowTitle(f"{__display_name__} - Load Settings")
         self.setMinimumSize(440, 360)
@@ -128,6 +132,29 @@ class LoadSettingsDialog(QDialog):
         )
         title_row.addStretch()
         _inner.addLayout(title_row)
+
+        # ── Resume banner (only shown when a saved position exists) ──
+        if self._resume_row is not None:
+            resume_frame = QFrame()
+            resume_frame.setObjectName("ResumeBanner")
+            resume_frame.setStyleSheet(
+                "QFrame#ResumeBanner { background: #fffbe6; border: 1px solid #f0c040;"
+                " border-radius: 5px; padding: 2px; }"
+            )
+            resume_row_layout = QHBoxLayout(resume_frame)
+            resume_row_layout.setContentsMargins(10, 6, 10, 6)
+            resume_row_layout.setSpacing(10)
+            resume_lbl = QLabel(
+                f"\u26a0\ufe0f  Last session stopped at row {self._resume_row + 1}."
+                "  Resume from there?"
+            )
+            resume_lbl.setStyleSheet("color: #7a5a00; font-size: 12px;")
+            resume_row_layout.addWidget(resume_lbl, 1)
+            resume_yes_btn = QPushButton(f"Resume from row {self._resume_row + 1}")
+            resume_yes_btn.setFixedHeight(28)
+            resume_yes_btn.clicked.connect(self._apply_resume_row)
+            resume_row_layout.addWidget(resume_yes_btn)
+            _inner.addWidget(resume_frame)
 
         body = QGridLayout()
         body.setHorizontalSpacing(8)
@@ -279,6 +306,14 @@ class LoadSettingsDialog(QDialog):
         )
         self.load_control_check.toggled.connect(self._sync_load_control_state)
         dg.addWidget(self.load_control_check, 4, 0, 1, 3)
+
+        self.dry_run_check = QCheckBox("Dry run (preview only — nothing is sent)")
+        self.dry_run_check.setChecked(False)
+        self.dry_run_check.setToolTip(
+            "Simulates the load without sending any keystrokes.\n"
+            "Shows which rows would be processed and highlights them in blue."
+        )
+        dg.addWidget(self.dry_run_check, 5, 0, 1, 3)
         body.addWidget(delay_group, 1, 1)
 
         popup_group = QGroupBox("On Popup")
@@ -519,7 +554,15 @@ class LoadSettingsDialog(QDialog):
             "validate_before_load": self.validate_check.isChecked(),
             "app_type": self.app_combo.currentText(),
             "popup_behavior": "stop" if self.radio_popup_stop.isChecked() else "pause",
+            "dry_run": self.dry_run_check.isChecked(),
         }
 
         self.load_requested.emit(settings)
         self.accept()
+
+    def _apply_resume_row(self):
+        """Pre-fill From Row / To Row with the saved resume position."""
+        if self._resume_row is None:
+            return
+        self.radio_range.setChecked(True)
+        self.from_input.setText(str(self._resume_row + 1))  # 1-based display
