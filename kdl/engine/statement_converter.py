@@ -574,7 +574,8 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
 
     receipts.sort(key=_sort_key)
     output_data.sort(key=_sort_key)
-    _write_rows_to_sheet(ws_out, receipts + output_data)
+    output_data = receipts + output_data
+    _write_rows_to_sheet(ws_out, output_data)
 
     closing_balance_calc = None
     variance = None
@@ -597,7 +598,7 @@ def convert_statement(wb: Workbook, sheet_name: str, skip_contra: bool = True) -
 
     message_lines = [
         "Conversion complete.",
-        f"Output rows: {len(receipts) + len(output_data)}",
+        f"Output rows: {len(output_data)}",
         f"Skipped rows: {len(audit_rows)}",
         f"Total Debits: {total_debits:,.2f}",
         f"Total Credits: {total_credits:,.2f}",
