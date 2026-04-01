@@ -946,7 +946,7 @@ class LoaderThread(QThread):
                         # Oracle is ready to receive the next cell's data.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             if self.sender.fast_send_row_mode:
-                                self._smart_tab_settle(0.005)  # wait for LOV to finish
+                                self._smart_tab_settle(0.030)  # wait for LOV to finish
                                 self.sender._si_send_vk(0x09)  # VK_TAB — commit Receipt
                                 self._smart_tab_settle(0.002)  # wait for cursor to land
                             else:
