@@ -528,9 +528,9 @@ class LoaderThread(QThread):
         if self._form_type_col is not None and col_idx == self._form_type_col:
             if lowered in {"receipt", "r"}:
                 return ParsedCell(
-                    cell_type=CellType.DATA,
+                    cell_type=CellType.KEYSTROKE,
                     raw_value=parsed.raw_value,
-                    data_text="Receipt",
+                    key_actions=[{"type": "type", "text": "r"}],
                 )
             if lowered in {"payment", "p"}:
                 return ParsedCell(
@@ -948,17 +948,8 @@ class LoaderThread(QThread):
                         #      Receipt selected) → cursor settle → TAB commits.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             if self.sender.fast_send_row_mode:
-                                # Check if 'r' opened a popup (slow/cold cache)
-                                try:
-                                    _popup = WindowManager.detect_blocking_popup(
-                                        self.sender.target_hwnd, self.sender.target_title)
-                                    if _popup:
-                                        self.sender._si_send_vk(0x0D)  # Enter — accept Receipt in LOV
-                                except Exception:
-                                    pass
-                                # Wait for cursor to settle (type-ahead or post-Escape)
-                                self._smart_tab_settle(0.01)
-                                self.sender._si_send_vk(0x09)  # VK_TAB — commit Receipt
+                                self.sender._si_send_vk(0x09)  # VK_TAB
+                                time.sleep(0.002)
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
