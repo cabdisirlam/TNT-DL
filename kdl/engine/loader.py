@@ -940,16 +940,15 @@ class LoaderThread(QThread):
                         self._check_pause()
 
                         # Receipt flow: before sending the next cell, commit the 'r'
-                        # type-ahead.  'r' can either:
-                        #   A) type-ahead auto-select Receipt (no popup) — cursor settles,
-                        #      TAB commits.
-                        #   B) open an LOV popup — TAB would land inside it and corrupt
-                        #      the row.  Detect popup → Escape to close (Oracle keeps
-                        #      Receipt selected) → cursor settle → TAB commits.
+                        # type-ahead.  Wait for Oracle LOV to finish (hourglass gone)
+                        # before TAB so the cursor lands on the correct next field at
+                        # any connection speed.  A second settle after TAB ensures
+                        # Oracle is ready to receive the next cell's data.
                         if pending_tab_after_receipt and parsed.cell_type != CellType.EMPTY:
                             if self.sender.fast_send_row_mode:
-                                self.sender._si_send_vk(0x09)  # VK_TAB
-                                time.sleep(0.002)
+                                self._smart_tab_settle(0.005)  # wait for LOV to finish
+                                self.sender._si_send_vk(0x09)  # VK_TAB — commit Receipt
+                                self._smart_tab_settle(0.002)  # wait for cursor to land
                             else:
                                 pyautogui.press('tab')
                                 if not self._wait_after_ui_action(self.sender.speed_delay):
