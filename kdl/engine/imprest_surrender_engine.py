@@ -16,13 +16,13 @@ Columns (A–K):
 
 Keystroke template (per row) — 82-cell DL grid (C1–C82):
   Requires "Use Alternate Method for processing Macros" in DL Load Settings.
-  \\%2\\{ESC} = Alt+2, then Esc = jump to the Lines block.
+  \\+{PGDN}   = Shift+PageDown = jump to the Lines block (Next Block).
   \\%d        = Alt+D = jump to the Distributions block.
   \\{ENTER} = close modal / confirm / dismiss prepayment alert.
   \\{BACKSPACE} = clear pre-filled field.
   Macro flow:
     General fields → \\{ENTER} (dismiss prepayment alert if any) → "Provisional"
-    → \\{ENTER} (close modal) → \\%2\\{ESC} (→Lines block)
+    → \\{ENTER} (close modal) → \\+{PGDN} (→Lines block)
     → Tab to Amount → enter amount → \\%d (→Distributions block)
     → Tab to Amount → enter amount → GL Date → Dist Account → Save → Down
 """
@@ -85,7 +85,7 @@ COLUMN_SAMPLE = {
 _T       = "{Tab}"
 _BS      = "\\{BACKSPACE}"
 _ENTER   = "\\{ENTER}"
-_ALT2ESC = "\\%2\\{ESC}"   # Alt+2 + Esc  → Lines block
+_ALT2ESC = "\\+{PGDN}"     # Shift+PageDown → Lines block (Next Block)
 _ALTD    = "\\%d"           # Alt+D        → Distributions block
 _CTRLS   = "\\^s"           # Ctrl+S       → save
 _CTRLF4  = "\\^{F4}"        # Ctrl+F4      → clear record
@@ -862,7 +862,7 @@ def _build_dl_keystroke_row(row: dict) -> list:
     _DT  = "\\{TAB}"
     _BS  = "\\{BACKSPACE}"
     _ENT = "\\{ENTER}"
-    _A2E = "\\%2\\{ESC}"
+    _A2E = "\\+{PGDN}"
     _AD  = "\\%d"
     _CS  = "\\^s"
     _CF4 = "\\^{F4}"
@@ -924,7 +924,7 @@ def _build_dl_keystroke_row(row: dict) -> list:
         amt, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", desc, "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "IMMEDIATE", "\\{TAB}", pmeth, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
-        "\\{TAB}", "\\{TAB}", auth, "\\{TAB}", admc, "\\{TAB}", "\\{ENTER}", "\\%2\\{ESC}", "\\{TAB}", "\\{TAB}",
+        "\\{TAB}", "\\{TAB}", auth, "\\{TAB}", admc, "\\{TAB}", "\\{ENTER}", "\\+{PGDN}", "\\{TAB}", "\\{TAB}",
         apply_amt, "\\{TAB}", "\\%d", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", dist,
         "\\{TAB}", "\\^s", "\\^{F4}", "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}",
         old_imp, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
