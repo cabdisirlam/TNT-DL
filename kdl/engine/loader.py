@@ -891,6 +891,115 @@ class LoaderThread(QThread):
                                 row_idx, 0, rows_processed, total_rows)
                         break
 
+                elif self.load_mode == "imprest_old_date":
+                    from kdl.engine.imprest_old_date_engine import (
+                        COLUMNS as _OLD_DATE_COLUMNS,
+                        execute_row_for_loader as _old_date_execute_row,
+                    )
+                    row_dict = {
+                        col: (str(row_data[i]).strip()
+                              if i < len(row_data) and row_data[i] is not None else "")
+                        for i, col in enumerate(_OLD_DATE_COLUMNS)
+                    }
+                    sup = row_dict.get("Supplier_Num", "")
+                    if sup.startswith("\\") or (sup.startswith("{") and "}" in sup):
+                        _d = [
+                            str(row_data[i]).strip()
+                            if i < len(row_data) and row_data[i] is not None else ""
+                            for i in range(len(row_data))
+                        ]
+                        save_idx = next(
+                            (i for i, v in enumerate(_d)
+                             if v in ("\\^s", "\\*s", "*s")),
+                            len(_d)
+                        )
+                        row_dict = {
+                            "Supplier_Num":         _d[10] if len(_d) > 10 else "",
+                            "Invoice_Date":         _d[15] if len(_d) > 15 else "",
+                            "Invoice_Num":          _d[17] if len(_d) > 17 else "",
+                            "Invoice_Amount":       _d[20] if len(_d) > 20 else "",
+                            "Description":          _d[28] if len(_d) > 28 else "",
+                            "Payment_Method":       _d[34] if len(_d) > 34 else "",
+                            "Terms_Date":           "",
+                            "Auth_Ref_No":          _d[52] if len(_d) > 52 else "",
+                            "Administrative_Code":  _d[54] if len(_d) > 54 else "",
+                            "GL_Date":              _d[save_idx - 4] if save_idx >= 4 else "",
+                            "Distribution_Account": _d[save_idx - 2] if save_idx >= 2 else "",
+                            "Old_Imprest_No":       _d[80] if len(_d) > 80 else "",
+                        }
+                        sup = row_dict.get("Supplier_Num", "")
+                        self.progress_updated.emit(
+                            rows_processed, total_rows,
+                            f"[Imprest Old Date] Row {row_idx + 1} | per-cell fmt"
+                            f" | Supplier: {sup or '(empty)'}"
+                        )
+                    else:
+                        self.progress_updated.emit(
+                            rows_processed, total_rows,
+                            f"[Imprest Old Date] Row {row_idx + 1} | Target: {self.sender.target_title!r}"
+                            f" | Supplier: {sup or '(empty)'}"
+                        )
+                    def _old_date_popup_fn(popup_title):
+                        from kdl.window.window_manager import WindowManager
+                        if not self._interruptible_delay(0.15):
+                            return False
+                        self.sender._si_send_vk(0x0D)
+                        if not self._wait_after_ui_action(0.40):
+                            return False
+                        still_open = WindowManager.detect_blocking_popup(
+                            self.sender.target_hwnd, self.sender.target_title)
+                        if not still_open:
+                            self.progress_updated.emit(
+                                rows_processed, total_rows,
+                                f"[Imprest Old Date] Auto-accepted LOV '{popup_title}' → Enter")
+                            return not self._is_stop_requested()
+                        self.sender._si_send_vk(0x28)
+                        if not self._wait_after_ui_action(0.20):
+                            return False
+                        self.sender._si_send_vk(0x0D)
+                        if not self._wait_after_ui_action(0.40):
+                            return False
+                        still_open = WindowManager.detect_blocking_popup(
+                            self.sender.target_hwnd, self.sender.target_title)
+                        if not still_open:
+                            self.progress_updated.emit(
+                                rows_processed, total_rows,
+                                f"[Imprest Old Date] Auto-accepted LOV '{popup_title}' → Down+Enter")
+                            return not self._is_stop_requested()
+                        self.sender._si_send_vk(0x09)
+                        if not self._wait_after_ui_action(0.20):
+                            return False
+                        self.sender._si_send_vk(0x0D)
+                        if not self._wait_after_ui_action(0.40):
+                            return False
+                        still_open = WindowManager.detect_blocking_popup(
+                            self.sender.target_hwnd, self.sender.target_title)
+                        if not still_open:
+                            self.progress_updated.emit(
+                                rows_processed, total_rows,
+                                f"[Imprest Old Date] Auto-accepted LOV '{popup_title}' → Tab+Enter")
+                            return not self._is_stop_requested()
+                        self._pause_requested = True
+                        self.popup_paused.emit(popup_title)
+                        self.progress_updated.emit(
+                            rows_processed, total_rows,
+                            f"Paused: popup '{popup_title}' could not be auto-dismissed. "
+                            f"Dismiss it then click Resume.")
+                        self._check_pause()
+                        return not self._is_stop_requested()
+
+                    ok = _old_date_execute_row(
+                        self.sender, row_dict, self._is_stop_requested,
+                        inter_action_delay=self.sender.speed_delay,
+                        is_last_row=(row_idx == self.end_row),
+                        popup_fn=_old_date_popup_fn)
+                    row_had_activity = True
+                    if not ok:
+                        if not self._is_stop_requested():
+                            self._handle_send_failure(
+                                row_idx, 0, rows_processed, total_rows)
+                        break
+
                 elif self.load_mode == "per_row_paste":
                     self._check_pause()
                     paste_payload, ok = self._build_row_paste_payload(row_idx, row_data)

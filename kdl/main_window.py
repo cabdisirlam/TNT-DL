@@ -54,7 +54,7 @@ COMMAND_GROUPS = [
 ]
 
 LOAD_DEFAULTS_VERSION = 9
-VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send", "imprest_surrender"}
+VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send", "imprest_surrender", "imprest_old_date"}
 LEGACY_DEFAULT_SPEED_DELAYS = {0.01, 0.05, 0.1, 0.12}
 TABLE_FORMAT_HEADERS = [
     "Line",
@@ -468,7 +468,7 @@ class MainWindow(QMainWindow):
         )
         self._default_form_mode = bool(load_defaults.get("form_mode", self._default_form_mode))
         self._default_load_mode = _normalize_load_mode(saved_load_mode)
-        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender")
+        self._default_form_mode = self._default_load_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_old_date")
 
         self._default_validate_before_load = bool(
             load_defaults.get("validate_before_load", self._default_validate_before_load)
@@ -660,6 +660,10 @@ class MainWindow(QMainWindow):
         imprest_action = QAction("&Imprest Surrender AP Loader...", self)
         imprest_action.triggered.connect(self._open_imprest_surrender)
         tools_menu.addAction(imprest_action)
+
+        imprest_old_date_action = QAction("Imprest &Old Date AP Loader...", self)
+        imprest_old_date_action.triggered.connect(self._open_imprest_old_date)
+        tools_menu.addAction(imprest_old_date_action)
 
         tools_menu.addSeparator()
 
@@ -1756,6 +1760,12 @@ class MainWindow(QMainWindow):
         dlg.load_into_grid.connect(self._load_imprest_output_into_grid)
         dlg.exec()
 
+    def _open_imprest_old_date(self):
+        from kdl.dialogs.imprest_old_date_dialog import ImprestOldDateDialog
+        dlg = ImprestOldDateDialog(self)
+        dlg.load_into_grid.connect(self._load_imprest_output_into_grid)
+        dlg.exec()
+
     def _open_load_history(self):
         dlg = LoadHistoryDialog(parent=self)
         dlg.exec()
@@ -1994,7 +2004,9 @@ class MainWindow(QMainWindow):
         dialog.window_delay_input.setText(f"{self._default_window_delay:g}")
         dialog.hourglass_check.setChecked(self._default_wait_hourglass)
         dialog.load_control_check.setChecked(self._default_load_control)
-        if self._default_load_mode == "imprest_surrender":
+        if self._default_load_mode == "imprest_old_date":
+            dialog.radio_imprest_old_date.setChecked(True)
+        elif self._default_load_mode == "imprest_surrender":
             dialog.radio_imprest.setChecked(True)
         elif self._default_load_mode == "per_row":
             dialog.radio_per_row.setChecked(True)
@@ -2010,7 +2022,7 @@ class MainWindow(QMainWindow):
         else:
             dialog.radio_popup_pause.setChecked(True)
         default_eor = self._default_end_of_row_action
-        if self._default_load_mode == "imprest_surrender":
+        if self._default_load_mode in ("imprest_surrender", "imprest_old_date"):
             default_eor = "none"
         for idx, (_, key) in enumerate(END_OF_ROW_ACTIONS):
             if key == default_eor:
@@ -2159,7 +2171,7 @@ class MainWindow(QMainWindow):
         self._default_load_control = settings.get("load_control", self._default_load_control)
         chosen_mode = _normalize_load_mode(settings.get("load_mode", ""))
         self._default_load_mode = chosen_mode
-        self._default_form_mode = chosen_mode in ("per_row", "fast_send", "imprest_surrender")
+        self._default_form_mode = chosen_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_old_date")
         self._default_validate_before_load = settings.get(
             "validate_before_load", self._default_validate_before_load
         )
@@ -2226,6 +2238,7 @@ class MainWindow(QMainWindow):
                 "per_row": "Per Row",
                 "fast_send": "Fast Send",
                 "imprest_surrender": "Imprest",
+                "imprest_old_date": "Imprest Old Date",
             }.get(load_mode, "Per Cell")
             reply = QMessageBox.question(
                 self,
@@ -2286,12 +2299,12 @@ class MainWindow(QMainWindow):
             key_columns=list(self.spreadsheet.key_columns),
             selected_columns=list(selected_cols) if selected_cols else None,
             delay_columns=list(delay_cols),
-            form_mode=load_mode in ("per_row", "fast_send", "imprest_surrender"),
+            form_mode=load_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_old_date"),
             load_mode=load_mode,
             end_of_row_action=settings.get("end_of_row_action", "none"),
             save_interval=settings.get("save_interval", 50),
             db_settings=self._db_settings,
-            use_fast_send=load_mode in ("fast_send", "imprest_surrender"),
+            use_fast_send=load_mode in ("fast_send", "imprest_surrender", "imprest_old_date"),
             popup_stop_on_error=settings.get("popup_behavior", "pause") == "stop",
             load_control=settings.get("load_control", False),
             dry_run=settings.get("dry_run", False),
@@ -2352,6 +2365,7 @@ class MainWindow(QMainWindow):
             "per_row":           "Per Row",
             "fast_send":         "Fast Send",
             "imprest_surrender": "Imprest",
+            "imprest_old_date":  "Imprest Old Date",
         }.get(load_mode, "Per Cell")
         self._load_overlay.set_mode_label(mode_label)
         self.status_label.setText(f"Loading ({mode_label})... Switch to target window!")

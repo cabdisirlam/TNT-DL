@@ -50,6 +50,7 @@ LOAD_MODES = [
     ("Per Row", "per_row"),
     ("Per Row (Fast Send)", "fast_send"),
     ("Imprest  (Alt+2 / Alt+D)", "imprest_surrender"),
+    ("Imprest Old Date  (Alt+2 / Alt+D + Enter on dates)", "imprest_old_date"),
 ]
 
 
@@ -202,21 +203,24 @@ class LoadSettingsDialog(QDialog):
         self.radio_fast_send.setToolTip(LOAD_MODES[2][0])
         self.radio_imprest = QRadioButton("Imprest")
         self.radio_imprest.setToolTip(LOAD_MODES[3][0])
+        self.radio_imprest_old_date = QRadioButton("Imprest Old Date")
+        self.radio_imprest_old_date.setToolTip(LOAD_MODES[4][0])
         self.radio_per_row.setChecked(True)
 
         mg.addWidget(self.radio_per_cell, 0, 0)
         mg.addWidget(self.radio_per_row, 0, 1)
         mg.addWidget(self.radio_fast_send, 1, 0)
         mg.addWidget(self.radio_imprest, 1, 1)
+        mg.addWidget(self.radio_imprest_old_date, 2, 0, 1, 2)
 
-        mg.addWidget(QLabel("After each row:"), 2, 0)
+        mg.addWidget(QLabel("After each row:"), 3, 0)
         self.eor_combo = QComboBox()
         for text, _ in END_OF_ROW_ACTIONS:
             self.eor_combo.addItem(text)
         self.eor_combo.setMinimumContentsLength(18)
         self.eor_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.eor_combo.setMinimumHeight(28)
-        mg.addWidget(self.eor_combo, 2, 1)
+        mg.addWidget(self.eor_combo, 3, 1)
 
         self._save_int_lbl = QLabel("Save every:")
         self.save_interval_input = QLineEdit("50")
@@ -230,13 +234,14 @@ class LoadSettingsDialog(QDialog):
         save_row.addWidget(self.save_interval_input)
         save_row.addWidget(self._save_int_suffix)
         save_row.addStretch()
-        mg.addLayout(save_row, 3, 0, 1, 2)
+        mg.addLayout(save_row, 4, 0, 1, 2)
         self._save_int_widgets = [self._save_int_lbl, self.save_interval_input, self._save_int_suffix]
 
         self.radio_per_cell.toggled.connect(self._update_mode_controls)
         self.radio_per_row.toggled.connect(self._update_mode_controls)
         self.radio_fast_send.toggled.connect(self._update_mode_controls)
         self.radio_imprest.toggled.connect(self._update_mode_controls)
+        self.radio_imprest_old_date.toggled.connect(self._update_mode_controls)
         self.eor_combo.currentIndexChanged.connect(self._update_save_interval_visibility)
         body.addWidget(mode_group, 0, 1)
 
@@ -385,6 +390,8 @@ class LoadSettingsDialog(QDialog):
         )
 
     def _selected_load_mode(self) -> str:
+        if self.radio_imprest_old_date.isChecked():
+            return "imprest_old_date"
         if self.radio_imprest.isChecked():
             return "imprest_surrender"
         if self.radio_fast_send.isChecked():
@@ -397,7 +404,7 @@ class LoadSettingsDialog(QDialog):
         is_form_mode = self.radio_per_row.isChecked() or self.radio_fast_send.isChecked()
         self.eor_combo.setEnabled(is_form_mode)
 
-        if self.radio_imprest.isChecked():
+        if self.radio_imprest_old_date.isChecked() or self.radio_imprest.isChecked():
             self.eor_combo.setCurrentIndex(0)
             self.cell_delay_input.setText("0.2")
         elif self.radio_fast_send.isChecked():
@@ -527,7 +534,7 @@ class LoadSettingsDialog(QDialog):
         load_mode = self._selected_load_mode()
         eor_idx = self.eor_combo.currentIndex()
         end_of_row_action = END_OF_ROW_ACTIONS[eor_idx][1] if eor_idx >= 0 else "none"
-        if load_mode == "imprest_surrender":
+        if load_mode in ("imprest_surrender", "imprest_old_date"):
             # The imprest macro already performs its own full save/next-record
             # navigation, so any generic row-end action would overshoot row 2.
             end_of_row_action = "none"
@@ -548,7 +555,7 @@ class LoadSettingsDialog(QDialog):
             "speed_delay": cell_delay,
             "window_delay": window_delay,
             "load_mode": load_mode,
-            "form_mode": load_mode in ("per_row", "fast_send", "imprest_surrender"),
+            "form_mode": load_mode in ("per_row", "fast_send", "imprest_surrender", "imprest_old_date"),
             "end_of_row_action": end_of_row_action,
             "save_interval": save_interval,
             "validate_before_load": self.validate_check.isChecked(),
