@@ -50,8 +50,8 @@ TEMPLATE_ACTIONS = (
     ("text", "Provisional"),
     ("tab", 1),
     ("field", "Invoice_Date"),
-    ("key", "enter"),               # dismiss Oracle prior-period date dialog
     ("tab", 1),
+    ("key", "enter"),               # dismiss Oracle prior-period date dialog
     ("field", "Invoice_Num"),
     ("tab", 2),
     ("field", "Invoice_Amount"),
@@ -78,8 +78,8 @@ TEMPLATE_ACTIONS = (
     ("field", "Application_Amount"),
     ("tab", 1),
     ("field", "GL_Date"),
-    ("key", "enter"),               # dismiss Oracle prior-period date dialog
     ("tab", 1),
+    ("key", "enter"),               # dismiss Oracle prior-period date dialog
     ("field", "Distribution_Account"),
     ("tab", 1),
     ("hotkey", ["ctrl"], "s"),
@@ -104,8 +104,8 @@ TEMPLATE_ACTIONS = (
     ("field", "Application_Amount"),
     ("tab", 1),
     ("field", "GL_Date"),
-    ("key", "enter"),               # dismiss Oracle prior-period date dialog
     ("tab", 1),
+    ("key", "enter"),               # dismiss Oracle prior-period date dialog
     ("hotkey", ["ctrl"], "s"),
     ("delay", 500),
     ("hotkey", ["ctrl"], "f4"),
