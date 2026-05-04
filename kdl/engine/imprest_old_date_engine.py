@@ -79,7 +79,6 @@ TEMPLATE_ACTIONS = (
     ("tab", 1),
     ("field", "GL_Date"),
     ("tab", 1),
-    ("key", "enter"),               # dismiss Oracle prior-period date dialog
     ("field", "Distribution_Account"),
     ("tab", 1),
     ("hotkey", ["ctrl"], "s"),
@@ -105,7 +104,6 @@ TEMPLATE_ACTIONS = (
     ("tab", 1),
     ("field", "GL_Date"),
     ("tab", 1),
-    ("key", "enter"),               # dismiss Oracle prior-period date dialog
     ("hotkey", ["ctrl"], "s"),
     ("delay", 500),
     ("hotkey", ["ctrl"], "f4"),
