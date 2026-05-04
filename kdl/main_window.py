@@ -262,6 +262,7 @@ class LoadProgressOverlay(QWidget):
 class MainWindow(QMainWindow):
     """NT_DL Main Application Window - FDL Style."""
     window_list_ready = Signal(list)
+    _esc_pressed_signal = Signal()
 
     def __init__(self):
         super().__init__()
@@ -316,6 +317,14 @@ class MainWindow(QMainWindow):
         self._load_row_results: dict = {}
         self._load_start_time: float = 0.0
         self._freeze_header_enabled: bool = False
+        self._recent_files: list = []
+        self._esc_press_count: int = 0
+        self._esc_reset_timer = QTimer(self)
+        self._esc_reset_timer.setSingleShot(True)
+        self._esc_reset_timer.setInterval(1500)
+        self._esc_reset_timer.timeout.connect(self._reset_esc_stop_count)
+        self._esc_pressed_signal.connect(self._on_esc_pressed)
+        self._kb_hook_handle = None
         self._apply_saved_settings()
 
         # Build UI
@@ -484,6 +493,8 @@ class MainWindow(QMainWindow):
         self._protect_load_enabled = bool(ui.get("protect_load_enabled", self._protect_load_enabled))
         self._show_progress_bar = bool(ui.get("show_progress_bar", self._show_progress_bar))
         self._compact_mode_enabled = bool(ui.get("compact_mode_enabled", self._compact_mode_enabled))
+        raw_recent = settings.get("recent_files", [])
+        self._recent_files = [f for f in raw_recent if isinstance(f, str)][:10]
 
         if isinstance(db, dict):
             profiles = db.get("profiles", [])
@@ -523,6 +534,7 @@ class MainWindow(QMainWindow):
                 "compact_mode_enabled": self._compact_mode_enabled,
             },
             "database": self._db_settings,
+            "recent_files": self._recent_files,
         }
         save_settings(payload)
 
@@ -544,6 +556,9 @@ class MainWindow(QMainWindow):
         open_action.setShortcut(QKeySequence.Open)
         open_action.triggered.connect(self._open_file)
         file_menu.addAction(open_action)
+
+        self._recent_menu = file_menu.addMenu("Open &Recent")
+        self._rebuild_recent_menu()
 
         save_action = QAction("&Save", self)
         save_action.setShortcut(QKeySequence.Save)
@@ -1055,6 +1070,8 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(formula_card, 0)
 
         self.spreadsheet = SpreadsheetWidget()
+        self.spreadsheet.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.spreadsheet.customContextMenuRequested.connect(self._show_cell_context_menu)
         main_layout.addWidget(self.spreadsheet, 1)
 
         self.setCentralWidget(central)
@@ -1842,6 +1859,7 @@ class MainWindow(QMainWindow):
             self.current_file = filepath
             self._apply_window_title(os.path.basename(filepath))
             self.status_label.setText(f"Opened: {os.path.basename(filepath)}")
+            self._add_to_recent_files(filepath)
 
     def _save_file(self) -> bool:
         if self.current_file:
@@ -1869,6 +1887,7 @@ class MainWindow(QMainWindow):
             self.current_file = filepath
             self._apply_window_title(os.path.basename(filepath))
             self.status_label.setText(f"Saved: {os.path.basename(filepath)}")
+            self._add_to_recent_files(filepath)
             return True
         return False
 
@@ -2371,6 +2390,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Loading ({mode_label})... Switch to target window!")
 
         self.loader_thread.start()
+        self._start_global_esc_hook()
 
     def _stop_loading(self):
         if self.loader_thread and self.loader_thread.isRunning():
@@ -2665,6 +2685,7 @@ class MainWindow(QMainWindow):
         self._load_overlay.set_rows_marker("")
         self._load_overlay.hide()
 
+        self._stop_global_esc_hook()
         if not self._refresh_timer.isActive():
             self._refresh_timer.start(10000)
 
@@ -3728,72 +3749,234 @@ class MainWindow(QMainWindow):
 
 
     def _show_how_to(self):
-        QMessageBox.information(
-            self, f"How to Use {__display_name__}",
+        self._show_help_dialog(
+            f"How to Use {__display_name__}",
             "<h3>Quick Start Guide</h3>"
             "<ol>"
             "<li><b>Select Target Window:</b> Choose the target form or application "
-            "from the Window dropdown at the top</li>"
+            "from the Window dropdown at the top.</li>"
             "<li><b>Select Command Group:</b> Choose the command group that matches "
-            "your Oracle or ERP screen</li>"
+            "your Oracle or ERP screen.</li>"
             "<li><b>Prepare Data:</b> Enter transaction data in the grid, "
-            "or import from Excel/CSV</li>"
+            "or import from Excel/CSV (File &gt; Open or Import).</li>"
             "<li><b>Add Navigation:</b> Use keystrokes in key columns:<br>"
-            "&nbsp;&nbsp;- <code>\\{TAB}</code> = Tab to next field (default)<br>"
-            "&nbsp;&nbsp;- <code>*DN</code> = Down one step (dropdown move)<br>"
-            "&nbsp;&nbsp;- <code>*S</code> = Save (Ctrl+S)<br>"
-            "&nbsp;&nbsp;- <code>*NX</code> = Next row (Down + Home)<br>"
-            "&nbsp;&nbsp;- <code>\\r</code> = Type r for Receipt (after <code>*DN</code>)</li>"
+            "&nbsp;&nbsp;&bull; <code>\\{TAB}</code> = Tab to next field<br>"
+            "&nbsp;&nbsp;&bull; <code>*DN</code> = Down arrow (dropdown move)<br>"
+            "&nbsp;&nbsp;&bull; <code>*S</code> = Save (Ctrl+S)<br>"
+            "&nbsp;&nbsp;&bull; <code>*NX</code> = Next row (Down + Home)<br>"
+            "&nbsp;&nbsp;&bull; <code>\\r</code> = Type r for Receipt</li>"
             "<li><b>Prepare Format:</b> Use <b>To Table</b> (Ctrl+Shift+T) for Per Row sheets "
             "or <b>To Cell</b> (Ctrl+Shift+M) for legacy macro sheets.</li>"
-            "<li><b>Default Standard:</b> In Cell Format sheets use <code>\\{TAB}</code> for Tab. "
-            "Plain <code>tab</code> is accepted and To Cell normalizes it to <code>\\{TAB}</code>.</li>"
-            "<li><b>Start Loading:</b> Click Start, set row range "
-            "(e.g. rows 1 to 500), and click Start</li>"
+            "<li><b>Start Loading:</b> Press F5, set row range, then click Start.</li>"
+            "<li><b>Stop Loading:</b> Press Esc twice in quick succession, or click Stop.</li>"
             "</ol>"
-            "<p><b>Loading Modes:</b></p>"
+            "<h3>Loading Modes</h3>"
+            "<table border='1' cellpadding='5' cellspacing='0'>"
+            "<tr><th>Mode</th><th>Description</th></tr>"
+            "<tr><td><b>Per Cell</b></td><td>Sends each cell individually with a delay between cells</td></tr>"
+            "<tr><td><b>Per Row</b></td><td>Sends a full row as a form entry with end-of-row action</td></tr>"
+            "<tr><td><b>Per Row Fast Send</b></td><td>Optimised row mode using direct Win32 SendInput</td></tr>"
+            "<tr><td><b>Imprest Surrender</b></td><td>Specialised AP invoice macro for IFMIS imprest surrender</td></tr>"
+            "<tr><td><b>Imprest Old Date</b></td><td>Same as Imprest Surrender but presses Enter after Invoice Date "
+            "to dismiss the prior-period dialog</td></tr>"
+            "</table>"
+            "<h3>Tools</h3>"
             "<ul>"
-            "<li><b>Per Cell:</b> Loads one cell at a time (step-by-step)</li>"
-            "<li><b>Row Range:</b> Loads rows 1 to 500 at once (batch)</li>"
-            "</ul>"
+            "<li><b>Bank Statement Converter</b> — converts bank Excel/HTML statements to IFMIS GL posting format</li>"
+            "<li><b>IFMIS Financial Statements</b> — generates 5-sheet statements from a Notes worksheet</li>"
+            "<li><b>Budget Processor</b> — reformats IFMIS budget sheets with GOK styling and formulas</li>"
+            "<li><b>Imprest Loaders</b> — dedicated workflow for AP imprest invoice bulk entry</li>"
+            "<li><b>Macro Recorder</b> — capture keystrokes as KDL syntax and insert into cells</li>"
+            "</ul>",
         )
 
     def _show_keystrokes(self):
-        QMessageBox.information(
-            self, "Keystroke Reference",
-            "<h3>NT_DL Keystroke Reference</h3>"
-            "<table border='1' cellpadding='4'>"
-            "<tr><th>Default Standard</th><th>Action</th></tr>"
-            "<tr><td><code>\\{TAB}</code></td><td>Tab key (default)</td></tr>"
+        self._show_help_dialog(
+            "Keystroke Reference",
+            "<h3>NT_DL Keystroke Syntax Reference</h3>"
+            "<h4>Navigation Keys</h4>"
+            "<table border='1' cellpadding='5' cellspacing='0'>"
+            "<tr><th>Cell Value</th><th>Action</th></tr>"
+            "<tr><td><code>\\{TAB}</code></td><td>Tab to next field</td></tr>"
+            "<tr><td><code>\\{TAB 5}</code></td><td>Tab 5 times</td></tr>"
             "<tr><td><code>enter</code></td><td>Enter key</td></tr>"
-            "<tr><td><code>dn</code></td><td>Down arrow</td></tr>"
+            "<tr><td><code>dn</code> or <code>down</code></td><td>Down arrow</td></tr>"
             "<tr><td><code>up</code></td><td>Up arrow</td></tr>"
             "<tr><td><code>left</code></td><td>Left arrow</td></tr>"
             "<tr><td><code>right</code></td><td>Right arrow</td></tr>"
-            "<tr><td><code>\\r</code></td><td>Type r directly (dropdown type-ahead)</td></tr>"
-            "<tr><td><code>\\{TAB 5}</code></td><td>Tab 5 times (advanced)</td></tr>"
-            "<tr><td><code>\\%key</code></td><td>Alt + key (advanced)</td></tr>"
-            "<tr><td><code>\\^key</code></td><td>Ctrl + key (advanced)</td></tr>"
-            "<tr><td><code>\\+key</code></td><td>Shift + key (advanced)</td></tr>"
-            "<tr><td><code>*MC(x,y)</code></td><td>Mouse click</td></tr>"
+            "<tr><td><code>esc</code></td><td>Escape key</td></tr>"
+            "<tr><td><code>\\{PGDN}</code></td><td>Page Down (Next Block in Oracle Forms)</td></tr>"
+            "<tr><td><code>\\{F5}</code> … <code>\\{F12}</code></td><td>Function keys</td></tr>"
             "</table>"
-            "<p><b>Default for this app:</b> use standard format in sheets. "
-            "<code>*S</code> is the default Save command for IFMIS. "
-            "<code>*SV</code> is an alias for Save. "
-            "If you need right then tab, use two steps: <code>right</code> then <code>\\{TAB}</code>. "
-            "Plain <code>tab</code> is compatibility input and To Cell normalizes it to <code>\\{TAB}</code>.</p>"
-            "<h4>Shortcuts</h4>"
-            "<table border='1' cellpadding='4'>"
-            "<tr><th>Shortcut</th><th>Action</th></tr>"
-            "<tr><td><code>*SP</code></td><td>Save & Proceed</td></tr>"
-            "<tr><td><code>*S</code> (default), <code>*SV</code> (alias)</td><td>Save</td></tr>"
-            "<tr><td><code>*DN</code></td><td>Down one step</td></tr>"
-            "<tr><td><code>*NR</code></td><td>New Record</td></tr>"
-            "<tr><td><code>*NX</code></td><td>Next row (Down + Home)</td></tr>"
-            "<tr><td><code>*QR</code></td><td>Enter Query</td></tr>"
-            "<tr><td><code>*EQ</code></td><td>Execute Query</td></tr>"
+            "<h4>Modifier Combos</h4>"
+            "<table border='1' cellpadding='5' cellspacing='0'>"
+            "<tr><th>Cell Value</th><th>Action</th></tr>"
+            "<tr><td><code>\\%d</code></td><td>Alt+D (Distributions block in IFMIS)</td></tr>"
+            "<tr><td><code>\\+{PGDN}</code></td><td>Shift+PageDown (Lines block in IFMIS)</td></tr>"
+            "<tr><td><code>\\^s</code></td><td>Ctrl+S (Save)</td></tr>"
+            "<tr><td><code>\\^{F4}</code></td><td>Ctrl+F4 (Clear record)</td></tr>"
+            "<tr><td><code>\\%key</code></td><td>Alt + any key</td></tr>"
+            "<tr><td><code>\\^key</code></td><td>Ctrl + any key</td></tr>"
+            "<tr><td><code>\\+key</code></td><td>Shift + any key</td></tr>"
             "</table>"
+            "<h4>Type-Ahead / Data</h4>"
+            "<table border='1' cellpadding='5' cellspacing='0'>"
+            "<tr><th>Cell Value</th><th>Action</th></tr>"
+            "<tr><td><code>\\r</code></td><td>Type the letter r (Receipt type-ahead in IFMIS)</td></tr>"
+            "<tr><td><code>\\{BACKSPACE}</code></td><td>Backspace (clear pre-filled field)</td></tr>"
+            "<tr><td><code>*MC(x,y)</code></td><td>Left mouse click at screen coordinates</td></tr>"
+            "<tr><td><code>*MR(x,y)</code></td><td>Right mouse click at screen coordinates</td></tr>"
+            "</table>"
+            "<h4>App Shortcuts (use these in cells)</h4>"
+            "<table border='1' cellpadding='5' cellspacing='0'>"
+            "<tr><th>Shortcut</th><th>Expands to</th><th>Action</th></tr>"
+            "<tr><td><code>*S</code></td><td><code>\\^s</code></td><td>Save (default)</td></tr>"
+            "<tr><td><code>*SV</code></td><td><code>\\^s</code></td><td>Save (alias)</td></tr>"
+            "<tr><td><code>*SP</code></td><td><code>\\%f%v</code></td><td>Save &amp; Proceed</td></tr>"
+            "<tr><td><code>*DN</code></td><td><code>\\{DOWN}</code></td><td>Down one step</td></tr>"
+            "<tr><td><code>*NX</code></td><td><code>\\{DOWN}{HOME}</code></td><td>Next row (Down + Home)</td></tr>"
+            "<tr><td><code>*NR</code></td><td><code>\\%a</code></td><td>New Record</td></tr>"
+            "<tr><td><code>*CL</code></td><td><code>\\{ESC}</code></td><td>Cancel / Clear</td></tr>"
+            "<tr><td><code>*QR</code></td><td><code>\\{F11}</code></td><td>Enter Query</td></tr>"
+            "<tr><td><code>*EQ</code></td><td><code>\\^{F11}</code></td><td>Execute Query</td></tr>"
+            "<tr><td><code>*LOV</code></td><td><code>\\^l</code></td><td>Open List of Values</td></tr>"
+            "</table>"
+            "<p><i>Tip: plain <code>tab</code> (without backslash) is accepted as input and "
+            "To Cell (Ctrl+Shift+M) normalizes it to <code>\\{TAB}</code> automatically.</i></p>",
         )
+
+    # ── Recent Files ──────────────────────────────────────────────────────────
+
+    def _add_to_recent_files(self, filepath: str):
+        filepath = os.path.abspath(filepath)
+        if filepath in self._recent_files:
+            self._recent_files.remove(filepath)
+        self._recent_files.insert(0, filepath)
+        self._recent_files = self._recent_files[:10]
+        self._rebuild_recent_menu()
+        self._persist_settings()
+
+    def _rebuild_recent_menu(self):
+        self._recent_menu.clear()
+        if not self._recent_files:
+            act = QAction("(No recent files)", self)
+            act.setEnabled(False)
+            self._recent_menu.addAction(act)
+        else:
+            for path in self._recent_files:
+                label = os.path.basename(path)
+                act = QAction(label, self)
+                act.setToolTip(path)
+                act.triggered.connect(lambda checked=False, p=path: self._open_recent(p))
+                self._recent_menu.addAction(act)
+        self._recent_menu.addSeparator()
+        clear_act = QAction("Clear Recent Files", self)
+        clear_act.triggered.connect(self._clear_recent_files)
+        self._recent_menu.addAction(clear_act)
+
+    def _open_recent(self, filepath: str):
+        if not os.path.isfile(filepath):
+            QMessageBox.warning(self, "File Not Found",
+                                f"Could not open:\n{filepath}\n\nIt may have been moved or deleted.")
+            self._recent_files = [f for f in self._recent_files if f != filepath]
+            self._rebuild_recent_menu()
+            self._persist_settings()
+            return
+        if not self._confirm_discard():
+            return
+        self.spreadsheet.clear_all()
+        self._has_header_row = False
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext == ".xlsx":
+            self.spreadsheet.import_excel(filepath)
+        else:
+            self.spreadsheet.import_csv(filepath)
+        self.current_file = filepath
+        self._apply_window_title(os.path.basename(filepath))
+        self.status_label.setText(f"Opened: {os.path.basename(filepath)}")
+        self._add_to_recent_files(filepath)
+
+    def _clear_recent_files(self):
+        self._recent_files = []
+        self._rebuild_recent_menu()
+        self._persist_settings()
+
+    # ── Cell Context Menu ─────────────────────────────────────────────────────
+
+    def _show_cell_context_menu(self, pos):
+        menu = QMenu(self)
+        cut_act = menu.addAction("Cut")
+        copy_act = menu.addAction("Copy")
+        paste_act = menu.addAction("Paste")
+        menu.addSeparator()
+        fill_down_act = menu.addAction("Fill Down")
+        clear_act = menu.addAction("Clear Selection")
+        menu.addSeparator()
+        macro_act = menu.addAction("Insert Macro")
+        cut_act.triggered.connect(self.spreadsheet._cut_cells)
+        copy_act.triggered.connect(self.spreadsheet._copy_cells)
+        paste_act.triggered.connect(self.spreadsheet._paste_cells)
+        fill_down_act.triggered.connect(self.spreadsheet.fill_down)
+        clear_act.triggered.connect(self._clear_selected_cells)
+        macro_act.triggered.connect(self._open_macro_recorder)
+        menu.exec(self.spreadsheet.viewport().mapToGlobal(pos))
+
+    def _clear_selected_cells(self):
+        for item in self.spreadsheet.selectedItems():
+            item.setText("")
+
+    # ── Help Dialogs ──────────────────────────────────────────────────────────
+
+    def _show_help_dialog(self, title: str, html: str):
+        from PySide6.QtWidgets import QTextBrowser
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.setMinimumSize(620, 520)
+        browser = QTextBrowser(dlg)
+        browser.setOpenExternalLinks(True)
+        browser.setHtml(html)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close, dlg)
+        buttons.rejected.connect(dlg.reject)
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(browser)
+        layout.addWidget(buttons)
+        dlg.exec()
+
+    # ── Double-Esc Stop ───────────────────────────────────────────────────────
+
+    def _start_global_esc_hook(self):
+        try:
+            import keyboard
+            self._kb_hook_handle = keyboard.on_press_key(
+                "esc", lambda _: self._esc_pressed_signal.emit(), suppress=False
+            )
+        except Exception:
+            pass
+
+    def _stop_global_esc_hook(self):
+        try:
+            if self._kb_hook_handle is not None:
+                import keyboard
+                keyboard.unhook(self._kb_hook_handle)
+        except Exception:
+            pass
+        finally:
+            self._kb_hook_handle = None
+            self._esc_press_count = 0
+            self._esc_reset_timer.stop()
+
+    def _on_esc_pressed(self):
+        self._esc_press_count += 1
+        if self._esc_press_count == 1:
+            self.status_bar.showMessage("Press Esc again within 1.5 s to stop loading…", 1500)
+            self._esc_reset_timer.start()
+        elif self._esc_press_count >= 2:
+            self._esc_reset_timer.stop()
+            self._esc_press_count = 0
+            self._stop_loading()
+
+    def _reset_esc_stop_count(self):
+        self._esc_press_count = 0
 
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Styling
