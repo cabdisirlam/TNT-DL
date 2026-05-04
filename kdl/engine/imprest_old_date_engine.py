@@ -67,9 +67,7 @@ TEMPLATE_ACTIONS = (
     ("field", "Administrative_Code"),
     ("tab", 1),
     ("key", "enter"),
-    ("delay", 500),              # wait for IFMIS to close the modal before Alt+2
-    ("hotkey", ["alt"], "2"),
-    ("key", "escape"),
+    ("hotkey", ["shift"], "pagedown"),   # Next Block → Lines block
     ("delay", 500),
     ("tab", 2),
     ("field", "Application_Amount"),
