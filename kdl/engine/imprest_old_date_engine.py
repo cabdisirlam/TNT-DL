@@ -19,14 +19,15 @@ from kdl.engine.imprest_surrender_engine import (  # noqa: F401
     _fmt_ifmis_date,
     _normalize_invoice_row,
     build_row_summary,
-    export_keystroke_sheet_to_workbook,
     export_prefilled_template,
     export_template,
     import_ifmis_export,
     read_invoice_rows,
 )
 from kdl.engine.imprest_surrender_engine import (
+    _build_old_date_dl_keystroke_row as _base_build_old_date_dl_keystroke_row,
     execute_row_for_loader as _base_execute_row_for_loader,
+    export_keystroke_sheet_to_workbook as _combined_export_keystroke_sheet_to_workbook,
 )
 
 # ── Modified action sequence ──────────────────────────────────────────────────
@@ -67,12 +68,14 @@ TEMPLATE_ACTIONS = (
     ("field", "Administrative_Code"),
     ("tab", 1),
     ("key", "enter"),
+    ("hotkey", ["ctrl"], "s"),
+    ("delay", 300),
     ("hotkey", ["shift"], "pagedown"),   # Next Block → Lines block
     ("delay", 500),
     ("tab", 2),
     ("field", "Application_Amount"),
     ("tab", 1),
-    ("hotkey", ["alt"], "d"),
+    ("hotkey", ["shift"], "pagedown"),   # Next Block → Distributions block
     ("tab", 2),
     ("field", "Application_Amount"),
     ("tab", 1),
@@ -106,7 +109,7 @@ TEMPLATE_ACTIONS = (
     ("hotkey", ["ctrl"], "s"),
     ("delay", 500),
     ("hotkey", ["ctrl"], "f4"),
-    ("delay", 700),
+    ("delay", 500),
     ("key", "alt"),
     ("delay", 250),
     ("key", "down"),
@@ -120,6 +123,16 @@ TEMPLATE_ACTIONS = (
     ("hotkey", ["shift"], "tab"),
     ("hotkey", ["shift"], "tab"),
 )
+
+
+def _build_dl_keystroke_row(row: dict) -> list:
+    """Build old-date DataLoad row with Enter after the invoice date field."""
+    return _base_build_old_date_dl_keystroke_row(row)
+
+
+def export_keystroke_sheet_to_workbook(source_path: str, save_path: str, rows: list) -> str:
+    """Export both normal imprest and old-date imprest keystrokes on one sheet."""
+    return _combined_export_keystroke_sheet_to_workbook(source_path, save_path, rows)
 
 
 def execute_row_for_loader(sender, row_dict: dict, is_stop_requested,

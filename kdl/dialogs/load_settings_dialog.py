@@ -406,7 +406,7 @@ class LoadSettingsDialog(QDialog):
 
         if self.radio_imprest_old_date.isChecked() or self.radio_imprest.isChecked():
             self.eor_combo.setCurrentIndex(0)
-            self.cell_delay_input.setText("0.2")
+            self.cell_delay_input.setText("0.1")
         elif self.radio_fast_send.isChecked():
             self.eor_combo.setCurrentIndex(2)
             self.save_interval_input.setText("50")

@@ -774,11 +774,14 @@ class LoaderThread(QThread):
                             if i < len(row_data) and row_data[i] is not None else ""
                             for i in range(len(row_data))
                         ]
-                        # Locate the save command (\^s or \*s) then back-calculate
-                        # GL_Date (save-4) and Distribution_Account (save-2).
+                        # Locate the distribution save command (\^s or \*s)
+                        # then back-calculate GL_Date (save-4) and
+                        # Distribution_Account (save-2). Newer imprest macros
+                        # also save before the first Shift+PageDown, so skip
+                        # that early save.
                         save_idx = next(
                             (i for i, v in enumerate(_d)
-                             if v in ("\\^s", "\\*s", "*s")),
+                             if i >= 70 and v in ("\\^s", "\\*s", "*s")),
                             len(_d)
                         )
                         row_dict = {
@@ -793,7 +796,7 @@ class LoaderThread(QThread):
                             "Administrative_Code":  _d[54] if len(_d) > 54 else "",
                             "GL_Date":              _d[save_idx - 4] if save_idx >= 4 else "",
                             "Distribution_Account": _d[save_idx - 2] if save_idx >= 2 else "",
-                            "Old_Imprest_No":       _d[80] if len(_d) > 80 else "",
+                            "Old_Imprest_No":       _d[save_idx + 9] if len(_d) > save_idx + 9 else "",
                         }
                         sup = row_dict.get("Supplier_Num", "")
                         self.progress_updated.emit(
@@ -910,22 +913,22 @@ class LoaderThread(QThread):
                         ]
                         save_idx = next(
                             (i for i, v in enumerate(_d)
-                             if v in ("\\^s", "\\*s", "*s")),
+                             if i >= 70 and v in ("\\^s", "\\*s", "*s")),
                             len(_d)
                         )
                         row_dict = {
                             "Supplier_Num":         _d[10] if len(_d) > 10 else "",
                             "Invoice_Date":         _d[15] if len(_d) > 15 else "",
-                            "Invoice_Num":          _d[17] if len(_d) > 17 else "",
-                            "Invoice_Amount":       _d[20] if len(_d) > 20 else "",
-                            "Description":          _d[28] if len(_d) > 28 else "",
-                            "Payment_Method":       _d[34] if len(_d) > 34 else "",
+                            "Invoice_Num":          _d[18] if len(_d) > 18 else "",
+                            "Invoice_Amount":       _d[21] if len(_d) > 21 else "",
+                            "Description":          _d[29] if len(_d) > 29 else "",
+                            "Payment_Method":       _d[35] if len(_d) > 35 else "",
                             "Terms_Date":           "",
-                            "Auth_Ref_No":          _d[52] if len(_d) > 52 else "",
-                            "Administrative_Code":  _d[54] if len(_d) > 54 else "",
+                            "Auth_Ref_No":          _d[53] if len(_d) > 53 else "",
+                            "Administrative_Code":  _d[55] if len(_d) > 55 else "",
                             "GL_Date":              _d[save_idx - 4] if save_idx >= 4 else "",
                             "Distribution_Account": _d[save_idx - 2] if save_idx >= 2 else "",
-                            "Old_Imprest_No":       _d[80] if len(_d) > 80 else "",
+                            "Old_Imprest_No":       _d[save_idx + 9] if len(_d) > save_idx + 9 else "",
                         }
                         sup = row_dict.get("Supplier_Num", "")
                         self.progress_updated.emit(

@@ -250,13 +250,12 @@ class ImprestOldDateDialog(QDialog):
         close_btn.clicked.connect(self.reject)
         button_row.addWidget(close_btn)
 
-        self._ks_btn = QPushButton("Export DataLoad File...")
+        self._ks_btn = QPushButton("Export Both Keystrokes...")
         self._ks_btn.setMinimumWidth(180)
         self._ks_btn.setMinimumHeight(38)
         self._ks_btn.setEnabled(False)
         self._ks_btn.setToolTip(
-            "Save a workbook copy with a DL_Keystrokes sheet as a fallback.\n"
-            "Load that sheet in DataLoad using Per Cell mode and Use Alternate Method."
+            "Save a workbook copy with Imprest and Old Date Imprest keystrokes on one DL_Keystrokes sheet."
         )
         self._ks_btn.clicked.connect(self._export_keystrokes)
         button_row.addWidget(self._ks_btn)

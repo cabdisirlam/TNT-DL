@@ -86,7 +86,7 @@ _T       = "{Tab}"
 _BS      = "\\{BACKSPACE}"
 _ENTER   = "\\{ENTER}"
 _ALT2ESC = "\\+{PGDN}"     # Shift+PageDown → Lines block (Next Block)
-_ALTD    = "\\%d"           # Alt+D        → Distributions block
+_ALTD    = "\\+{PGDN}"      # Shift+PageDown → Distributions block
 _CTRLS   = "\\^s"           # Ctrl+S       → save
 _CTRLF4  = "\\^{F4}"        # Ctrl+F4      → clear record
 _ALTKEY  = "\\%"            # Alt alone    → activate menu
@@ -191,7 +191,8 @@ def build_keystroke_row(row: dict) -> list:
         amt, _T, _T, _T, _T, _T, _T, _T, desc, _T,
         _T, _T, "IMMEDIATE", _T, pmeth, _T, _T, _T, _T, _T,
         _T, _T, _T, _T, _T, _T, _T, _T, _T, _T,
-        _T, _T, auth, _T, admc, _T, _ENTER, _ALT2ESC, _T, _T,
+        _T, _T, auth, _T, admc, _T, _ENTER, _CTRLS, _ALT2ESC, _T,
+        _T,
         apply_amt, _T, _ALTD, _T, _T, apply_amt, _T, gldt, _T, dist,
         _T, _CTRLS, _CTRLF4, "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}",
         old_imp, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
@@ -232,12 +233,14 @@ TEMPLATE_ACTIONS = (
     ("field", "Administrative_Code"),
     ("tab", 1),
     ("key", "enter"),
+    ("hotkey", ["ctrl"], "s"),
+    ("delay", 300),
     ("hotkey", ["shift"], "pagedown"),   # Next Block → Lines block
     ("delay", 500),
     ("tab", 2),
     ("field", "Application_Amount"),
     ("tab", 1),
-    ("hotkey", ["alt"], "d"),
+    ("hotkey", ["shift"], "pagedown"),   # Next Block → Distributions block
     ("tab", 2),
     ("field", "Application_Amount"),
     ("tab", 1),
@@ -279,7 +282,7 @@ TEMPLATE_ACTIONS = (
     ("hotkey", ["ctrl"], "f4"),
     # Clearing the record and reopening the next form is one of the most
     # timing-sensitive transitions in IFMIS.
-    ("delay", 700),
+    ("delay", 500),
     ("key", "alt"),
     ("delay", 250),
     ("key", "down"),
@@ -924,13 +927,20 @@ def _build_dl_keystroke_row(row: dict) -> list:
         amt, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", desc, "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "IMMEDIATE", "\\{TAB}", pmeth, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
-        "\\{TAB}", "\\{TAB}", auth, "\\{TAB}", admc, "\\{TAB}", "\\{ENTER}", "\\+{PGDN}", "\\{TAB}", "\\{TAB}",
-        apply_amt, "\\{TAB}", "\\%d", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", dist,
+        "\\{TAB}", "\\{TAB}", auth, "\\{TAB}", admc, "\\{TAB}", "\\{ENTER}", "\\^s", "\\+{PGDN}", "\\{TAB}",
+        "\\{TAB}", apply_amt, "\\{TAB}", "\\+{PGDN}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", dist,
         "\\{TAB}", "\\^s", "\\^{F4}", "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}",
         old_imp, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
         "\\{TAB}", "\\{ENTER}", "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", "\\^s", "\\^{F4}",
         "\\%", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
     ]
+
+
+def _build_old_date_dl_keystroke_row(row: dict) -> list:
+    """Build old-date DataLoad row with Enter after the invoice date field."""
+    cells = _build_dl_keystroke_row(row)
+    cells.insert(17, "\\{ENTER}")  # after C16 Invoice_Date and C17 Tab
+    return cells
 
 
 def export_keystroke_file(filepath: str, rows: list) -> str:
@@ -1051,11 +1061,17 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
     blue = "0070C0"
     white_text = "FFFFFF"
     grey_bg = "F2F2F2"
-    ncols = 110
+    sections = (
+        ("Imprest Keystrokes", _build_dl_keystroke_row),
+        ("Old Date Imprest Keystrokes", _build_old_date_dl_keystroke_row),
+    )
+    ncols = max(len(builder(rows[0] if rows else {})) for _, builder in sections)
     title_font = Font(bold=True, size=10, color=white_text)
+    section_font = Font(bold=True, size=10, color=white_text)
     header_font = Font(bold=True, color=white_text, size=9)
     body_font = Font(size=9)
     blue_fill = PatternFill(fill_type="solid", fgColor=blue)
+    section_fill = PatternFill(fill_type="solid", fgColor="44546A")
     odd_fill = PatternFill(fill_type="solid", fgColor=grey_bg)
     even_fill = PatternFill(fill_type="solid", fgColor="FFFFFF")
     title_alignment = Alignment(horizontal="center", vertical="center")
@@ -1067,8 +1083,8 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
         row=1,
         column=1,
         value=(
-            "NT_DL Imprest Surrender - DataLoad Keystroke Fallback  "
-            "| Load in Per Cell mode  |  'Use Alternate Method' must be ticked in DL settings"
+            "NT_DL Imprest - DataLoad Keystroke Fallback  "
+            "| Includes Imprest and Old Date Imprest keystrokes on this sheet"
         ),
     )
     title.font = title_font
@@ -1076,40 +1092,73 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
     title.alignment = title_alignment
     ws.row_dimensions[1].height = 18
 
-    for ci in range(1, ncols + 1):
-        cell = ws.cell(row=2, column=ci, value=f"C{ci}")
-        cell.font = header_font
-        cell.fill = blue_fill
-        cell.alignment = header_alignment
-    ws.row_dimensions[2].height = 15
+    current_row = 2
+    for section_title, row_builder in sections:
+        ws.merge_cells(
+            start_row=current_row,
+            start_column=1,
+            end_row=current_row,
+            end_column=ncols,
+        )
+        section = ws.cell(row=current_row, column=1, value=section_title)
+        section.font = section_font
+        section.fill = section_fill
+        section.alignment = title_alignment
+        ws.row_dimensions[current_row].height = 18
+        current_row += 1
 
-    for ri, row_dict in enumerate(rows, start=3):
-        fill = odd_fill if ri % 2 == 1 else even_fill
-        ks_row = _build_dl_keystroke_row(row_dict)
-        for ci, val in enumerate(ks_row, start=1):
-            cell = ws.cell(row=ri, column=ci, value=val)
-            cell.font = body_font
-            cell.fill = fill
-            cell.alignment = body_alignment
-        ws.row_dimensions[ri].height = 14
+        for ci in range(1, ncols + 1):
+            cell = ws.cell(row=current_row, column=ci, value=f"C{ci}")
+            cell.font = header_font
+            cell.fill = blue_fill
+            cell.alignment = header_alignment
+        ws.row_dimensions[current_row].height = 15
+        current_row += 1
+
+        for offset, row_dict in enumerate(rows):
+            fill = odd_fill if offset % 2 == 0 else even_fill
+            ks_row = row_builder(row_dict)
+            for ci, val in enumerate(ks_row, start=1):
+                cell = ws.cell(row=current_row, column=ci, value=val)
+                cell.font = body_font
+                cell.fill = fill
+                cell.alignment = body_alignment
+            ws.row_dimensions[current_row].height = 14
+            current_row += 1
+
+        current_row += 1
 
     data_cols = {
         11: 12,
         16: 12,
+        19: 12,
         18: 12,
         21: 12,
+        22: 12,
         29: 28,
+        30: 28,
         35: 12,
+        36: 12,
         53: 8,
+        54: 8,
         55: 14,
-        61: 10,
-        66: 10,
-        68: 12,
-        70: 52,
-        81: 14,
-        89: 10,
-        95: 10,
-        97: 12,
+        56: 14,
+        62: 10,
+        63: 10,
+        67: 10,
+        68: 10,
+        69: 12,
+        70: 12,
+        71: 52,
+        72: 52,
+        82: 14,
+        83: 14,
+        90: 10,
+        91: 10,
+        96: 10,
+        97: 10,
+        98: 12,
+        99: 12,
     }
     for ci in range(1, ncols + 1):
         ws.column_dimensions[get_column_letter(ci)].width = data_cols.get(ci, 10)
