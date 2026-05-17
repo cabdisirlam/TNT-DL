@@ -408,7 +408,7 @@ class LoadSettingsDialog(QDialog):
             self.eor_combo.setCurrentIndex(0)
             self.cell_delay_input.setText("0.1")
         elif self.radio_fast_send.isChecked():
-            self.eor_combo.setCurrentIndex(2)
+            self.eor_combo.setCurrentIndex(1)
             self.save_interval_input.setText("50")
             self.cell_delay_input.setText("0.05")
         elif self.radio_per_row.isChecked():
