@@ -1,10 +1,10 @@
 """
 Imprest Old Date AP Loader — Engine
 
-Identical to imprest_surrender_engine but sends Enter after every date field
-to dismiss Oracle IFMIS's "date in prior period" dialog box before moving to
-the next field.  Use this mode when loading invoices with dates that fall in a
-prior accounting period.
+Identical to imprest_surrender_engine except it sends Enter after the first
+invoice date field to dismiss Oracle IFMIS's "date in prior period" dialog box
+before moving to the next field.  Use this mode when loading invoices with dates
+that fall in a prior accounting period.
 """
 
 # Re-export the full public API from the base engine so dialogs and loader can
@@ -32,50 +32,43 @@ from kdl.engine.imprest_surrender_engine import (
 
 # ── Modified action sequence ──────────────────────────────────────────────────
 # Identical to TEMPLATE_ACTIONS in imprest_surrender_engine except that
-# ("key", "enter") is inserted after every date field so that Oracle IFMIS's
-# "prior-period date" confirmation dialog is dismissed automatically.
+# ("key", "enter") is inserted after the first invoice date field so that
+# Oracle IFMIS's prior-period date confirmation dialog is dismissed automatically.
 
 TEMPLATE_ACTIONS = (
+    ("tab", 3),
+    ("key", "backspace"),
     ("tab", 2),
-    ("key", "backspace"),
-    ("tab", 1),
-    ("text", "Standard"),
-    ("tab", 1),
-    ("key", "backspace"),
-    ("tab", 1),
-    ("key", "backspace"),
-    ("tab", 1),
     ("field", "Supplier_Num"),
     ("tab", 1),
     ("key", "enter"),
-    ("text", "Provisional"),
+    ("text", "provisional"),
     ("tab", 1),
     ("field", "Invoice_Date"),
     ("tab", 1),
     ("key", "enter"),               # dismiss Oracle prior-period date dialog
     ("field", "Invoice_Num"),
     ("tab", 2),
-    ("field", "Invoice_Amount"),
+    ("field", "Application_Amount"),
     ("tab", 7),
     ("field", "Description"),
-    ("tab", 3),
-    ("text", "IMMEDIATE"),
-    ("tab", 1),
+    ("tab", 5),
     ("text", "CHECK"),
     ("tab", 17),
     ("field", "Auth_Ref_No"),
     ("tab", 1),
     ("field", "Administrative_Code"),
-    ("tab", 1),
+    ("tab", 2),
     ("key", "enter"),
     ("hotkey", ["ctrl"], "s"),
     ("delay", 300),
-    ("hotkey", ["shift"], "pagedown"),   # Next Block → Lines block
+    ("hotkey", ["alt"], "2"),            # Alt+2 then Esc → Lines block
+    ("key", "esc"),
     ("delay", 500),
     ("tab", 2),
     ("field", "Application_Amount"),
     ("tab", 1),
-    ("hotkey", ["shift"], "pagedown"),   # Next Block → Distributions block
+    ("hotkey", ["alt"], "d"),            # Alt+D → Distributions block
     ("tab", 2),
     ("field", "Application_Amount"),
     ("tab", 1),

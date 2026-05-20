@@ -85,8 +85,8 @@ COLUMN_SAMPLE = {
 _T       = "{Tab}"
 _BS      = "\\{BACKSPACE}"
 _ENTER   = "\\{ENTER}"
-_ALT2ESC = "\\+{PGDN}"     # Shift+PageDown → Lines block (Next Block)
-_ALTD    = "\\+{PGDN}"      # Shift+PageDown → Distributions block
+_ALT2ESC = "\\%2\\{ESC}"    # Alt+2 then Esc → Lines block
+_ALTD    = "\\%d"           # Alt+D → Distributions block
 _CTRLS   = "\\^s"           # Ctrl+S       → save
 _CTRLF4  = "\\^{F4}"        # Ctrl+F4      → clear record
 _ALTKEY  = "\\%"            # Alt alone    → activate menu
@@ -170,7 +170,7 @@ TEMPLATE_ACTIONS_PGDN = (
 # ── Excel I/O ─────────────────────────────────────────────────────────────────
 
 def build_keystroke_row(row: dict) -> list:
-    """Updated 110-cell DataLoad grid row for Imprest surrender application."""
+    """Updated 108-cell DataLoad grid row for Imprest surrender application."""
     row = _normalize_invoice_row(row)
     sup = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
@@ -186,61 +186,53 @@ def build_keystroke_row(row: dict) -> list:
     old_imp = row.get("Old_Imprest_No", "")
 
     return [
-        _T, _T, _BS, _T, "Standard", _T, _BS, _T, _BS, _T,
-        sup, _T, _ENTER, "Provisional", _T, idate, _T, inum, _T, _T,
-        amt, _T, _T, _T, _T, _T, _T, _T, desc, _T,
-        _T, _T, "IMMEDIATE", _T, pmeth, _T, _T, _T, _T, _T,
-        _T, _T, _T, _T, _T, _T, _T, _T, _T, _T,
-        _T, _T, auth, _T, admc, _T, _ENTER, _CTRLS, _ALT2ESC, _T,
-        _T,
-        apply_amt, _T, _ALTD, _T, _T, apply_amt, _T, gldt, _T, dist,
-        _T, _CTRLS, _CTRLF4, "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}",
-        old_imp, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
-        "\\{TAB}", "\\{ENTER}", "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", _CTRLS, _CTRLF4,
-        "\\%", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
+        _T, _T, _T, _BS, _T, _T, sup, _T, _ENTER, "provisional",
+        _T, idate, _T, inum, _T, _T, apply_amt, _T, _T, _T,
+        _T, _T, _T, _T, desc, _T, _T, _T, _T, _T,
+        pmeth, _T, _T, _T, _T, _T, _T, _T, _T, _T,
+        _T, _T, _T, _T, _T, _T, _T, _T, auth, _T,
+        admc, _T, _T, _ENTER, _CTRLS, _ALT2ESC, _T, _T, apply_amt, _T,
+        _ALTD, _T, _T, apply_amt, _T, gldt, _T, dist, _T, _CTRLS,
+        _CTRLF4, "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", old_imp, "\\{TAB}",
+        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", "\\{TAB}", "\\{ENTER}",
+        "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", _CTRLS, _CTRLF4, "\\%", "\\{DOWN}",
+        "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
     ]
 
 
 TEMPLATE_ACTIONS = (
+    ("tab", 3),
+    ("key", "backspace"),
     ("tab", 2),
-    ("key", "backspace"),
-    ("tab", 1),
-    ("text", "Standard"),
-    ("tab", 1),
-    ("key", "backspace"),
-    ("tab", 1),
-    ("key", "backspace"),
-    ("tab", 1),
     ("field", "Supplier_Num"),
     ("tab", 1),
     ("key", "enter"),
-    ("text", "Provisional"),
+    ("text", "provisional"),
     ("tab", 1),
     ("field", "Invoice_Date"),
     ("tab", 1),
     ("field", "Invoice_Num"),
     ("tab", 2),
-    ("field", "Invoice_Amount"),
+    ("field", "Application_Amount"),
     ("tab", 7),
     ("field", "Description"),
-    ("tab", 3),
-    ("text", "IMMEDIATE"),
-    ("tab", 1),
+    ("tab", 5),
     ("text", "CHECK"),
     ("tab", 17),
     ("field", "Auth_Ref_No"),
     ("tab", 1),
     ("field", "Administrative_Code"),
-    ("tab", 1),
+    ("tab", 2),
     ("key", "enter"),
     ("hotkey", ["ctrl"], "s"),
     ("delay", 300),
-    ("hotkey", ["shift"], "pagedown"),   # Next Block → Lines block
+    ("hotkey", ["alt"], "2"),            # Alt+2 then Esc → Lines block
+    ("key", "esc"),
     ("delay", 500),
     ("tab", 2),
     ("field", "Application_Amount"),
     ("tab", 1),
-    ("hotkey", ["shift"], "pagedown"),   # Next Block → Distributions block
+    ("hotkey", ["alt"], "d"),            # Alt+D → Distributions block
     ("tab", 2),
     ("field", "Application_Amount"),
     ("tab", 1),
@@ -265,7 +257,7 @@ TEMPLATE_ACTIONS = (
     # typing the old imprest number.
     ("delay", 500),
     ("field", "Old_Imprest_No"),
-    # Match the exported 109-step DL macro: after entering the old imprest
+    # Match the exported 108-cell DL macro: after entering the old imprest
     # number IFMIS needs seven Tabs to reach the application amount field.
     ("tab", 7),
     ("field", "Application_Amount"),
@@ -906,7 +898,7 @@ def _build_dl_keystroke_row(row: dict) -> list:
 
 
 def _build_dl_keystroke_row(row: dict) -> list:
-    """Updated 110-cell backslash-macro row for DataLoad export."""
+    """Updated 108-cell backslash-macro row for DataLoad export."""
     row = _normalize_invoice_row(row)
     sup = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
@@ -922,24 +914,24 @@ def _build_dl_keystroke_row(row: dict) -> list:
     old_imp = row.get("Old_Imprest_No", "")
 
     return [
-        "\\{TAB}", "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}", "Standard", "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}",
-        sup, "\\{TAB}", "\\{ENTER}", "Provisional", "\\{TAB}", idate, "\\{TAB}", inum, "\\{TAB}", "\\{TAB}",
-        amt, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", desc, "\\{TAB}",
-        "\\{TAB}", "\\{TAB}", "IMMEDIATE", "\\{TAB}", pmeth, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
-        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
-        "\\{TAB}", "\\{TAB}", auth, "\\{TAB}", admc, "\\{TAB}", "\\{ENTER}", "\\^s", "\\+{PGDN}", "\\{TAB}",
-        "\\{TAB}", apply_amt, "\\{TAB}", "\\+{PGDN}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", dist,
-        "\\{TAB}", "\\^s", "\\^{F4}", "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}",
-        old_imp, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
-        "\\{TAB}", "\\{ENTER}", "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", "\\^s", "\\^{F4}",
-        "\\%", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
+        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}", "\\{TAB}", sup, "\\{TAB}", "\\{ENTER}", "provisional",
+        "\\{TAB}", idate, "\\{TAB}", inum, "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", "\\{TAB}", "\\{TAB}",
+        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", desc, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
+        pmeth, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
+        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", auth, "\\{TAB}",
+        admc, "\\{TAB}", "\\{TAB}", "\\{ENTER}", "\\^s", "\\%2\\{ESC}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
+        "\\%d", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", dist, "\\{TAB}", "\\^s",
+        "\\^{F4}", "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", old_imp, "\\{TAB}",
+        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", "\\{TAB}", "\\{ENTER}",
+        "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", "\\^s", "\\^{F4}", "\\%", "\\{DOWN}",
+        "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
     ]
 
 
 def _build_old_date_dl_keystroke_row(row: dict) -> list:
     """Build old-date DataLoad row with Enter after the invoice date field."""
     cells = _build_dl_keystroke_row(row)
-    cells.insert(17, "\\{ENTER}")  # after C16 Invoice_Date and C17 Tab
+    cells.insert(13, "\\{ENTER}")  # after C12 Invoice_Date and C13 Tab
     return cells
 
 
@@ -1129,36 +1121,36 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
         current_row += 1
 
     data_cols = {
-        11: 12,
-        16: 12,
-        19: 12,
-        18: 12,
-        21: 12,
-        22: 12,
-        29: 28,
-        30: 28,
-        35: 12,
-        36: 12,
-        53: 8,
-        54: 8,
-        55: 14,
-        56: 14,
-        62: 10,
-        63: 10,
-        67: 10,
-        68: 10,
-        69: 12,
-        70: 12,
-        71: 52,
-        72: 52,
-        82: 14,
-        83: 14,
-        90: 10,
-        91: 10,
-        96: 10,
-        97: 10,
-        98: 12,
-        99: 12,
+        7: 12,
+        12: 12,
+        14: 12,
+        15: 12,
+        17: 10,
+        18: 10,
+        25: 28,
+        26: 28,
+        31: 12,
+        32: 12,
+        49: 8,
+        50: 8,
+        51: 14,
+        52: 14,
+        59: 10,
+        60: 10,
+        64: 10,
+        65: 10,
+        66: 12,
+        67: 12,
+        68: 52,
+        69: 52,
+        79: 14,
+        80: 14,
+        87: 10,
+        88: 10,
+        93: 10,
+        94: 10,
+        95: 12,
+        96: 12,
     }
     for ci in range(1, ncols + 1):
         ws.column_dimensions[get_column_letter(ci)].width = data_cols.get(ci, 10)
