@@ -36,7 +36,7 @@ from kdl.engine.imprest_surrender_engine import (
 # Oracle IFMIS's prior-period date confirmation dialog is dismissed automatically.
 
 TEMPLATE_ACTIONS = (
-    ("tab", 3),
+    ("tab", 1),
     ("key", "backspace"),
     ("tab", 2),
     ("field", "Supplier_Num"),
@@ -111,10 +111,6 @@ TEMPLATE_ACTIONS = (
     ("key", "down"),
     ("key", "enter"),
     ("key", "down"),
-    ("delay", 350),
-    ("hotkey", ["shift"], "tab"),
-    ("hotkey", ["shift"], "tab"),
-    ("hotkey", ["shift"], "tab"),
 )
 
 

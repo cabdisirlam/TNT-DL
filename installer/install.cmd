@@ -6,7 +6,7 @@ if /I "%~1"=="/quiet" set "QUIET=1"
 
 set "APP_NAME=NT_DL"
 set "APP_DISPLAY=NT_DL"
-set "APP_VERSION=1.4.12"
+set "APP_VERSION=1.4.13"
 set "PUBLISHER=NT_DL"
 set "LOG_FILE=%TEMP%\NT_DL_install.log"
 set "EXIT_CODE=1"

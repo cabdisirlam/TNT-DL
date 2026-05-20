@@ -781,19 +781,19 @@ class LoaderThread(QThread):
                         # early save.
                         save_idx = next(
                             (i for i, v in enumerate(_d)
-                             if i >= 65 and v in ("\\^s", "\\*s", "*s")),
+                             if i >= 63 and v in ("\\^s", "\\*s", "*s")),
                             len(_d)
                         )
                         row_dict = {
-                            "Supplier_Num":         _d[6] if len(_d) > 6 else "",
-                            "Invoice_Date":         _d[11] if len(_d) > 11 else "",
-                            "Invoice_Num":          _d[13] if len(_d) > 13 else "",
-                            "Invoice_Amount":       _d[16] if len(_d) > 16 else "",
-                            "Description":          _d[24] if len(_d) > 24 else "",
-                            "Payment_Method":       _d[30] if len(_d) > 30 else "",
+                            "Supplier_Num":         _d[4] if len(_d) > 4 else "",
+                            "Invoice_Date":         _d[9] if len(_d) > 9 else "",
+                            "Invoice_Num":          _d[11] if len(_d) > 11 else "",
+                            "Invoice_Amount":       _d[14] if len(_d) > 14 else "",
+                            "Description":          _d[22] if len(_d) > 22 else "",
+                            "Payment_Method":       _d[28] if len(_d) > 28 else "",
                             "Terms_Date":           "",
-                            "Auth_Ref_No":          _d[48] if len(_d) > 48 else "",
-                            "Administrative_Code":  _d[50] if len(_d) > 50 else "",
+                            "Auth_Ref_No":          _d[46] if len(_d) > 46 else "",
+                            "Administrative_Code":  _d[48] if len(_d) > 48 else "",
                             "GL_Date":              _d[save_idx - 4] if save_idx >= 4 else "",
                             "Distribution_Account": _d[save_idx - 2] if save_idx >= 2 else "",
                             "Old_Imprest_No":       _d[save_idx + 9] if len(_d) > save_idx + 9 else "",
@@ -913,19 +913,19 @@ class LoaderThread(QThread):
                         ]
                         save_idx = next(
                             (i for i, v in enumerate(_d)
-                             if i >= 65 and v in ("\\^s", "\\*s", "*s")),
+                             if i >= 63 and v in ("\\^s", "\\*s", "*s")),
                             len(_d)
                         )
                         row_dict = {
-                            "Supplier_Num":         _d[6] if len(_d) > 6 else "",
-                            "Invoice_Date":         _d[11] if len(_d) > 11 else "",
-                            "Invoice_Num":          _d[14] if len(_d) > 14 else "",
-                            "Invoice_Amount":       _d[17] if len(_d) > 17 else "",
-                            "Description":          _d[25] if len(_d) > 25 else "",
-                            "Payment_Method":       _d[31] if len(_d) > 31 else "",
+                            "Supplier_Num":         _d[4] if len(_d) > 4 else "",
+                            "Invoice_Date":         _d[9] if len(_d) > 9 else "",
+                            "Invoice_Num":          _d[12] if len(_d) > 12 else "",
+                            "Invoice_Amount":       _d[15] if len(_d) > 15 else "",
+                            "Description":          _d[23] if len(_d) > 23 else "",
+                            "Payment_Method":       _d[29] if len(_d) > 29 else "",
                             "Terms_Date":           "",
-                            "Auth_Ref_No":          _d[49] if len(_d) > 49 else "",
-                            "Administrative_Code":  _d[51] if len(_d) > 51 else "",
+                            "Auth_Ref_No":          _d[47] if len(_d) > 47 else "",
+                            "Administrative_Code":  _d[49] if len(_d) > 49 else "",
                             "GL_Date":              _d[save_idx - 4] if save_idx >= 4 else "",
                             "Distribution_Account": _d[save_idx - 2] if save_idx >= 2 else "",
                             "Old_Imprest_No":       _d[save_idx + 9] if len(_d) > save_idx + 9 else "",

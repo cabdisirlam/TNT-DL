@@ -170,7 +170,7 @@ TEMPLATE_ACTIONS_PGDN = (
 # ── Excel I/O ─────────────────────────────────────────────────────────────────
 
 def build_keystroke_row(row: dict) -> list:
-    """Updated 108-cell DataLoad grid row for Imprest surrender application."""
+    """Updated 103-cell DataLoad grid row for Imprest surrender application."""
     row = _normalize_invoice_row(row)
     sup = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
@@ -186,7 +186,7 @@ def build_keystroke_row(row: dict) -> list:
     old_imp = row.get("Old_Imprest_No", "")
 
     return [
-        _T, _T, _T, _BS, _T, _T, sup, _T, _ENTER, "provisional",
+        _T, _BS, _T, _T, sup, _T, _ENTER, "provisional",
         _T, idate, _T, inum, _T, _T, apply_amt, _T, _T, _T,
         _T, _T, _T, _T, desc, _T, _T, _T, _T, _T,
         pmeth, _T, _T, _T, _T, _T, _T, _T, _T, _T,
@@ -196,12 +196,12 @@ def build_keystroke_row(row: dict) -> list:
         _CTRLF4, "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", old_imp, "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", "\\{TAB}", "\\{ENTER}",
         "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", _CTRLS, _CTRLF4, "\\%", "\\{DOWN}",
-        "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
+        "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}",
     ]
 
 
 TEMPLATE_ACTIONS = (
-    ("tab", 3),
+    ("tab", 1),
     ("key", "backspace"),
     ("tab", 2),
     ("field", "Supplier_Num"),
@@ -257,7 +257,7 @@ TEMPLATE_ACTIONS = (
     # typing the old imprest number.
     ("delay", 500),
     ("field", "Old_Imprest_No"),
-    # Match the exported 108-cell DL macro: after entering the old imprest
+    # Match the exported 103-cell DL macro: after entering the old imprest
     # number IFMIS needs seven Tabs to reach the application amount field.
     ("tab", 7),
     ("field", "Application_Amount"),
@@ -283,10 +283,6 @@ TEMPLATE_ACTIONS = (
     ("key", "down"),
     ("key", "enter"),
     ("key", "down"),
-    ("delay", 350),
-    ("hotkey", ["shift"], "tab"),
-    ("hotkey", ["shift"], "tab"),
-    ("hotkey", ["shift"], "tab"),
 )
 
 
@@ -898,7 +894,7 @@ def _build_dl_keystroke_row(row: dict) -> list:
 
 
 def _build_dl_keystroke_row(row: dict) -> list:
-    """Updated 108-cell backslash-macro row for DataLoad export."""
+    """Updated 103-cell backslash-macro row for DataLoad export."""
     row = _normalize_invoice_row(row)
     sup = row.get("Supplier_Num", "")
     idate = row.get("Invoice_Date", "")
@@ -914,7 +910,7 @@ def _build_dl_keystroke_row(row: dict) -> list:
     old_imp = row.get("Old_Imprest_No", "")
 
     return [
-        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}", "\\{TAB}", sup, "\\{TAB}", "\\{ENTER}", "provisional",
+        "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}", "\\{TAB}", sup, "\\{TAB}", "\\{ENTER}", "provisional",
         "\\{TAB}", idate, "\\{TAB}", inum, "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", "\\{TAB}", "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", desc, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
         pmeth, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
@@ -924,14 +920,14 @@ def _build_dl_keystroke_row(row: dict) -> list:
         "\\^{F4}", "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", old_imp, "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", "\\{TAB}", "\\{ENTER}",
         "\\{SPACE}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", "\\^s", "\\^{F4}", "\\%", "\\{DOWN}",
-        "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}", "\\+{TAB}", "\\+{TAB}", "\\+{TAB}",
+        "\\{DOWN}", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", "\\{DOWN}",
     ]
 
 
 def _build_old_date_dl_keystroke_row(row: dict) -> list:
     """Build old-date DataLoad row with Enter after the invoice date field."""
     cells = _build_dl_keystroke_row(row)
-    cells.insert(13, "\\{ENTER}")  # after C12 Invoice_Date and C13 Tab
+    cells.insert(11, "\\{ENTER}")  # after C10 Invoice_Date and C11 Tab
     return cells
 
 
@@ -1121,36 +1117,36 @@ def _write_keystroke_sheet(ws, rows: list) -> None:
         current_row += 1
 
     data_cols = {
-        7: 12,
+        5: 12,
+        10: 12,
         12: 12,
-        14: 12,
-        15: 12,
-        17: 10,
-        18: 10,
-        25: 28,
-        26: 28,
-        31: 12,
-        32: 12,
-        49: 8,
-        50: 8,
-        51: 14,
-        52: 14,
-        59: 10,
-        60: 10,
-        64: 10,
-        65: 10,
-        66: 12,
-        67: 12,
-        68: 52,
-        69: 52,
-        79: 14,
-        80: 14,
-        87: 10,
-        88: 10,
-        93: 10,
-        94: 10,
-        95: 12,
-        96: 12,
+        13: 12,
+        15: 10,
+        16: 10,
+        23: 28,
+        24: 28,
+        29: 12,
+        30: 12,
+        47: 8,
+        48: 8,
+        49: 14,
+        50: 14,
+        57: 10,
+        58: 10,
+        62: 10,
+        63: 10,
+        64: 12,
+        65: 12,
+        66: 52,
+        67: 52,
+        77: 14,
+        78: 14,
+        85: 10,
+        86: 10,
+        91: 10,
+        92: 10,
+        93: 12,
+        94: 12,
     }
     for ci in range(1, ncols + 1):
         ws.column_dimensions[get_column_letter(ci)].width = data_cols.get(ci, 10)
