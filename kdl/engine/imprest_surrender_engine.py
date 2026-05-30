@@ -85,7 +85,8 @@ COLUMN_SAMPLE = {
 _T       = "{Tab}"
 _BS      = "\\{BACKSPACE}"
 _ENTER   = "\\{ENTER}"
-_ALT2ESC = "\\%2\\{ESC}"    # Alt+2 then Esc → Lines block
+_ALT2    = "\\%2"           # Alt+2 → Lines block
+_ESC     = "\\{ESC}"
 _ALTD    = "\\%d"           # Alt+D → Distributions block
 _CTRLS   = "\\^s"           # Ctrl+S       → save
 _CTRLF4  = "\\^{F4}"        # Ctrl+F4      → clear record
@@ -178,7 +179,7 @@ def build_keystroke_row(row: dict) -> list:
     amt = row.get("Invoice_Amount", "")
     apply_amt = (amt or "").replace(",", "")
     desc = row.get("Description", "")
-    pmeth = row.get("Payment_Method", "") or "CHECK"
+    pmeth = (row.get("Payment_Method", "") or "check").lower()
     gldt = row.get("GL_Date", "")
     auth = row.get("Auth_Ref_No", "")
     admc = row.get("Administrative_Code", "")
@@ -186,12 +187,12 @@ def build_keystroke_row(row: dict) -> list:
     old_imp = row.get("Old_Imprest_No", "")
 
     return [
-        _T, _BS, _T, _T, sup, _T, _ENTER, "provisional",
+        _T, _BS, _T, _T, sup, _T, _ENTER, "Provisional",
         _T, idate, _T, inum, _T, _T, apply_amt, _T, _T, _T,
-        _T, _T, _T, _T, desc, _T, _T, _T, _T, _T,
-        pmeth, _T, _T, _T, _T, _T, _T, _T, _T, _T,
+        _T, _T, _T, _T, desc, _T, _T, _T,
+        "immediate", _T, pmeth, _T, _T, _T, _T, _T, _T, _T, _T, _T,
         _T, _T, _T, _T, _T, _T, _T, _T, auth, _T,
-        admc, _T, _T, _ENTER, _CTRLS, _ALT2ESC, _T, _T, apply_amt, _T,
+        admc, _T, _T, _ENTER, _ALT2, _ESC, _T, _T, apply_amt, _T,
         _ALTD, _T, _T, apply_amt, _T, gldt, _T, dist, _T, _CTRLS,
         _CTRLF4, "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", old_imp, "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", "\\{TAB}", "\\{ENTER}",
@@ -207,7 +208,7 @@ TEMPLATE_ACTIONS = (
     ("field", "Supplier_Num"),
     ("tab", 1),
     ("key", "enter"),
-    ("text", "provisional"),
+    ("text", "Provisional"),
     ("tab", 1),
     ("field", "Invoice_Date"),
     ("tab", 1),
@@ -216,16 +217,16 @@ TEMPLATE_ACTIONS = (
     ("field", "Application_Amount"),
     ("tab", 7),
     ("field", "Description"),
-    ("tab", 5),
-    ("text", "CHECK"),
+    ("tab", 3),
+    ("text", "immediate"),
+    ("tab", 1),
+    ("text", "check"),
     ("tab", 17),
     ("field", "Auth_Ref_No"),
     ("tab", 1),
     ("field", "Administrative_Code"),
     ("tab", 2),
     ("key", "enter"),
-    ("hotkey", ["ctrl"], "s"),
-    ("delay", 300),
     ("hotkey", ["alt"], "2"),            # Alt+2 then Esc → Lines block
     ("key", "esc"),
     ("delay", 500),
@@ -867,7 +868,7 @@ def _build_dl_keystroke_row(row: dict) -> list:
     inum  = row.get("Invoice_Num", "")
     amt   = row.get("Invoice_Amount", "")
     desc  = row.get("Description", "")
-    pmeth = row.get("Payment_Method", "") or "CHECK"
+    pmeth = (row.get("Payment_Method", "") or "check").lower()
     gldt  = row.get("GL_Date", "")
     auth  = row.get("Auth_Ref_No", "")
     admc  = row.get("Administrative_Code", "")
@@ -902,7 +903,7 @@ def _build_dl_keystroke_row(row: dict) -> list:
     amt = row.get("Invoice_Amount", "")
     apply_amt = (amt or "").replace(",", "")
     desc = row.get("Description", "")
-    pmeth = row.get("Payment_Method", "") or "CHECK"
+    pmeth = (row.get("Payment_Method", "") or "check").lower()
     gldt = row.get("GL_Date", "")
     auth = row.get("Auth_Ref_No", "")
     admc = row.get("Administrative_Code", "")
@@ -910,12 +911,12 @@ def _build_dl_keystroke_row(row: dict) -> list:
     old_imp = row.get("Old_Imprest_No", "")
 
     return [
-        "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}", "\\{TAB}", sup, "\\{TAB}", "\\{ENTER}", "provisional",
+        "\\{TAB}", "\\{BACKSPACE}", "\\{TAB}", "\\{TAB}", sup, "\\{TAB}", "\\{ENTER}", "Provisional",
         "\\{TAB}", idate, "\\{TAB}", inum, "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", "\\{TAB}", "\\{TAB}",
-        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", desc, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
-        pmeth, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
+        "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", desc, "\\{TAB}", "\\{TAB}", "\\{TAB}",
+        "immediate", "\\{TAB}", pmeth, "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", auth, "\\{TAB}",
-        admc, "\\{TAB}", "\\{TAB}", "\\{ENTER}", "\\^s", "\\%2\\{ESC}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
+        admc, "\\{TAB}", "\\{TAB}", "\\{ENTER}", "\\%2", "\\{ESC}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}",
         "\\%d", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", gldt, "\\{TAB}", dist, "\\{TAB}", "\\^s",
         "\\^{F4}", "\\%c", "\\%u", "\\%k", "\\%v", "\\{DOWN}", "\\{DOWN}", "\\{ENTER}", old_imp, "\\{TAB}",
         "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", "\\{TAB}", apply_amt, "\\{TAB}", "\\{TAB}", "\\{ENTER}",
