@@ -66,7 +66,7 @@ TABLE_FORMAT_HEADERS = [
     "Amount",
 ]
 CELL_FORMAT_KEY_COLUMNS = {0, 1, 2, 3, 5, 7, 9, 11, 13, 14, 15}
-DATE_TEXT_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{4}$")
+DATE_TEXT_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2,4}$")
 AMOUNT_TEXT_RE = re.compile(r"^-?\d[\d,]*(?:\.\d+)?$")
 
 

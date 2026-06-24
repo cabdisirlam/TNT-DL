@@ -168,6 +168,21 @@ def _parse_dmon_y(text: str, sep: str):
         return None
 
 
+def _parse_ymd(text: str, sep: str):
+    parts = text.strip().split(sep)
+    if len(parts) != 3 or len(parts[0]) != 4:
+        return None
+    try:
+        yy = int(parts[0])
+        mm = int(parts[1])
+        dd = int(parts[2])
+        if mm < 1 or mm > 12 or dd < 1 or dd > 31:
+            return None
+        return date(yy, mm, dd)
+    except (TypeError, ValueError):
+        return None
+
+
 def _parse_date_cell(cell) -> Optional[date]:
     value = cell.value
     if isinstance(value, datetime):
@@ -184,9 +199,9 @@ def _parse_date_cell(cell) -> Optional[date]:
         text = text.split(" ", 1)[0]
 
     if "/" in text:
-        return _parse_mdy(text, "/")
+        return _parse_ymd(text, "/") or _parse_mdy(text, "/")
     if "-" in text:
-        return _parse_dmon_y(text, "-")
+        return _parse_ymd(text, "-") or _parse_dmon_y(text, "-")
     return None
 
 
@@ -221,7 +236,7 @@ def _extract_doc_no_10(details: str) -> str:
 
 
 def _fmt_date(dt_value: date) -> str:
-    return dt_value.strftime("%d-%b-%Y")
+    return dt_value.strftime("%d-%b-%y").upper()
 
 
 def _make_payment_row(doc_no, dt_value: date, amount: float) -> list:
@@ -274,7 +289,7 @@ def _write_rows_to_sheet(ws_out: Worksheet, rows: List[List]):
                     parsed = _parse_dmon_y(value, "-")
                     out_value = parsed if parsed is not None else value
                     if parsed is not None:
-                        number_format = "dd-mmm-yyyy"
+                        number_format = "dd-mmm-yy"
                 elif col_index == 11:
                     parsed_num = _parse_number(value)
                     out_value = parsed_num if parsed_num is not None else value
@@ -286,7 +301,7 @@ def _write_rows_to_sheet(ws_out: Worksheet, rows: List[List]):
                     parsed = _parse_dmon_y(value, "-")
                     out_value = parsed if parsed is not None else value
                     if parsed is not None:
-                        number_format = "dd-mmm-yyyy"
+                        number_format = "dd-mmm-yy"
                 elif col_index == 13:
                     parsed_num = _parse_number(value)
                     out_value = parsed_num if parsed_num is not None else value

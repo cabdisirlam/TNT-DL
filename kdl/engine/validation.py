@@ -15,7 +15,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional, Sequence, Set
 
 
-DATE_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{4}$")
+DATE_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2,4}$")
 VALID_TYPES = {"payment", "receipt"}
 
 
@@ -161,7 +161,7 @@ def validate_ifmis_data(
                         severity="error",
                         row=row_idx,
                         col=col_idx,
-                        message="Invalid date format (expected DD-MMM-YYYY).",
+                        message="Invalid date format (expected DD-MMM-YY or DD-MMM-YYYY).",
                     )
                 )
 

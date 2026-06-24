@@ -32,9 +32,10 @@ from kdl.styles import accent_button_qss, dialog_qss, themed_button_qss
 from kdl.tabular_import import (
     build_filtered_workbook_from_excel,
     detect_source_format,
-    iter_csv_rows,
-    list_legacy_xls_sheet_names,
+    list_excel_sheet_names,
     load_workbook_from_source,
+    normalize_source_to_xlsx,
+    source_needs_xlsx_normalization,
 )
 
 
@@ -159,6 +160,60 @@ def _build_workbook_from_html(filepath: str):
     return wb
 
 
+def _next_normalized_xlsx_path(filepath: str, directory: str) -> str:
+    base_name = os.path.splitext(os.path.basename(filepath))[0]
+    stem = base_name if base_name.lower().endswith("_normalized") else f"{base_name}_normalized"
+    candidate = os.path.join(directory, f"{stem}.xlsx")
+    if not os.path.exists(candidate):
+        return candidate
+    for index in range(2, 1000):
+        candidate = os.path.join(directory, f"{stem}_{index}.xlsx")
+        if not os.path.exists(candidate):
+            return candidate
+    return os.path.join(directory, f"{stem}_{os.getpid()}.xlsx")
+
+
+class _SourceNormalizerWorker(QThread):
+    source_ready = Signal(str, str)  # normalized filepath, status message
+    normalize_error = Signal(str)
+
+    def __init__(self, filepath: str, fallback_dir: str):
+        super().__init__()
+        self.filepath = filepath
+        self.fallback_dir = fallback_dir
+
+    def _normalize_to_dir(self, directory: str) -> str:
+        output_path = _next_normalized_xlsx_path(self.filepath, directory)
+        return normalize_source_to_xlsx(self.filepath, output_path)
+
+    def run(self):
+        try:
+            if not source_needs_xlsx_normalization(self.filepath):
+                self.source_ready.emit(self.filepath, "")
+                return
+
+            source_dir = os.path.dirname(os.path.abspath(self.filepath)) or self.fallback_dir
+            try:
+                normalized_path = self._normalize_to_dir(source_dir)
+            except Exception as first_exc:
+                if os.path.abspath(source_dir).lower() == os.path.abspath(self.fallback_dir).lower():
+                    raise
+                try:
+                    normalized_path = self._normalize_to_dir(self.fallback_dir)
+                except Exception as fallback_exc:
+                    raise RuntimeError(
+                        f"{first_exc}\n\nDownloads fallback also failed:\n{fallback_exc}"
+                    ) from fallback_exc
+
+            message = (
+                "Source was converted to Excel first:\n"
+                f"{os.path.basename(normalized_path)}"
+            )
+            self.source_ready.emit(normalized_path, message)
+        except Exception as exc:
+            self.normalize_error.emit(str(exc))
+
+
 class _SheetLoaderWorker(QThread):
     """Background worker that reads sheet names from an Excel file."""
 
@@ -188,26 +243,15 @@ class _SheetLoaderWorker(QThread):
                 self.sheets_ready.emit([_sheet_safe_name(base_name, "Sheet1")])
                 return
 
-            # ── Fast path: xlsx / xlsm via zipfile (no workbook load) ──
-            if ext in (".xlsx", ".xlsm"):
+            # ── Fast path: xlsx / xlsm / templates via zipfile (no workbook load) ──
+            if ext in (".xlsx", ".xlsm", ".xltx", ".xltm"):
                 names = _fast_xlsx_sheet_names(self.filepath)
                 if names:
                     self.sheets_ready.emit(names)
                     return
 
-            if ext == ".xls":
-                self.sheets_ready.emit(list_legacy_xls_sheet_names(self.filepath))
-                return
-
-            # ── Fallback: openpyxl read-only (slower but universal) ──
-            import openpyxl
-            wb = openpyxl.load_workbook(
-                self.filepath, read_only=True, data_only=True, keep_links=False
-            )
-            try:
-                self.sheets_ready.emit(list(wb.sheetnames))
-            finally:
-                wb.close()
+            self.sheets_ready.emit(list_excel_sheet_names(self.filepath))
+            return
 
         except Exception as exc:
             self.load_error.emit(str(exc))
@@ -307,7 +351,7 @@ class _ConverterWorker(QThread):
                 )
                 return
 
-            keep_vba = source_ext == ".xlsm"
+            keep_vba = source_ext in (".xlsm", ".xltm")
             full_wb = None
             try:
                 full_wb = load_workbook_from_source(
@@ -334,7 +378,7 @@ class _ConverterWorker(QThread):
                         close_wb()
                     except Exception:
                         pass
-                if source_ext not in (".xlsx", ".xlsm"):
+                if source_ext not in (".xlsx", ".xlsm", ".xltx", ".xltm"):
                     raise
                 try:
                     wb = build_filtered_workbook_from_excel(
@@ -378,11 +422,13 @@ class StatementConverterDialog(QDialog):
         self.setMinimumWidth(440)
         self.setWindowFlag(Qt.WindowCloseButtonHint, True)
         self._worker = None
+        self._source_normalizer = None
         self._sheet_loader = None
         self._result = None
         self._wb = None
         self._save_as_copy = False
         self._sheet_checks = []
+        self._source_notice = ""
 
         from kdl.config_store import get_dark_mode
 
@@ -393,6 +439,16 @@ class StatementConverterDialog(QDialog):
     def _release_worker(self):
         worker = self._worker
         self._worker = None
+        if worker is None:
+            return
+        try:
+            worker.deleteLater()
+        except Exception:
+            pass
+
+    def _release_source_normalizer(self):
+        worker = self._source_normalizer
+        self._source_normalizer = None
         if worker is None:
             return
         try:
@@ -440,7 +496,7 @@ class StatementConverterDialog(QDialog):
         file_layout = QHBoxLayout(file_group)
         file_layout.setSpacing(10)
         self._file_edit = QLineEdit()
-        self._file_edit.setPlaceholderText("Choose the bank statement workbook (.xlsx, .xls, .xlsm)...")
+        self._file_edit.setPlaceholderText("Choose the bank statement workbook...")
         self._file_edit.setReadOnly(True)
         browse_btn = QPushButton("Browse...")
         browse_btn.setMinimumWidth(112)
@@ -494,7 +550,7 @@ class StatementConverterDialog(QDialog):
         options_group = QGroupBox("Conversion Options")
         options_layout = QVBoxLayout(options_group)
         self._skip_contra_check = QCheckBox("Skip contra/duplicate matched rows (CONTRA_MATCHED)")
-        self._skip_contra_check.setChecked(True)
+        self._skip_contra_check.setChecked(False)
         self._skip_contra_check.setToolTip(
             "When checked, rows that match as debit/credit pairs on the same reference "
             "and amount are excluded from output. Uncheck to include all rows."
@@ -556,13 +612,13 @@ class StatementConverterDialog(QDialog):
             self,
             "Select Excel File",
             _default_browse_dir(),
-            "All Supported (*.xlsx *.xls *.xlsm *.csv *.html *.htm);;Excel Files (*.xlsx *.xls *.xlsm);;CSV Files (*.csv);;HTML Files (*.html *.htm);;All Files (*)",
+            "All Supported (*.xlsx *.xlsm *.xls *.xlsb *.xltx *.xltm *.xlt *.csv *.html *.htm);;Excel Files (*.xlsx *.xlsm *.xls *.xlsb *.xltx *.xltm *.xlt);;CSV Files (*.csv);;HTML Files (*.html *.htm);;All Files (*)",
         )
         if not path:
             return
         self._reset_source_state(clear_path=True)
         self._file_edit.setText(path)
-        self._start_sheet_loader(path)
+        self._start_source_normalizer(path)
 
     def _clear_selected_source(self):
         self._reset_source_state(clear_path=True)
@@ -570,9 +626,11 @@ class StatementConverterDialog(QDialog):
     def _reset_source_state(self, clear_path: bool):
         self._sheet_loader = None
         self._worker = None
+        self._source_normalizer = None
         self._result = None
         self._wb = None
         self._save_as_copy = False
+        self._source_notice = ""
         for cb in self._sheet_checks:
             self._sheet_check_layout.removeWidget(cb)
             cb.deleteLater()
@@ -583,6 +641,51 @@ class StatementConverterDialog(QDialog):
         self._result_text.clear()
         if clear_path:
             self._file_edit.clear()
+
+    def _start_source_normalizer(self, filepath: str):
+        self._source_normalizer = None
+        self._sheet_loader = None
+        self._worker = None
+        self._convert_btn.setEnabled(False)
+        self._load_grid_btn.setEnabled(False)
+        self._result = None
+        self._wb = None
+        self._save_as_copy = False
+        self._source_notice = ""
+        self._result_text.setPlainText("Preparing source workbook...")
+
+        worker = _SourceNormalizerWorker(filepath, _default_browse_dir())
+        worker.source_ready.connect(self._on_source_ready)
+        worker.normalize_error.connect(self._on_source_error)
+        self._source_normalizer = worker
+        worker.start()
+
+    def _on_source_ready(self, filepath: str, message: str):
+        worker = self.sender()
+        if worker is not self._source_normalizer:
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+            return
+        self._source_notice = message or ""
+        self._file_edit.setText(filepath)
+        if self._source_notice:
+            self._result_text.setPlainText(self._source_notice)
+        self._release_source_normalizer()
+        self._start_sheet_loader(filepath)
+
+    def _on_source_error(self, message: str):
+        worker = self.sender()
+        if worker is not self._source_normalizer:
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+            return
+        self._result_text.clear()
+        self._release_source_normalizer()
+        QMessageBox.warning(self, "File Error", f"Could not prepare source file:\n{message}")
 
     def _start_sheet_loader(self, filepath: str):
         self._sheet_loader = None
@@ -609,7 +712,10 @@ class StatementConverterDialog(QDialog):
         loader = self.sender()
         if loader is not self._sheet_loader:
             return
-        self._result_text.clear()
+        if self._source_notice:
+            self._result_text.setPlainText(self._source_notice)
+        else:
+            self._result_text.clear()
         cols = 3
         for i, name in enumerate(sheet_names):
             row, col = divmod(i, cols)
@@ -700,6 +806,8 @@ class StatementConverterDialog(QDialog):
             return
 
         self._result_text.setPlainText(result.message)
+        if self._source_notice:
+            self._result_text.append(f"\n{self._source_notice}")
         if result.success:
             self._load_grid_btn.setEnabled(bool(result.output_data))
             self._result_text.append(
@@ -760,6 +868,14 @@ class StatementConverterDialog(QDialog):
         self.accept()
 
     def closeEvent(self, event):
+        if self._source_normalizer is not None and self._source_normalizer.isRunning():
+            QMessageBox.warning(
+                self,
+                "Preparing Source",
+                "Wait for the source workbook preparation to finish before closing this window.",
+            )
+            event.ignore()
+            return
         if self._worker is not None and self._worker.isRunning():
             QMessageBox.warning(
                 self,
@@ -768,6 +884,7 @@ class StatementConverterDialog(QDialog):
             )
             event.ignore()
             return
+        self._release_source_normalizer()
         self._release_worker()
         super().closeEvent(event)
 

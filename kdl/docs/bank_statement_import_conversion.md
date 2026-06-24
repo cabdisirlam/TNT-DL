@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Bank Statement Converter reads an Excel workbook (.xlsx / .xlsm / .xls), parses one or more bank-statement sheets, and outputs two artefacts:
+The Bank Statement Converter reads common Excel workbook formats (.xlsx / .xlsm / .xls / .xlsb / .xltx / .xltm / .xlt) plus CSV/HTML exports, normalizes older formats to `.xlsx` when needed, parses one or more bank-statement sheets, and outputs two artefacts:
 
 1. **Output sheet** — formatted rows ready to be loaded into the TNT DL grid.
 2. **Audit\_Skipped sheet** — every row that was skipped, with the reason.
@@ -25,6 +25,10 @@ The converted workbook is saved back to the source file (or a `_converted.xlsx` 
 ```
 User clicks "Browse…"
   │
+  ▼
+Source preparation
+  │  CSV/HTML/legacy Excel/.xlsb → save a *_normalized.xlsx copy
+  │  Native .xlsx/.xlsm/.xltx/.xltm → continue as-is
   ▼
 _SheetLoaderWorker (background thread)
   │  Fast path  : zipfile → xl/workbook.xml  (xlsx/xlsm, ~instant)
@@ -114,9 +118,9 @@ Now it deletes the sheet and recreates it at the same index — O(1) regardless 
 | D | `tab` |
 | E | Doc number (10-digit, stripped of leading zeros) |
 | F | `tab` |
-| G | Value date (`DD-Mon-YYYY`) |
+| G | Value date (`DD-MMM-YY`) |
 | H | `tab` |
-| I | Payment date (`DD-Mon-YYYY`) |
+| I | Payment date (`DD-MMM-YY`) |
 | J | `tab` |
 | K | Amount |
 | L | `tab` |
@@ -136,7 +140,7 @@ Now it deletes the sheet and recreates it at the same index — O(1) regardless 
 | F | `tab` |
 | G | BNK reference (raw) |
 | H | `tab` |
-| I | Value date (`DD-Mon-YYYY`) |
+| I | Value date (`DD-MMM-YY`) |
 | J | `tab` |
 | K | Value date (repeated) |
 | L | `tab` |
@@ -196,7 +200,7 @@ The converter parses dates in any of these formats (cell value or text):
 - Python `date` / `datetime` object (openpyxl native)
 - Excel serial integer (e.g. `45000`)
 - `MM/DD/YYYY` or `M/D/YY`
-- `DD-Mon-YYYY` (e.g. `15-Mar-2024`)
+- `DD-MMM-YY` / `DD-MMM-YYYY` (e.g. `15-MAR-24`, `15-MAR-2024`)
 - ISO 8601 (`YYYY-MM-DD`)
 
 ---

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import csv
+import shutil
 import io
 import os
 import re
 import tempfile
 from datetime import date, datetime
 from html.parser import HTMLParser
+
+
+OPENPYXL_WORKBOOK_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm"}
 
 
 class _HTMLTableParser(HTMLParser):
@@ -148,9 +152,13 @@ def load_html_tables(filepath: str) -> list[list[list[str]]]:
 _NUMERIC_RE = re.compile(r"^\(?-?\d[\d,]*\.?\d*\)?%?$")
 _DATE_FORMATS = (
     "%d-%b-%Y",
+    "%d-%b-%y",
     "%d-%B-%Y",
+    "%d-%B-%y",
     "%d/%m/%Y",
+    "%d/%m/%y",
     "%m/%d/%Y",
+    "%m/%d/%y",
     "%Y-%m-%d",
 )
 
@@ -238,6 +246,34 @@ def build_workbook_from_source(filepath: str):
     raise ValueError(f"Unsupported tabular source: {filepath}")
 
 
+def source_needs_xlsx_normalization(filepath: str) -> bool:
+    source_kind = detect_source_format(filepath)
+    if source_kind in ("csv", "html"):
+        return True
+    return os.path.splitext(filepath)[1].lower() not in OPENPYXL_WORKBOOK_EXTENSIONS
+
+
+def normalize_source_to_xlsx(filepath: str, output_path: str) -> str:
+    source_kind = detect_source_format(filepath)
+    if source_kind in ("csv", "html"):
+        wb = build_workbook_from_source(filepath)
+        try:
+            wb.save(output_path)
+        finally:
+            close_wb = getattr(wb, "close", None)
+            if callable(close_wb):
+                close_wb()
+        return output_path
+
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext in OPENPYXL_WORKBOOK_EXTENSIONS:
+        if os.path.abspath(filepath).lower() != os.path.abspath(output_path).lower():
+            shutil.copy2(filepath, output_path)
+        return output_path
+
+    return convert_excel_to_xlsx(filepath, output_path)
+
+
 def build_filtered_workbook_from_excel(
     filepath: str,
     *,
@@ -247,9 +283,10 @@ def build_filtered_workbook_from_excel(
 ):
     import openpyxl
 
-    source_wb = openpyxl.load_workbook(
+    source_wb = load_workbook_from_source(
         filepath,
         read_only=True,
+        sheet_names=sheet_names,
         data_only=data_only,
         keep_links=keep_links,
     )
@@ -276,6 +313,162 @@ def build_filtered_workbook_from_excel(
         source_wb.close()
 
     return target_wb
+
+
+def list_excel_sheet_names_via_com(filepath: str) -> list[str]:
+    excel_app = None
+    excel_wb = None
+    pythoncom = None
+    try:
+        import pythoncom
+        import win32com.client
+
+        pythoncom.CoInitialize()
+        excel_app = win32com.client.DispatchEx("Excel.Application")
+        excel_app.Visible = False
+        excel_app.DisplayAlerts = False
+        try:
+            excel_app.AskToUpdateLinks = False
+            excel_app.EnableEvents = False
+            excel_app.AutomationSecurity = 3
+        except Exception:
+            pass
+        excel_wb = excel_app.Workbooks.Open(
+            os.path.abspath(filepath),
+            UpdateLinks=0,
+            ReadOnly=True,
+            IgnoreReadOnlyRecommended=True,
+            Notify=False,
+            AddToMru=False,
+        )
+        names = [str(ws.Name) for ws in excel_wb.Worksheets]
+        if not names:
+            raise RuntimeError("No worksheets were found in the selected Excel workbook.")
+        return names
+    except ImportError as exc:
+        raise RuntimeError("pywin32 is required for this Excel workbook type.") from exc
+    finally:
+        if excel_wb is not None:
+            try:
+                excel_wb.Close(False)
+            except Exception:
+                pass
+        if excel_app is not None:
+            try:
+                excel_app.Quit()
+            except Exception:
+                pass
+        if pythoncom is not None:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
+
+
+def convert_excel_to_xlsx(filepath: str, output_path: str) -> str:
+    excel_app = None
+    excel_wb = None
+    pythoncom = None
+    output_path = os.path.abspath(output_path)
+    try:
+        import pythoncom
+        import win32com.client
+
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+
+        pythoncom.CoInitialize()
+        excel_app = win32com.client.DispatchEx("Excel.Application")
+        excel_app.Visible = False
+        excel_app.DisplayAlerts = False
+        try:
+            excel_app.AskToUpdateLinks = False
+            excel_app.EnableEvents = False
+            excel_app.AutomationSecurity = 3
+        except Exception:
+            pass
+        excel_wb = excel_app.Workbooks.Open(
+            os.path.abspath(filepath),
+            UpdateLinks=0,
+            ReadOnly=True,
+            IgnoreReadOnlyRecommended=True,
+            Notify=False,
+            AddToMru=False,
+        )
+        excel_wb.SaveAs(output_path, 51)
+        return output_path
+    except ImportError as exc:
+        raise RuntimeError("pywin32 is required for this Excel workbook type.") from exc
+    except Exception as exc:
+        if output_path and os.path.exists(output_path):
+            try:
+                os.unlink(output_path)
+            except OSError:
+                pass
+        raise RuntimeError(
+            "Could not convert this Excel workbook to .xlsx. Open it in Excel and save as .xlsx, "
+            "or make sure Excel is installed."
+        ) from exc
+    finally:
+        if excel_wb is not None:
+            try:
+                excel_wb.Close(False)
+            except Exception:
+                pass
+        if excel_app is not None:
+            try:
+                excel_app.Quit()
+            except Exception:
+                pass
+        if pythoncom is not None:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
+
+
+def convert_excel_to_temp_xlsx(filepath: str) -> str:
+    fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+    os.close(fd)
+    os.unlink(temp_path)
+    try:
+        return convert_excel_to_xlsx(filepath, temp_path)
+    except Exception:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+        raise
+
+
+def list_excel_sheet_names(filepath: str) -> list[str]:
+    source_kind = detect_source_format(filepath)
+    if source_kind in ("csv", "html"):
+        return list_source_sheet_names(filepath)
+
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext == ".xls":
+        return list_legacy_xls_sheet_names(filepath)
+
+    if ext in OPENPYXL_WORKBOOK_EXTENSIONS:
+        import openpyxl
+
+        wb = openpyxl.load_workbook(
+            filepath,
+            read_only=True,
+            data_only=True,
+            keep_links=False,
+        )
+        try:
+            return list(wb.sheetnames)
+        finally:
+            wb.close()
+
+    return list_excel_sheet_names_via_com(filepath)
 
 
 def _iter_legacy_xls_connection_strings(filepath: str):
@@ -355,7 +548,10 @@ def _iter_legacy_xls_tables(conn):
 def list_legacy_xls_sheet_names(filepath: str) -> list[str]:
     conn = None
     try:
-        conn, _ = _open_legacy_xls_connection(filepath)
+        try:
+            conn, _ = _open_legacy_xls_connection(filepath)
+        except Exception:
+            return list_excel_sheet_names_via_com(filepath)
         names = []
         seen: set[str] = set()
         for table_name in _iter_legacy_xls_tables(conn):
@@ -440,54 +636,13 @@ def build_workbook_from_legacy_xls(filepath: str, sheet_names: list[str] | None 
 
 
 def convert_legacy_xls_to_temp_xlsx(filepath: str) -> str:
-    excel_app = None
-    excel_wb = None
-    pythoncom = None
-    temp_path = ""
     try:
-        import pythoncom
-        import win32com.client
-
-        pythoncom.CoInitialize()
-        excel_app = win32com.client.DispatchEx("Excel.Application")
-        excel_app.Visible = False
-        excel_app.DisplayAlerts = False
-        excel_wb = excel_app.Workbooks.Open(
-            os.path.abspath(filepath),
-            UpdateLinks=0,
-            ReadOnly=True,
-        )
-        fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
-        os.close(fd)
-        os.unlink(temp_path)
-        excel_wb.SaveAs(temp_path, 51)
-        return temp_path
+        return convert_excel_to_temp_xlsx(filepath)
     except Exception as exc:
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.unlink(temp_path)
-            except OSError:
-                pass
         raise RuntimeError(
             "Could not convert this legacy .xls workbook. Open it in Excel and save as .xlsx, "
             "or make sure Excel is installed."
         ) from exc
-    finally:
-        if excel_wb is not None:
-            try:
-                excel_wb.Close(False)
-            except Exception:
-                pass
-        if excel_app is not None:
-            try:
-                excel_app.Quit()
-            except Exception:
-                pass
-        if pythoncom is not None:
-            try:
-                pythoncom.CoUninitialize()
-            except Exception:
-                pass
 
 
 def load_workbook_from_source(
@@ -505,7 +660,8 @@ def load_workbook_from_source(
     if source_kind in ("csv", "html"):
         return build_workbook_from_source(filepath)
 
-    if os.path.splitext(filepath)[1].lower() == ".xls":
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext == ".xls":
         try:
             return build_workbook_from_legacy_xls(filepath, sheet_names=sheet_names)
         except Exception:
@@ -524,6 +680,22 @@ def load_workbook_from_source(
                 except OSError:
                     pass
             return wb
+
+    if ext not in OPENPYXL_WORKBOOK_EXTENSIONS:
+        tmp_path = convert_excel_to_temp_xlsx(filepath)
+        try:
+            return openpyxl.load_workbook(
+                tmp_path,
+                data_only=data_only,
+                read_only=read_only,
+                keep_links=keep_links,
+                keep_vba=False,
+            )
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     return openpyxl.load_workbook(
         filepath,
