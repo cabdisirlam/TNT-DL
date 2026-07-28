@@ -15,7 +15,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
-from kdl.tabular_import import load_workbook_from_source
+from kdl.tabular_import import load_workbook_from_source, resolve_workbook_sheet_name
 
 
 OUTPUT_HEADERS = (
@@ -350,15 +350,21 @@ def create_filtered_workbook(
         keep_links=False,
     )
     try:
-        if sheet_name not in source_wb.sheetnames:
+        resolved_sheet_name = resolve_workbook_sheet_name(
+            list(source_wb.sheetnames),
+            sheet_name,
+        )
+        if resolved_sheet_name is None:
             raise ValueError(f"Worksheet '{sheet_name}' was not found in the source workbook.")
-        rows, debit_total, credit_total = _read_filtered_rows(source_wb[sheet_name])
+        rows, debit_total, credit_total = _read_filtered_rows(
+            source_wb[resolved_sheet_name]
+        )
     finally:
         close = getattr(source_wb, "close", None)
         if callable(close):
             close()
 
-    workbook = _build_output_workbook(rows, source_path, sheet_name)
+    workbook = _build_output_workbook(rows, source_path, resolved_sheet_name)
     output_dir = os.path.dirname(output_path)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
@@ -380,7 +386,7 @@ def create_filtered_workbook(
     message = "\n".join(
         (
             "Filter Engine completed.",
-            f"Source sheet: {sheet_name}",
+            f"Source sheet: {resolved_sheet_name}",
             f"Transaction rows retained: {len(rows):,}",
             f"Debit total: {debit_total:,.2f}",
             f"Credit total: {credit_total:,.2f}",
@@ -392,7 +398,7 @@ def create_filtered_workbook(
     )
     return FilterResult(
         output_path=output_path,
-        source_sheet=sheet_name,
+        source_sheet=resolved_sheet_name,
         row_count=len(rows),
         debit_total=debit_total,
         credit_total=credit_total,

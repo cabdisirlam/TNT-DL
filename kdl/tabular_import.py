@@ -74,7 +74,39 @@ class _HTMLTableParser(HTMLParser):
 def _sheet_safe_name(name: str, fallback: str) -> str:
     cleaned = "".join("_" if ch in '[]:*?/\\\\' else ch for ch in str(name).strip())
     cleaned = cleaned.strip("'")
-    return (cleaned or fallback)[:31]
+    # Excel limits sheet names to 31 characters. A downloaded IFMIS web export
+    # often adds " (1)" to an already long filename; truncation can therefore
+    # leave an invisible trailing space. Trim again after slicing so worksheet
+    # discovery and the reopened workbook always use the same visible name.
+    safe_name = (cleaned or fallback)[:31].strip()
+    return safe_name or str(fallback).strip()[:31] or "Sheet1"
+
+
+def resolve_workbook_sheet_name(
+    available_sheet_names: list[str],
+    requested_sheet_name: str,
+) -> str | None:
+    """Resolve a UI-selected sheet name against a reopened workbook safely."""
+
+    names = [str(name) for name in available_sheet_names]
+    requested = str(requested_sheet_name or "")
+    if requested in names:
+        return requested
+
+    def lookup_key(value: str) -> str:
+        return re.sub(r"\s+", " ", str(value)).strip().casefold()
+
+    requested_key = lookup_key(requested)
+    matches = [name for name in names if lookup_key(name) == requested_key]
+    if len(matches) == 1:
+        return matches[0]
+
+    # CSV and HTML/IFMIS web exports are imported as a single generated sheet.
+    # If the displayed filename-derived name was shortened differently, the
+    # single available sheet is still unambiguous.
+    if len(names) == 1 and requested_key:
+        return names[0]
+    return None
 
 
 def _base_name(filepath: str) -> str:

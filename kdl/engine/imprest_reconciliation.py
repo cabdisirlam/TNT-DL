@@ -22,7 +22,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
-from kdl.tabular_import import load_workbook_from_source
+from kdl.tabular_import import load_workbook_from_source, resolve_workbook_sheet_name
 
 
 CANONICAL_HEADERS = (
@@ -681,9 +681,15 @@ def create_imprest_reconciliation(
         keep_links=False,
     )
     try:
-        if sheet_name not in source_wb.sheetnames:
+        resolved_sheet_name = resolve_workbook_sheet_name(
+            list(source_wb.sheetnames),
+            sheet_name,
+        )
+        if resolved_sheet_name is None:
             raise ValueError(f"Worksheet '{sheet_name}' was not found in the source workbook.")
-        transactions, headers, mapping, warnings = _read_transactions(source_wb[sheet_name])
+        transactions, headers, mapping, warnings = _read_transactions(
+            source_wb[resolved_sheet_name]
+        )
     finally:
         close = getattr(source_wb, "close", None)
         if callable(close):
@@ -696,7 +702,7 @@ def create_imprest_reconciliation(
         headers,
         mapping,
         source_path,
-        sheet_name,
+        resolved_sheet_name,
     )
     _create_unmatched_sheet(workbook, transactions, output_headers, mapping)
     workbook.properties.title = "Imprest Reconciliation"
@@ -732,7 +738,7 @@ def create_imprest_reconciliation(
     unmatched_debit, unmatched_credit, difference = _totals(transactions, mapping)
     message_lines = [
         "Imprest reconciliation completed.",
-        f"Source sheet: {sheet_name}",
+        f"Source sheet: {resolved_sheet_name}",
         f"Transactions analysed: {len(transactions):,}",
         f"Exact matched pairs: {matched_pairs:,}",
         f"Unmatched transactions: {unmatched_count:,}",
@@ -748,7 +754,7 @@ def create_imprest_reconciliation(
 
     return ImprestReconciliationResult(
         output_path=output_path,
-        source_sheet=sheet_name,
+        source_sheet=resolved_sheet_name,
         transaction_count=len(transactions),
         matched_pairs=matched_pairs,
         unmatched_count=unmatched_count,
