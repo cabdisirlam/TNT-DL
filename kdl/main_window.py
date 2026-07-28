@@ -27,8 +27,6 @@ from kdl.dialogs.shortcuts_dialog import ShortcutsDialog
 from kdl.dialogs.macro_recorder_dialog import MacroRecorderDialog
 from kdl.dialogs.database_setup_dialog import DatabaseSetupDialog
 from kdl.dialogs.load_result_dialog import LoadResultDialog
-from kdl.dialogs.financial_report_dialog import FinancialReportDialog
-from kdl.dialogs.budget_dialog import BudgetDialog
 from kdl.dialogs.load_history_dialog import LoadHistoryDialog
 from kdl.engine.loader import LoaderThread
 from kdl.engine.load_history import append_history_entry
@@ -37,6 +35,10 @@ from kdl.engine.keystroke_parser import KeystrokeParser
 from kdl.engine.validation import validate_ifmis_data
 from kdl.window.window_manager import WindowManager
 from kdl.styles import RED_BG, AMBER_BG
+
+if IMPREST_ENABLED:
+    from kdl.dialogs.financial_report_dialog import FinancialReportDialog
+    from kdl.dialogs.budget_dialog import BudgetDialog
 
 
 # Oracle / ERP Command Groups
@@ -664,19 +666,27 @@ class MainWindow(QMainWindow):
         stmt_conv_action.triggered.connect(self._open_statement_converter)
         tools_menu.addAction(stmt_conv_action)
 
-        receipt_recon_action = QAction("&Receipt Reconciliation...", self)
-        receipt_recon_action.triggered.connect(self._open_receipt_reconciliation)
-        tools_menu.addAction(receipt_recon_action)
-
-        report_action = QAction("&Generate IFMIS Financial Statements...", self)
-        report_action.triggered.connect(self._open_financial_report)
-        tools_menu.addAction(report_action)
-
-        budget_action = QAction("&Budget...", self)
-        budget_action.triggered.connect(self._open_budget)
-        tools_menu.addAction(budget_action)
-
         if IMPREST_ENABLED:
+            receipt_recon_action = QAction("&Receipt Reconciliation...", self)
+            receipt_recon_action.triggered.connect(self._open_receipt_reconciliation)
+            tools_menu.addAction(receipt_recon_action)
+
+            imprest_recon_action = QAction("Imprest &Reconciliation...", self)
+            imprest_recon_action.triggered.connect(self._open_imprest_reconciliation)
+            tools_menu.addAction(imprest_recon_action)
+
+            filter_action = QAction("&Filter Engine...", self)
+            filter_action.triggered.connect(self._open_filter_engine)
+            tools_menu.addAction(filter_action)
+
+            report_action = QAction("&Generate IFMIS Financial Statements...", self)
+            report_action.triggered.connect(self._open_financial_report)
+            tools_menu.addAction(report_action)
+
+            budget_action = QAction("&Budget...", self)
+            budget_action.triggered.connect(self._open_budget)
+            tools_menu.addAction(budget_action)
+
             imprest_action = QAction("&Imprest Surrender AP Loader...", self)
             imprest_action.triggered.connect(self._open_imprest_surrender)
             tools_menu.addAction(imprest_action)
@@ -880,37 +890,64 @@ class MainWindow(QMainWindow):
         self.statement_btn.setToolTip("Bank Statement Converter")
         toolbar.addAction(self.statement_btn)
 
-        self.receipt_recon_btn = QAction(
-            self._icon("ic_receipt_recon.svg"),
-            "Receipt Recon",
-            self,
-            triggered=self._open_receipt_reconciliation,
-        )
-        self.receipt_recon_btn.setToolTip(
-            "Receipt Reconciliation - F.O. 30 PDF to Excel"
-        )
-        toolbar.addAction(self.receipt_recon_btn)
-
-        self.report_btn = QAction(
-            self._icon("ic_report.svg"),
-            "IFMIS Report",
-            self,
-            triggered=self._open_financial_report,
-        )
-        self.report_btn.setToolTip("Generate IFMIS Financial Statements from Notes")
-        toolbar.addAction(self.report_btn)
-
-        self.budget_btn = QAction(
-            self._icon("ic_budget.svg"),
-            "Budget",
-            self,
-            triggered=self._open_budget,
-        )
-        self.budget_btn.setToolTip("GOK IFMIS Budget Processor")
-        toolbar.addAction(self.budget_btn)
-
+        self.receipt_recon_btn = None
+        self.imprest_recon_btn = None
+        self.filter_engine_btn = None
+        self.report_btn = None
+        self.budget_btn = None
         self.imprest_btn = None
         if IMPREST_ENABLED:
+            self.receipt_recon_btn = QAction(
+                self._icon("ic_receipt_recon.svg"),
+                "Receipt Recon",
+                self,
+                triggered=self._open_receipt_reconciliation,
+            )
+            self.receipt_recon_btn.setToolTip(
+                "Receipt Reconciliation - F.O. 30 PDF to Excel"
+            )
+            toolbar.addAction(self.receipt_recon_btn)
+
+            self.imprest_recon_btn = QAction(
+                self._icon("ic_imprest_recon.svg"),
+                "Imprest Recon",
+                self,
+                triggered=self._open_imprest_reconciliation,
+            )
+            self.imprest_recon_btn.setToolTip(
+                "Imprest Reconciliation - Excel to Excel"
+            )
+            toolbar.addAction(self.imprest_recon_btn)
+
+            self.filter_engine_btn = QAction(
+                self._icon("ic_filter_engine.svg"),
+                "Filter Engine",
+                self,
+                triggered=self._open_filter_engine,
+            )
+            self.filter_engine_btn.setToolTip(
+                "Filter and clean an IFMIS transaction workbook"
+            )
+            toolbar.addAction(self.filter_engine_btn)
+
+            self.report_btn = QAction(
+                self._icon("ic_report.svg"),
+                "IFMIS Report",
+                self,
+                triggered=self._open_financial_report,
+            )
+            self.report_btn.setToolTip("Generate IFMIS Financial Statements from Notes")
+            toolbar.addAction(self.report_btn)
+
+            self.budget_btn = QAction(
+                self._icon("ic_budget.svg"),
+                "Budget",
+                self,
+                triggered=self._open_budget,
+            )
+            self.budget_btn.setToolTip("GOK IFMIS Budget Processor")
+            toolbar.addAction(self.budget_btn)
+
             self.imprest_btn = QAction(
                 self._icon("ic_imprest.svg"),
                 "Imprest Surrender",
@@ -1787,6 +1824,20 @@ class MainWindow(QMainWindow):
         )
 
         dlg = ReceiptReconciliationDialog(self)
+        dlg.exec()
+
+    def _open_imprest_reconciliation(self):
+        from kdl.dialogs.imprest_reconciliation_dialog import (
+            ImprestReconciliationDialog,
+        )
+
+        dlg = ImprestReconciliationDialog(self)
+        dlg.exec()
+
+    def _open_filter_engine(self):
+        from kdl.dialogs.transaction_filter_dialog import TransactionFilterDialog
+
+        dlg = TransactionFilterDialog(self)
         dlg.exec()
 
     def _open_financial_report(self):
@@ -3042,9 +3093,16 @@ class MainWindow(QMainWindow):
         style_action(self.pause_btn, "#D97706", "#111827", "#92400E")
         style_action(self.step_btn, "#2563EB", "#FFFFFF", "#1E3A8A")
         style_action(self.statement_btn, "#2563EB", "#FFFFFF", "#1D4ED8")
-        style_action(self.receipt_recon_btn, "#7C3AED", "#FFFFFF", "#5B21B6")
-        style_action(self.report_btn, "#0F766E", "#FFFFFF", "#115E59")
-        style_action(self.budget_btn, "#C77A11", "#FFFFFF", "#9A5A09")
+        if self.receipt_recon_btn is not None:
+            style_action(self.receipt_recon_btn, "#7C3AED", "#FFFFFF", "#5B21B6")
+        if self.imprest_recon_btn is not None:
+            style_action(self.imprest_recon_btn, "#0891B2", "#FFFFFF", "#0E7490")
+        if self.filter_engine_btn is not None:
+            style_action(self.filter_engine_btn, "#4F46E5", "#FFFFFF", "#3730A3")
+        if self.report_btn is not None:
+            style_action(self.report_btn, "#0F766E", "#FFFFFF", "#115E59")
+        if self.budget_btn is not None:
+            style_action(self.budget_btn, "#C77A11", "#FFFFFF", "#9A5A09")
         if self.imprest_btn is not None:
             style_action(self.imprest_btn, "#0891B2", "#FFFFFF", "#0E7490")
         style_action(self.rec_btn, "#BE123C", "#FFFFFF", "#881337")
@@ -3779,6 +3837,7 @@ class MainWindow(QMainWindow):
     def _show_how_to(self):
         imprest_mode_help = ""
         imprest_tool_help = ""
+        full_tool_help = ""
         if IMPREST_ENABLED:
             imprest_mode_help = (
                 "<tr><td><b>Imprest Surrender</b></td><td>Specialised AP invoice "
@@ -3790,6 +3849,18 @@ class MainWindow(QMainWindow):
             imprest_tool_help = (
                 "<li><b>Imprest Loaders</b> — dedicated workflow for AP imprest "
                 "invoice bulk entry</li>"
+            )
+            full_tool_help = (
+                "<li><b>Receipt Reconciliation</b> — converts an F.O. 30 PDF into "
+                "the four-sheet receipt reconciliation workbook</li>"
+                "<li><b>Imprest Reconciliation</b> — cleans and reconciles Imprest "
+                "debit and credit transactions</li>"
+                "<li><b>Filter Engine</b> — cleans IFMIS transaction exports and "
+                "adds totals and Transaction Number counts</li>"
+                "<li><b>IFMIS Financial Statements</b> — generates 5-sheet statements "
+                "from a Notes worksheet</li>"
+                "<li><b>Budget Processor</b> — reformats IFMIS budget sheets with "
+                "GOK styling and formulas</li>"
             )
         self._show_help_dialog(
             f"How to Use {__display_name__}",
@@ -3823,9 +3894,7 @@ class MainWindow(QMainWindow):
             "<h3>Tools</h3>"
             "<ul>"
             "<li><b>Bank Statement Converter</b> — converts bank Excel/HTML statements to IFMIS GL posting format</li>"
-            "<li><b>Receipt Reconciliation</b> — converts an F.O. 30 PDF into the four-sheet receipt reconciliation workbook</li>"
-            "<li><b>IFMIS Financial Statements</b> — generates 5-sheet statements from a Notes worksheet</li>"
-            "<li><b>Budget Processor</b> — reformats IFMIS budget sheets with GOK styling and formulas</li>"
+            f"{full_tool_help}"
             f"{imprest_tool_help}"
             "<li><b>Macro Recorder</b> — capture keystrokes as KDL syntax and insert into cells</li>"
             "</ul>",

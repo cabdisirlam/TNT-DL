@@ -2,10 +2,12 @@
 
 TNT DL is released in two side-by-side editions:
 
-- **NT DL Full** — includes Imprest Surrender and Imprest Old Date.
-- **NT DL Standard** — excludes both Imprest engines and their UI controls.
-
-Both editions include Receipt Reconciliation.
+- **NT DL Full** — includes all tools: Receipt/F.O. 30 reconciliation,
+  Notes/IFMIS financial reports, Budget, Imprest Reconciliation, Filter Engine,
+  Imprest Surrender, and Imprest Old Date.
+- **NT DL Standard** — keeps Bank Statement Converter and Load History but
+  excludes the Full-only reporting, reconciliation, filtering, budget, and
+  Imprest tools and engines.
 
 ## Build application folders
 
