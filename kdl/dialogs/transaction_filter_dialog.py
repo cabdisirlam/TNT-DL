@@ -134,8 +134,9 @@ class TransactionFilterDialog(QDialog):
         intro_row.addWidget(intro, 1)
         intro_row.addWidget(
             create_hint_button(
-                "The engine standardizes Source through Credit, makes credits "
-                "negative, adds totals, and counts repeated Transaction Numbers. "
+                "The engine standardizes Source through Credit, makes Debit/Payment "
+                "negative and Credit positive, and checks opening + credit + payment "
+                "against closing. "
                 "It does not use either Imprest loading engine.",
                 label="i",
             )
@@ -184,10 +185,10 @@ class TransactionFilterDialog(QDialog):
 
         workbook_group = QGroupBox("Generated Workbook")
         workbook_layout = QVBoxLayout(workbook_group)
-        workbook_layout.addWidget(QLabel("Filtered_Data"))
+        workbook_layout.addWidget(QLabel("Filtered_Data • Balance_Reconciliation"))
         note = QLabel(
-            "Columns A:H are standardized, credits are negative, totals are "
-            "formula-driven, and Count uses Transaction Number."
+            "Debit/Payment values are negative, credits are positive, totals and "
+            "Count are formula-driven, and balance periods are reconciled."
         )
         note.setObjectName("DialogHint")
         note.setWordWrap(True)
@@ -342,7 +343,8 @@ class TransactionFilterDialog(QDialog):
         self._open_button.setEnabled(False)
         self._result_text.setPlainText(
             "Removing report banners and blank rows, standardizing columns, "
-            "normalizing credits, and adding totals and Count formulas..."
+            "applying signed debit/credit values, and adding totals, Count formulas, "
+            "and balance checks..."
         )
         worker = _FilterWorker(source, output, sheet_name)
         worker.completed.connect(self._on_completed)

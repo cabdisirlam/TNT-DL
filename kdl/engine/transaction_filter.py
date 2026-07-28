@@ -30,6 +30,20 @@ OUTPUT_HEADERS = (
     "Count",
 )
 
+RECONCILIATION_HEADERS = (
+    "Account",
+    "Description",
+    "Period",
+    "Opening Balance",
+    "Credit",
+    "Payment / Debit",
+    "Calculated Closing",
+    "IFMIS Closing",
+    "Difference",
+    "Status",
+    "Source Rows",
+)
+
 HEADER_ALIASES = {
     "Source": {"source", "journalsource"},
     "Category": {"category", "journalcategory"},
@@ -76,10 +90,14 @@ KNOWN_REPORT_LABELS = {
 }
 
 HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
+TITLE_FILL = PatternFill("solid", fgColor="0B5EA8")
 TOTAL_FILL = PatternFill("solid", fgColor="D9EAF7")
+PASS_FILL = PatternFill("solid", fgColor="C6EFCE")
+CHECK_FILL = PatternFill("solid", fgColor="FFC7CE")
 WHITE_FONT = Font(color="FFFFFF", bold=True)
 THIN_BLUE = Side(style="thin", color="9EBCD2")
 AMOUNT_FORMAT = '#,##0.00;[Red]-#,##0.00'
+JULY_REVIEW_FONT = Font(color="C00000")
 
 
 @dataclass
@@ -89,7 +107,36 @@ class FilterResult:
     row_count: int
     debit_total: Decimal
     credit_total: Decimal
+    reconciliation_count: int
+    reconciliation_pass_count: int
+    reconciliation_exception_count: int
     message: str
+
+
+@dataclass
+class _BalanceReconciliation:
+    account: str
+    description: str
+    period: str
+    opening_balance: Decimal
+    credit: Decimal
+    payment: Decimal
+    closing_balance: Decimal
+    beginning_row: int
+    period_total_row: int
+    ending_row: int
+
+    @property
+    def calculated_closing(self) -> Decimal:
+        return self.opening_balance + self.credit + self.payment
+
+    @property
+    def difference(self) -> Decimal:
+        return self.calculated_closing - self.closing_balance
+
+    @property
+    def status(self) -> str:
+        return "PASS" if abs(self.difference) <= Decimal("0.01") else "CHECK"
 
 
 def _normalise_header(value: Any) -> str:
@@ -195,6 +242,23 @@ def _serialisable_value(value: Any) -> Any:
     return str(value)
 
 
+def _is_july_transaction(value: Any) -> bool:
+    parsed: date | None = None
+    if isinstance(value, datetime):
+        parsed = value.date()
+    elif isinstance(value, date):
+        parsed = value
+    elif isinstance(value, str):
+        text = value.strip()
+        for pattern in ("%d-%b-%Y", "%d-%b-%y", "%b %d, %Y", "%Y-%m-%d"):
+            try:
+                parsed = datetime.strptime(text, pattern).date()
+                break
+            except ValueError:
+                continue
+    return bool(parsed and parsed.month == 7)
+
+
 def _read_filtered_rows(ws) -> tuple[list[list[Any]], Decimal, Decimal]:
     data_start, mapping = _locate_data(ws)
     rows: list[list[Any]] = []
@@ -222,10 +286,11 @@ def _read_filtered_rows(ws) -> tuple[list[list[Any]], Decimal, Decimal]:
             continue
 
         if debit is not None:
+            debit = -abs(debit) if debit != 0 else Decimal("0.00")
             source_values[6] = float(debit)
             debit_total += debit
         if credit is not None:
-            credit = -abs(credit) if credit != 0 else Decimal("0.00")
+            credit = abs(credit) if credit != 0 else Decimal("0.00")
             source_values[7] = float(credit)
             credit_total += credit
 
@@ -234,6 +299,70 @@ def _read_filtered_rows(ws) -> tuple[list[list[Any]], Decimal, Decimal]:
     if not rows:
         raise ValueError("No transaction rows were found on the selected worksheet.")
     return rows, debit_total, credit_total
+
+
+def _signed_balance(debit_value: Any, credit_value: Any) -> Decimal:
+    debit = _decimal_amount(debit_value) or Decimal("0.00")
+    credit = _decimal_amount(credit_value) or Decimal("0.00")
+    return credit - debit
+
+
+def _read_balance_reconciliations(ws) -> list[_BalanceReconciliation]:
+    reconciliations: list[_BalanceReconciliation] = []
+    current_account = ""
+    current_description = ""
+    pending: dict[str, Any] | None = None
+
+    for row_number in range(1, ws.max_row + 1):
+        values = [ws.cell(row_number, column).value for column in range(1, 5)]
+        first = _normalise_header(values[0])
+        second = _normalise_header(values[1])
+
+        if first == "account":
+            current_account = _display_text(values[1])
+            current_description = _display_text(values[3])
+            continue
+
+        if first == "beginningbalanceforperiod":
+            pending = {
+                "account": current_account,
+                "description": current_description,
+                "period": _display_text(values[1]),
+                "opening_balance": _signed_balance(values[2], values[3]),
+                "credit": None,
+                "payment": None,
+                "beginning_row": row_number,
+                "period_total_row": None,
+            }
+            continue
+
+        if second == "periodtotal" and pending is not None:
+            debit = _decimal_amount(values[2]) or Decimal("0.00")
+            credit = _decimal_amount(values[3]) or Decimal("0.00")
+            pending["payment"] = -abs(debit) if debit != 0 else Decimal("0.00")
+            pending["credit"] = abs(credit) if credit != 0 else Decimal("0.00")
+            pending["period_total_row"] = row_number
+            continue
+
+        if first == "endingbalanceforperiod" and pending is not None:
+            if pending["credit"] is not None and pending["payment"] is not None:
+                reconciliations.append(
+                    _BalanceReconciliation(
+                        account=pending["account"],
+                        description=pending["description"],
+                        period=pending["period"],
+                        opening_balance=pending["opening_balance"],
+                        credit=pending["credit"],
+                        payment=pending["payment"],
+                        closing_balance=_signed_balance(values[2], values[3]),
+                        beginning_row=pending["beginning_row"],
+                        period_total_row=pending["period_total_row"],
+                        ending_row=row_number,
+                    )
+                )
+            pending = None
+
+    return reconciliations
 
 
 def _fit_columns(ws, rows: list[list[Any]]) -> None:
@@ -251,8 +380,121 @@ def _fit_columns(ws, rows: list[list[Any]]) -> None:
         ws.column_dimensions[ws.cell(1, column_number).column_letter].width = width
 
 
+def _build_balance_reconciliation_sheet(
+    workbook: Workbook,
+    reconciliations: list[_BalanceReconciliation],
+    source_path: str,
+    source_sheet: str,
+) -> None:
+    ws = workbook.create_sheet("Balance_Reconciliation")
+    ws.sheet_view.showGridLines = False
+    ws.merge_cells("A1:K1")
+    title = ws["A1"]
+    title.value = "IFMIS Balance Reconciliation"
+    title.fill = TITLE_FILL
+    title.font = Font(color="FFFFFF", bold=True, size=15)
+    title.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 28
+    for cell in ws[1]:
+        cell.fill = TITLE_FILL
+
+    pass_count = sum(item.status == "PASS" for item in reconciliations)
+    exception_count = len(reconciliations) - pass_count
+    model_status = "PASS" if reconciliations and exception_count == 0 else "CHECK"
+
+    ws.merge_cells("B3:F3")
+    ws.merge_cells("B4:F4")
+    summary_values = {
+        "A3": "Formula",
+        "B3": "Opening Balance + Credit + Payment / Debit = Closing Balance",
+        "G3": "Periods",
+        "H3": len(reconciliations),
+        "I3": "Passed",
+        "J3": pass_count,
+        "A4": "Source",
+        "B4": f"{os.path.basename(source_path)} [{source_sheet}]",
+        "G4": "Exceptions",
+        "H4": exception_count,
+        "I4": "Model Status",
+        "J4": model_status,
+    }
+    for coordinate, value in summary_values.items():
+        ws[coordinate] = value
+    for coordinate in ("A3", "G3", "I3", "A4", "G4", "I4"):
+        ws[coordinate].font = Font(bold=True, color="1F4E78")
+    ws["J4"].fill = PASS_FILL if model_status == "PASS" else CHECK_FILL
+    ws["J4"].font = Font(bold=True, color="006100" if model_status == "PASS" else "9C0006")
+
+    header_row = 6
+    for column, header in enumerate(RECONCILIATION_HEADERS, 1):
+        cell = ws.cell(header_row, column, header)
+        cell.fill = HEADER_FILL
+        cell.font = WHITE_FONT
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = Border(bottom=THIN_BLUE)
+    ws.row_dimensions[header_row].height = 34
+
+    for row_number, item in enumerate(reconciliations, header_row + 1):
+        values = (
+            item.account,
+            item.description,
+            item.period,
+            float(item.opening_balance),
+            float(item.credit),
+            float(item.payment),
+            f"=D{row_number}+E{row_number}+F{row_number}",
+            float(item.closing_balance),
+            f"=G{row_number}-H{row_number}",
+            f'=IF(ABS(I{row_number})<=0.01,"PASS","CHECK")',
+            f"{item.beginning_row} / {item.period_total_row} / {item.ending_row}",
+        )
+        for column, value in enumerate(values, 1):
+            ws.cell(row_number, column, value)
+        for column in range(4, 10):
+            ws.cell(row_number, column).number_format = AMOUNT_FORMAT
+        status_cell = ws.cell(row_number, 10)
+        status_cell.fill = PASS_FILL if item.status == "PASS" else CHECK_FILL
+        status_cell.font = Font(
+            bold=True,
+            color="006100" if item.status == "PASS" else "9C0006",
+        )
+        status_cell.alignment = Alignment(horizontal="center")
+
+    if reconciliations:
+        last_row = header_row + len(reconciliations)
+        table = Table(
+            displayName="BalanceReconciliationTable",
+            ref=f"A{header_row}:K{last_row}",
+        )
+        table.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium2",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False,
+        )
+        ws.add_table(table)
+    else:
+        last_row = header_row + 1
+        ws.merge_cells(start_row=last_row, start_column=1, end_row=last_row, end_column=11)
+        ws.cell(
+            last_row,
+            1,
+            "No IFMIS beginning, period-total, and ending balance sections were found.",
+        )
+
+    widths = (24, 45, 12, 18, 18, 18, 20, 18, 16, 12, 20)
+    for column, width in enumerate(widths, 1):
+        ws.column_dimensions[ws.cell(header_row, column).column_letter].width = width
+    ws.freeze_panes = "A7"
+    ws.auto_filter.ref = f"A{header_row}:K{last_row}" if reconciliations else None
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+
+
 def _build_output_workbook(
     rows: list[list[Any]],
+    reconciliations: list[_BalanceReconciliation],
     source_path: str,
     source_sheet: str,
 ) -> Workbook:
@@ -278,6 +520,9 @@ def _build_output_workbook(
             9,
             f'=COUNTIF($E$2:$E${data_last_row},E{row_number})',
         )
+        if _is_july_transaction(values[2]):
+            for cell in ws[row_number][:9]:
+                cell.font = JULY_REVIEW_FONT
 
     total_row = data_last_row + 1
     ws.cell(total_row, 6, "Total")
@@ -310,6 +555,12 @@ def _build_output_workbook(
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
 
+    _build_balance_reconciliation_sheet(
+        workbook,
+        reconciliations,
+        source_path,
+        source_sheet,
+    )
     workbook.properties.title = "IFMIS Transaction Filter"
     workbook.properties.subject = (
         f"Filtered transaction data from {os.path.basename(source_path)} [{source_sheet}]"
@@ -356,15 +607,20 @@ def create_filtered_workbook(
         )
         if resolved_sheet_name is None:
             raise ValueError(f"Worksheet '{sheet_name}' was not found in the source workbook.")
-        rows, debit_total, credit_total = _read_filtered_rows(
-            source_wb[resolved_sheet_name]
-        )
+        source_ws = source_wb[resolved_sheet_name]
+        rows, debit_total, credit_total = _read_filtered_rows(source_ws)
+        reconciliations = _read_balance_reconciliations(source_ws)
     finally:
         close = getattr(source_wb, "close", None)
         if callable(close):
             close()
 
-    workbook = _build_output_workbook(rows, source_path, resolved_sheet_name)
+    workbook = _build_output_workbook(
+        rows,
+        reconciliations,
+        source_path,
+        resolved_sheet_name,
+    )
     output_dir = os.path.dirname(output_path)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
@@ -388,10 +644,14 @@ def create_filtered_workbook(
             "Filter Engine completed.",
             f"Source sheet: {resolved_sheet_name}",
             f"Transaction rows retained: {len(rows):,}",
-            f"Debit total: {debit_total:,.2f}",
-            f"Credit total: {credit_total:,.2f}",
-            f"Difference: {debit_total + credit_total:,.2f}",
+            f"Payment / Debit total (negative): {debit_total:,.2f}",
+            f"Credit total (positive): {credit_total:,.2f}",
+            f"Net movement: {debit_total + credit_total:,.2f}",
+            f"Balance periods reconciled: {len(reconciliations):,}",
+            f"Balance checks passed: {sum(item.status == 'PASS' for item in reconciliations):,}",
+            f"Balance exceptions: {sum(item.status != 'PASS' for item in reconciliations):,}",
             "",
+            "Opening + Credit + Payment / Debit is checked against IFMIS Closing.",
             "Count formulas were added using Transaction Number.",
             "The original workbook was not changed.",
         )
@@ -402,5 +662,10 @@ def create_filtered_workbook(
         row_count=len(rows),
         debit_total=debit_total,
         credit_total=credit_total,
+        reconciliation_count=len(reconciliations),
+        reconciliation_pass_count=sum(item.status == "PASS" for item in reconciliations),
+        reconciliation_exception_count=sum(
+            item.status != "PASS" for item in reconciliations
+        ),
         message=message,
     )
