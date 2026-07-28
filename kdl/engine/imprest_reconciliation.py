@@ -69,17 +69,6 @@ HEADER_ALIASES = {
     },
 }
 
-KNOWN_REPORT_LABELS = {
-    "account",
-    "beginningbalanceforperiod",
-    "endofreport",
-    "endingbalanceforperiod",
-    "gokledger",
-    "ledgername",
-    "source",
-    "subledgeraccounting",
-}
-
 TITLE_FILL = PatternFill("solid", fgColor="0B5EA8")
 HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
 LABEL_FILL = PatternFill("solid", fgColor="D9EAF7")
@@ -278,32 +267,23 @@ def _read_transactions(ws) -> tuple[list[_Transaction], list[str], dict[str, int
         if not any(_display_text(value) for value in values):
             continue
 
-        first_label = _normalise_header(values[0] if values else "")
         debit = _decimal_amount(values[debit_col])
         credit = _decimal_amount(values[credit_col])
-        description = values[description_col] if description_col is not None else ""
-        transaction_number = values[transaction_col] if transaction_col is not None else ""
-        reference_text = _display_text(description) or _display_text(transaction_number)
-
-        if (
-            first_label in KNOWN_REPORT_LABELS
-            and debit is None
-            and credit is None
-            and not reference_text
-        ):
-            continue
-
-        has_other_transaction_data = any(
-            _display_text(values[mapping[name]])
-            for name in ("Source", "Category", "GL Date", "Event Class")
-            if name in mapping
-        )
-        if debit is None and credit is None and not reference_text and not has_other_transaction_data:
-            continue
-
-        identifier = _extract_identifier(description, transaction_number)
         debit_nonzero = debit is not None and debit != 0
         credit_nonzero = credit is not None and credit != 0
+
+        # Account Analysis reports repeat column headers and period/balance
+        # summaries between sections. Those rows have no transaction figure in
+        # the mapped Debit/Credit columns and must not become review items at
+        # the bottom of the reconciliation. The workbook's real output header
+        # is created separately, so this only removes source report furniture.
+        if not debit_nonzero and not credit_nonzero:
+            continue
+
+        description = values[description_col] if description_col is not None else ""
+        transaction_number = values[transaction_col] if transaction_col is not None else ""
+
+        identifier = _extract_identifier(description, transaction_number)
         if debit_nonzero:
             values[debit_col] = abs(debit)
         if credit_nonzero:
@@ -322,9 +302,6 @@ def _read_transactions(ws) -> tuple[list[_Transaction], list[str], dict[str, int
         elif credit_nonzero:
             side = "CREDIT"
             amount = abs(credit)
-        else:
-            status = "REVIEW"
-            note = "No usable Debit or Credit amount."
 
         if not identifier:
             status = "REVIEW"
