@@ -37,7 +37,7 @@ REQUIRED_SHEETS = [
 
 _SECTION_RE = re.compile(r"^\s*([1-4])\.\s+(.+?)\s*$", re.IGNORECASE)
 _DATE_AMOUNT_RE = re.compile(
-    r"(?P<date>\d{2}-[A-Z]{3}-\d{2})\s+"
+    r"(?P<date>\d{2}-[A-Z]{3}-\d{2})\b.*?"
     r"(?P<amount>\(?-?[\d,]+\.\d{2}\)?)\s*$",
     re.IGNORECASE,
 )
@@ -123,21 +123,29 @@ class ReconciliationResult:
     cashbook_outstanding_count: int
     bank_total: Decimal
     cashbook_total: Decimal
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def message(self) -> str:
-        return "\n".join(
-            [
-                "Receipt reconciliation created successfully.",
-                f"Section 2 receipts: {self.bank_count}  |  {self.bank_total:,.2f}",
-                f"Section 4 receipts: {self.cashbook_count}  |  {self.cashbook_total:,.2f}",
-                f"Exact matches: {self.exact_count}",
-                f"Probable matches: {self.probable_count}",
-                f"Bank outstanding: {self.bank_outstanding_count}",
-                f"Cash-book outstanding: {self.cashbook_outstanding_count}",
-                f"Workbook: {self.output_path}",
-            ]
-        )
+        lines = [
+            (
+                "Receipt reconciliation created with review warnings."
+                if self.warnings
+                else "Receipt reconciliation created successfully."
+            ),
+            f"Section 2 receipts: {self.bank_count}  |  {self.bank_total:,.2f}",
+            f"Section 4 receipts: {self.cashbook_count}  |  {self.cashbook_total:,.2f}",
+            f"Exact matches: {self.exact_count}",
+            f"Probable matches: {self.probable_count}",
+            f"Bank outstanding: {self.bank_outstanding_count}",
+            f"Cash-book outstanding: {self.cashbook_outstanding_count}",
+        ]
+        if self.warnings:
+            lines.append("")
+            lines.append("Review warnings:")
+            lines.extend(f"- {warning}" for warning in self.warnings)
+        lines.append(f"Workbook: {self.output_path}")
+        return "\n".join(lines)
 
 
 @dataclass
@@ -149,6 +157,7 @@ class _Metadata:
     period_from: date
     period_to: date
     printed_totals: dict[int, Decimal]
+    warnings: list[str] = field(default_factory=list)
 
 
 def normalize_reference(reference: str) -> str:
@@ -299,34 +308,39 @@ def _extract_pdf(pdf_path: str) -> tuple[_Metadata, list[Receipt], list[Receipt]
 
     for section in (2, 4):
         if not receipts[section]:
-            raise ReceiptReconciliationError(
-                f"No receipts were extracted from Section {section}."
+            metadata.warnings.append(
+                f"No receipt rows were extracted from Section {section}; "
+                "the workbook was created for manual review."
             )
         if section in detail_totals:
             if section in metadata.printed_totals and (
                 detail_totals[section] != metadata.printed_totals[section]
             ):
-                raise ReceiptReconciliationError(
-                    f"Section {section} total differs between the F.O. 30 summary "
-                    f"({metadata.printed_totals[section]:,.2f}) and detail "
-                    f"({detail_totals[section]:,.2f})."
+                metadata.warnings.append(
+                    f"Section {section} printed total differs between the F.O. 30 "
+                    f"summary ({metadata.printed_totals[section]:,.2f}) and detail "
+                    f"({detail_totals[section]:,.2f}). The summary total is used."
                 )
-            metadata.printed_totals[section] = detail_totals[section]
-        if section not in metadata.printed_totals:
-            raise ReceiptReconciliationError(
-                f"Could not find the printed total for Section {section}."
-            )
+            elif section not in metadata.printed_totals:
+                metadata.printed_totals[section] = detail_totals[section]
 
         extracted_total = sum(
             (receipt.amount for receipt in receipts[section]), Decimal("0.00")
         ).quantize(Decimal("0.01"))
+        if section not in metadata.printed_totals:
+            metadata.printed_totals[section] = extracted_total
+            metadata.warnings.append(
+                f"Section {section} printed total was not found; the extracted "
+                f"total {extracted_total:,.2f} is used as the control total."
+            )
+
         if extracted_total != metadata.printed_totals[section]:
             difference = extracted_total - metadata.printed_totals[section]
-            raise ReceiptReconciliationError(
-                f"Section {section} extraction does not reconcile to the PDF. "
-                f"Extracted {extracted_total:,.2f}; printed "
+            metadata.warnings.append(
+                f"Section {section} extraction requires review: extracted "
+                f"{extracted_total:,.2f}; printed "
                 f"{metadata.printed_totals[section]:,.2f}; difference "
-                f"{difference:,.2f}. No workbook was created."
+                f"{difference:,.2f}."
             )
 
     return metadata, receipts[2], receipts[4]
@@ -867,7 +881,25 @@ def _write_summary_sheet(
 
     months = sorted({receipt.month for receipt in bank_receipts + cashbook_receipts})
     monthly_title_row = 22
-    monthly_header_row = 23
+    if metadata.warnings:
+        warning_title_row = 22
+        _style_section_bar(ws, warning_title_row, 1, 10)
+        ws.cell(warning_title_row, 1, "EXTRACTION WARNINGS - WORKBOOK CREATED FOR REVIEW")
+        for index, warning in enumerate(metadata.warnings, start=1):
+            row_number = warning_title_row + index
+            ws.merge_cells(
+                start_row=row_number,
+                start_column=1,
+                end_row=row_number,
+                end_column=10,
+            )
+            cell = ws.cell(row_number, 1, f"• {warning}")
+            cell.fill = PatternFill("solid", fgColor=_AMBER)
+            cell.font = Font(name="Carlito", size=11, color="7F6000")
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.row_dimensions[row_number].height = 32
+        monthly_title_row = warning_title_row + len(metadata.warnings) + 2
+    monthly_header_row = monthly_title_row + 1
     _style_section_bar(ws, monthly_title_row, 1, 5)
     ws.cell(monthly_title_row, 1, "MONTHLY RECEIPT ANALYSIS - ASCENDING")
     monthly_headers = [
@@ -881,7 +913,8 @@ def _write_summary_sheet(
         ws.cell(monthly_header_row, column, header)
     _style_header(ws, monthly_header_row, 1, 5)
 
-    for row_number, month in enumerate(months, start=24):
+    monthly_data_start = monthly_header_row + 1
+    for row_number, month in enumerate(months, start=monthly_data_start):
         ws.cell(row_number, 1, month)
         ws.cell(
             row_number,
@@ -922,13 +955,18 @@ def _write_summary_sheet(
             f'\'Cashbook Outstanding\'!$B$5:$B${cash_end},"<"&EDATE($A{row_number},1))',
         )
 
-    monthly_last = 23 + len(months)
+    monthly_last = monthly_header_row + len(months)
     total_row = monthly_last + 2
     ws.cell(total_row, 1, "Total")
     for column in range(2, 6):
         letter = chr(64 + column)
-        ws.cell(column=column, row=total_row, value=f"=SUM({letter}24:{letter}{monthly_last})")
-    _style_body(ws, 24, monthly_last, 1, 5)
+        formula = (
+            f"=SUM({letter}{monthly_data_start}:{letter}{monthly_last})"
+            if months
+            else "=0"
+        )
+        ws.cell(column=column, row=total_row, value=formula)
+    _style_body(ws, monthly_data_start, monthly_last, 1, 5)
     _style_body(ws, total_row, total_row, 1, 5)
     for cell in ws[total_row]:
         if cell.column <= 5:
@@ -941,7 +979,7 @@ def _write_summary_sheet(
     for row in range(10, 18):
         ws.cell(row, 8).number_format = _CURRENCY_FORMAT
         ws.cell(row, 9).number_format = _CURRENCY_FORMAT
-    for row in range(24, monthly_last + 1):
+    for row in range(monthly_data_start, monthly_last + 1):
         ws.cell(row, 1).number_format = _MONTH_FORMAT
         ws.cell(row, 3).number_format = _CURRENCY_FORMAT
         ws.cell(row, 5).number_format = _CURRENCY_FORMAT
@@ -991,8 +1029,6 @@ def _validate_result(
     )
 
     checks = [
-        (bank_total == metadata.printed_totals[2], "Section 2 printed total"),
-        (cash_total == metadata.printed_totals[4], "Section 4 printed total"),
         (
             matched_bank_total + bank_outstanding_total == bank_total,
             "Section 2 allocation",
@@ -1169,4 +1205,5 @@ def create_receipt_reconciliation(pdf_path: str, output_path: str) -> Reconcilia
         cashbook_outstanding_count=len(cashbook_outstanding),
         bank_total=metadata.printed_totals[2],
         cashbook_total=metadata.printed_totals[4],
+        warnings=list(metadata.warnings),
     )

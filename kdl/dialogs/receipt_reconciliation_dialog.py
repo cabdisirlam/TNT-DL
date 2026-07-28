@@ -87,8 +87,8 @@ class ReceiptReconciliationDialog(QDialog):
         intro_row.addWidget(intro, 1)
         intro_row.addWidget(
             create_hint_button(
-                "Only Sections 2 and 4 are extracted. The PDF totals must reconcile "
-                "before the four-sheet Excel workbook is saved.",
+                "Only Sections 2 and 4 are extracted. Differences against printed "
+                "PDF totals are shown as review warnings and do not block the workbook.",
                 label="i",
             )
         )
@@ -129,7 +129,7 @@ class ReceiptReconciliationDialog(QDialog):
         sheets_layout.addWidget(sheets_label)
         note = QLabel(
             "Exact matches are green, probable matches are amber, and cash-book "
-            "reversals are formulas."
+            "reversals are formulas. Extraction differences appear on Summary."
         )
         note.setObjectName("DialogHint")
         note.setWordWrap(True)
@@ -197,7 +197,8 @@ class ReceiptReconciliationDialog(QDialog):
         self._output_edit.setText(output_path)
         self._result_text.setPlainText(
             f"F.O. 30 validated for account {account_number}.\n"
-            "Ready to generate the four-sheet workbook."
+            "Ready to generate the four-sheet workbook. Any control difference "
+            "will be retained as a visible review warning."
         )
         self._generate_button.setEnabled(True)
 
@@ -260,11 +261,19 @@ class ReceiptReconciliationDialog(QDialog):
         self._result_text.setPlainText(result.message)
         self._open_button.setEnabled(os.path.isfile(result.output_path))
         self._reset_generate_button()
-        QMessageBox.information(
-            self,
-            "Receipt Reconciliation",
-            "The four-sheet receipt reconciliation workbook was created successfully.",
-        )
+        if getattr(result, "warnings", None):
+            QMessageBox.warning(
+                self,
+                "Receipt Reconciliation - Review Required",
+                "The workbook was created. Review the extraction warnings on the "
+                "Summary sheet before using the reconciliation.",
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Receipt Reconciliation",
+                "The four-sheet receipt reconciliation workbook was created successfully.",
+            )
 
     def _on_failed(self, message: str):
         self._result_text.setPlainText(f"ERROR:\n{message}")

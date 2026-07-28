@@ -13,6 +13,7 @@ build/
 build_codex/
 build_release_*/
 dist/
+dist_v*/
 *.spec
 !KDL_Standard.spec
 
