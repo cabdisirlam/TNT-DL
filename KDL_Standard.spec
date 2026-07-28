@@ -9,10 +9,14 @@ a = Analysis(
     hiddenimports=['pyautogui', 'pyperclip', 'pyscreeze', 'pygetwindow', 'pymsgbox', 'pytweening', 'win32gui', 'win32con', 'win32api', 'win32com', 'win32com.client', 'pythoncom', 'pywintypes', 'openpyxl', 'pypdf', 'pynput'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['build_hooks\\standard_edition.py'],
     excludes=[
+        # Full-edition-only Imprest modules.
+        'kdl.dialogs.imprest_surrender_dialog',
+        'kdl.dialogs.imprest_old_date_dialog',
+        'kdl.engine.imprest_surrender_engine',
+        'kdl.engine.imprest_old_date_engine',
         # Optional platform-specific modules pulled by pyautogui/pynput stack.
-        # Excluding them on Windows keeps warn-KDL.txt cleaner without affecting runtime.
         'AppKit',
         'Quartz',
         'CoreFoundation',
@@ -52,7 +56,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='NT_DL_Full',
+    name='NT_DL_Standard',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -75,5 +79,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='NT_DL_Full',
+    name='NT_DL_Standard',
 )

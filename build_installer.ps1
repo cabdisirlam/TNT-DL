@@ -1,6 +1,8 @@
 param(
     [string]$Version = "",
-    [string]$AppDir = ""
+    [string]$AppDir = "",
+    [ValidateSet("Full", "Standard")]
+    [string]$Edition = "Full"
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,16 +14,27 @@ if (-not $root) {
 
 # ── Resolve app directory ──────────────────────────────────────────────────────
 if ([string]::IsNullOrWhiteSpace($AppDir)) {
-    $appDirPath = Join-Path $root "dist\NT_DL"
+    $appDirPath = Join-Path $root "dist\NT_DL_$Edition"
 } else {
     $appDirPath = $AppDir
 }
 if (-not (Test-Path $appDirPath)) {
     throw "Missing app directory: $appDirPath"
 }
-$appExePath = Join-Path $appDirPath "NT_DL.exe"
+$appExeName = "NT_DL_$Edition.exe"
+$appExePath = Join-Path $appDirPath $appExeName
 if (-not (Test-Path $appExePath)) {
-    throw "Missing NT_DL.exe in app directory: $appDirPath"
+    throw "Missing $appExeName in app directory: $appDirPath"
+}
+
+if ($Edition -eq "Full") {
+    $appName = "NT DL Full"
+    $installDir = "NT_DL_Full"
+    $appId = "{{A3F2C1D4-8B6E-4F9A-BC12-5E7D0A3F9C21}"
+} else {
+    $appName = "NT DL Standard"
+    $installDir = "NT_DL_Standard"
+    $appId = "{{4F54126B-643A-48D1-A281-7C3749DA229B}"
 }
 
 # ── Read version from kdl\__init__.py ─────────────────────────────────────────
@@ -34,6 +47,7 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     }
     $Version = $m.Groups[1].Value
 }
+$outputBase = "NT_DL-$Edition-Setup-$Version"
 
 # ── Locate Inno Setup compiler (ISCC.exe) ─────────────────────────────────────
 $isccPaths = @(
@@ -83,8 +97,13 @@ $issContent = $issContent -replace "@@VERSION@@",  $Version
 $issContent = $issContent -replace "@@APPDIR@@",   $appDirPath.TrimEnd('\')
 $issContent = $issContent -replace "@@ICONFILE@@",  $iconFile
 $issContent = $issContent -replace "@@OUTPUTDIR@@", $outputDir
+$issContent = $issContent -replace "@@APPNAME@@", $appName
+$issContent = $issContent -replace "@@EXENAME@@", $appExeName
+$issContent = $issContent -replace "@@INSTALLDIR@@", $installDir
+$issContent = $issContent -replace "@@APPID@@", $appId
+$issContent = $issContent -replace "@@OUTPUTBASE@@", $outputBase
 
-$issFile = Join-Path $env:TEMP "NT_DL_$Version.iss"
+$issFile = Join-Path $env:TEMP "NT_DL_${Edition}_$Version.iss"
 Set-Content -Path $issFile -Value $issContent -Encoding UTF8
 
 # ── Compile with Inno Setup ────────────────────────────────────────────────────
@@ -96,14 +115,14 @@ if ($LASTEXITCODE -ne 0) {
 Remove-Item $issFile -Force -ErrorAction SilentlyContinue
 
 # ── Verify output ──────────────────────────────────────────────────────────────
-$finalExe = Join-Path $outputDir "NT_DL-Setup-$Version.exe"
+$finalExe = Join-Path $outputDir "$outputBase.exe"
 if (-not (Test-Path $finalExe)) {
     throw "Installer build completed but output EXE not found: $finalExe"
 }
 
 # ── Clean up old setup artifacts (folders and zips from old bootstrap approach) ─
 $staleItems = Get-ChildItem -Path $outputDir -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -like "NT_DL-Setup-*" -and $_.FullName -ne $finalExe }
+    Where-Object { $_.Name -like "NT_DL-$Edition-Setup-*" -and $_.FullName -ne $finalExe }
 foreach ($item in $staleItems) {
     if ($item.PSIsContainer) {
         Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
@@ -113,9 +132,4 @@ foreach ($item in $staleItems) {
 }
 
 # ── Clean up legacy release files ─────────────────────────────────────────────
-foreach ($legacy in @("dist\NT_DL.exe", "dist\NT_DL_app.exe")) {
-    $lp = Join-Path $root $legacy
-    if (Test-Path $lp) { Remove-Item -LiteralPath $lp -Force }
-}
-
 Write-Output "Installer created: $finalExe"

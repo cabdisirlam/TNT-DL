@@ -1,20 +1,23 @@
-#define AppName    "NT DL Multipurpose Tool"
-#define AppExeName "NT_DL.exe"
+#define AppName    "@@APPNAME@@"
+#define AppExeName "@@EXENAME@@"
 #define AppPublisher "NT DL"
 #define AppVersion "@@VERSION@@"
 #define AppDir     "@@APPDIR@@"
 #define IconFile   "@@ICONFILE@@"
+#define InstallDir "@@INSTALLDIR@@"
+#define AppIdValue "@@APPID@@"
+#define OutputBase "@@OUTPUTBASE@@"
 
 [Setup]
-AppId={{A3F2C1D4-8B6E-4F9A-BC12-5E7D0A3F9C21}
+AppId={#AppIdValue}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\NT_DL
+DefaultDirName={autopf}\{#InstallDir}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=@@OUTPUTDIR@@
-OutputBaseFilename=NT_DL-Setup-{#AppVersion}
+OutputBaseFilename={#OutputBase}
 SetupIconFile={#IconFile}
 Compression=lzma2/ultra64
 SolidCompression=yes

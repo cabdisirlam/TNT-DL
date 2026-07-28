@@ -1,16 +1,33 @@
 # Windows Installer Packaging
 
-`dist/NT_DL` is the actual app `onedir` build.
+TNT DL is released in two side-by-side editions:
 
-`build_installer.ps1` now creates the installer as a folder-based package:
+- **NT DL Full** — includes Imprest Surrender and Imprest Old Date.
+- **NT DL Standard** — excludes both Imprest engines and their UI controls.
 
-- `dist/NT_DL-Setup-<version>/`
-- `dist/NT_DL-Setup-<version>.zip`
+Both editions include Receipt Reconciliation.
 
-The setup EXE lives inside that installer folder. This avoids the old top-level self-extracting bootstrap EXE pattern, which could behave differently across machines because it was a single-file wrapper around the real `onedir` payload.
+## Build application folders
 
-Release guidance:
+```powershell
+python -m PyInstaller --noconfirm --workpath build_release_full --distpath dist KDL.spec
+python -m PyInstaller --noconfirm --workpath build_release_standard --distpath dist KDL_Standard.spec
+```
 
-- Preferred: distribute `NT_DL-Setup-<version>.zip`
-- After extraction, run `NT_DL-Setup-<version>\\NT_DL-Setup-<version>.exe`
-- Installed app target remains `%LOCALAPPDATA%\\Programs\\NT_DL`
+The resulting application folders are:
+
+- `dist/NT_DL_Full/NT_DL_Full.exe`
+- `dist/NT_DL_Standard/NT_DL_Standard.exe`
+
+## Build installers
+
+```powershell
+.\build_installer.ps1 -Edition Full
+.\build_installer.ps1 -Edition Standard
+```
+
+The installers use separate application IDs and install directories, so both
+editions can be installed on the same computer:
+
+- `dist/NT_DL-Full-Setup-<version>.exe`
+- `dist/NT_DL-Standard-Setup-<version>.exe`

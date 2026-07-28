@@ -21,7 +21,7 @@ from kdl.main_window import MainWindow
 from kdl.window.window_manager import WindowManager
 
 
-_SINGLE_INSTANCE_MUTEX = "Local\\NT_DL_SingleInstance"
+_SINGLE_INSTANCE_MUTEX = f"Local\\{__app_name__}_SingleInstance"
 _ERROR_ALREADY_EXISTS = 183
 _SW_RESTORE = 9
 
@@ -62,7 +62,11 @@ def create_splash_pixmap():
 
     painter.setPen(QColor("#FFFFFF"))
     painter.setFont(QFont("Segoe UI", 10, QFont.Bold))
-    painter.drawText(QRect(18, 266, 184, 34), Qt.AlignLeft | Qt.AlignVCenter, "NT DL Multipurpose Tool")
+    painter.drawText(
+        QRect(18, 266, 184, 34),
+        Qt.AlignLeft | Qt.AlignVCenter,
+        __display_name__,
+    )
     painter.setFont(QFont("Segoe UI", 9))
     painter.drawText(QRect(18, 294, 184, 22), Qt.AlignLeft | Qt.AlignVCenter, "")
 
@@ -70,7 +74,11 @@ def create_splash_pixmap():
     right_x = 246
     painter.setPen(QColor("#FF2D2D"))
     painter.setFont(QFont("Segoe UI", 34, QFont.Bold))
-    painter.drawText(QRect(right_x, 30, 490, 56), Qt.AlignLeft | Qt.AlignVCenter, "NT DL")
+    painter.drawText(
+        QRect(right_x, 30, 490, 56),
+        Qt.AlignLeft | Qt.AlignVCenter,
+        __display_name__,
+    )
 
     painter.setPen(QColor("#FFFFFF"))
     painter.setFont(QFont("Segoe UI", 22, QFont.Bold))

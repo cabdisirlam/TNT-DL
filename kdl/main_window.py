@@ -20,7 +20,7 @@ from PySide6.QtGui import QAction, QFont, QKeySequence, QColor, QIcon, QGuiAppli
 
 from kdl.spreadsheet_widget import SpreadsheetWidget
 from kdl.config_store import load_settings, save_settings
-from kdl import __display_name__, __version__
+from kdl import IMPREST_ENABLED, __display_name__, __version__
 from kdl.dialogs.dialog_sizing import fit_dialog_to_screen
 from kdl.dialogs.load_settings_dialog import LoadSettingsDialog, END_OF_ROW_ACTIONS, LOAD_MODES
 from kdl.dialogs.shortcuts_dialog import ShortcutsDialog
@@ -54,7 +54,7 @@ COMMAND_GROUPS = [
 ]
 
 LOAD_DEFAULTS_VERSION = 9
-VALID_LOAD_MODES = {"per_cell", "per_row", "fast_send", "imprest_surrender", "imprest_old_date"}
+VALID_LOAD_MODES = {mode for _, mode in LOAD_MODES}
 LEGACY_DEFAULT_SPEED_DELAYS = {0.01, 0.05, 0.1, 0.12}
 TABLE_FORMAT_HEADERS = [
     "Line",
@@ -664,6 +664,10 @@ class MainWindow(QMainWindow):
         stmt_conv_action.triggered.connect(self._open_statement_converter)
         tools_menu.addAction(stmt_conv_action)
 
+        receipt_recon_action = QAction("&Receipt Reconciliation...", self)
+        receipt_recon_action.triggered.connect(self._open_receipt_reconciliation)
+        tools_menu.addAction(receipt_recon_action)
+
         report_action = QAction("&Generate IFMIS Financial Statements...", self)
         report_action.triggered.connect(self._open_financial_report)
         tools_menu.addAction(report_action)
@@ -672,13 +676,14 @@ class MainWindow(QMainWindow):
         budget_action.triggered.connect(self._open_budget)
         tools_menu.addAction(budget_action)
 
-        imprest_action = QAction("&Imprest Surrender AP Loader...", self)
-        imprest_action.triggered.connect(self._open_imprest_surrender)
-        tools_menu.addAction(imprest_action)
+        if IMPREST_ENABLED:
+            imprest_action = QAction("&Imprest Surrender AP Loader...", self)
+            imprest_action.triggered.connect(self._open_imprest_surrender)
+            tools_menu.addAction(imprest_action)
 
-        imprest_old_date_action = QAction("Imprest &Old Date AP Loader...", self)
-        imprest_old_date_action.triggered.connect(self._open_imprest_old_date)
-        tools_menu.addAction(imprest_old_date_action)
+            imprest_old_date_action = QAction("Imprest &Old Date AP Loader...", self)
+            imprest_old_date_action.triggered.connect(self._open_imprest_old_date)
+            tools_menu.addAction(imprest_old_date_action)
 
         tools_menu.addSeparator()
 
@@ -875,6 +880,17 @@ class MainWindow(QMainWindow):
         self.statement_btn.setToolTip("Bank Statement Converter")
         toolbar.addAction(self.statement_btn)
 
+        self.receipt_recon_btn = QAction(
+            self._icon("ic_receipt_recon.svg"),
+            "Receipt Recon",
+            self,
+            triggered=self._open_receipt_reconciliation,
+        )
+        self.receipt_recon_btn.setToolTip(
+            "Receipt Reconciliation - F.O. 30 PDF to Excel"
+        )
+        toolbar.addAction(self.receipt_recon_btn)
+
         self.report_btn = QAction(
             self._icon("ic_report.svg"),
             "IFMIS Report",
@@ -893,14 +909,16 @@ class MainWindow(QMainWindow):
         self.budget_btn.setToolTip("GOK IFMIS Budget Processor")
         toolbar.addAction(self.budget_btn)
 
-        self.imprest_btn = QAction(
-            self._icon("ic_imprest.svg"),
-            "Imprest Surrender",
-            self,
-            triggered=self._open_imprest_surrender,
-        )
-        self.imprest_btn.setToolTip("Imprest Surrender AP Invoice Loader")
-        toolbar.addAction(self.imprest_btn)
+        self.imprest_btn = None
+        if IMPREST_ENABLED:
+            self.imprest_btn = QAction(
+                self._icon("ic_imprest.svg"),
+                "Imprest Surrender",
+                self,
+                triggered=self._open_imprest_surrender,
+            )
+            self.imprest_btn.setToolTip("Imprest Surrender AP Invoice Loader")
+            toolbar.addAction(self.imprest_btn)
 
         self.history_btn = QAction(
             self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
@@ -1761,6 +1779,14 @@ class MainWindow(QMainWindow):
         from kdl.dialogs.statement_converter_dialog import StatementConverterDialog
         dlg = StatementConverterDialog(self)
         dlg.load_into_grid.connect(self._load_statement_output_into_grid)
+        dlg.exec()
+
+    def _open_receipt_reconciliation(self):
+        from kdl.dialogs.receipt_reconciliation_dialog import (
+            ReceiptReconciliationDialog,
+        )
+
+        dlg = ReceiptReconciliationDialog(self)
         dlg.exec()
 
     def _open_financial_report(self):
@@ -3016,9 +3042,11 @@ class MainWindow(QMainWindow):
         style_action(self.pause_btn, "#D97706", "#111827", "#92400E")
         style_action(self.step_btn, "#2563EB", "#FFFFFF", "#1E3A8A")
         style_action(self.statement_btn, "#2563EB", "#FFFFFF", "#1D4ED8")
+        style_action(self.receipt_recon_btn, "#7C3AED", "#FFFFFF", "#5B21B6")
         style_action(self.report_btn, "#0F766E", "#FFFFFF", "#115E59")
         style_action(self.budget_btn, "#C77A11", "#FFFFFF", "#9A5A09")
-        style_action(self.imprest_btn, "#0891B2", "#FFFFFF", "#0E7490")
+        if self.imprest_btn is not None:
+            style_action(self.imprest_btn, "#0891B2", "#FFFFFF", "#0E7490")
         style_action(self.rec_btn, "#BE123C", "#FFFFFF", "#881337")
         style_action(self.convert_table_btn, "#0F766E", "#FFFFFF", "#115E59")
         style_action(self.convert_cell_btn, "#0EA5E9", "#0F172A", "#0369A1")
@@ -3749,6 +3777,20 @@ class MainWindow(QMainWindow):
 
 
     def _show_how_to(self):
+        imprest_mode_help = ""
+        imprest_tool_help = ""
+        if IMPREST_ENABLED:
+            imprest_mode_help = (
+                "<tr><td><b>Imprest Surrender</b></td><td>Specialised AP invoice "
+                "macro for IFMIS imprest surrender</td></tr>"
+                "<tr><td><b>Imprest Old Date</b></td><td>Same as Imprest Surrender "
+                "but presses Enter after Invoice Date to dismiss the prior-period "
+                "dialog</td></tr>"
+            )
+            imprest_tool_help = (
+                "<li><b>Imprest Loaders</b> — dedicated workflow for AP imprest "
+                "invoice bulk entry</li>"
+            )
         self._show_help_dialog(
             f"How to Use {__display_name__}",
             "<h3>Quick Start Guide</h3>"
@@ -3776,16 +3818,15 @@ class MainWindow(QMainWindow):
             "<tr><td><b>Per Cell</b></td><td>Sends each cell individually with a delay between cells</td></tr>"
             "<tr><td><b>Per Row</b></td><td>Sends a full row as a form entry with end-of-row action</td></tr>"
             "<tr><td><b>Per Row Fast Send</b></td><td>Optimised row mode using direct Win32 SendInput</td></tr>"
-            "<tr><td><b>Imprest Surrender</b></td><td>Specialised AP invoice macro for IFMIS imprest surrender</td></tr>"
-            "<tr><td><b>Imprest Old Date</b></td><td>Same as Imprest Surrender but presses Enter after Invoice Date "
-            "to dismiss the prior-period dialog</td></tr>"
+            f"{imprest_mode_help}"
             "</table>"
             "<h3>Tools</h3>"
             "<ul>"
             "<li><b>Bank Statement Converter</b> — converts bank Excel/HTML statements to IFMIS GL posting format</li>"
+            "<li><b>Receipt Reconciliation</b> — converts an F.O. 30 PDF into the four-sheet receipt reconciliation workbook</li>"
             "<li><b>IFMIS Financial Statements</b> — generates 5-sheet statements from a Notes worksheet</li>"
             "<li><b>Budget Processor</b> — reformats IFMIS budget sheets with GOK styling and formulas</li>"
-            "<li><b>Imprest Loaders</b> — dedicated workflow for AP imprest invoice bulk entry</li>"
+            f"{imprest_tool_help}"
             "<li><b>Macro Recorder</b> — capture keystrokes as KDL syntax and insert into cells</li>"
             "</ul>",
         )

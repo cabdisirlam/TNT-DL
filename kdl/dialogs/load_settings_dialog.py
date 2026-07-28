@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from kdl import __display_name__
+from kdl import IMPREST_ENABLED, __display_name__
 from kdl.dialogs.dialog_sizing import create_hint_button, fit_dialog_to_screen
 from kdl.styles import TEXT_MUTED, accent_button_qss, dialog_qss
 from kdl.window.window_manager import WindowManager
@@ -49,9 +49,17 @@ LOAD_MODES = [
     ("Per Cell", "per_cell"),
     ("Per Row", "per_row"),
     ("Per Row (Fast Send)", "fast_send"),
-    ("Imprest  (Alt+2 / Alt+D)", "imprest_surrender"),
-    ("Imprest Old Date  (Alt+2 / Alt+D + Enter on dates)", "imprest_old_date"),
 ]
+if IMPREST_ENABLED:
+    LOAD_MODES.extend(
+        [
+            ("Imprest  (Alt+2 / Alt+D)", "imprest_surrender"),
+            (
+                "Imprest Old Date  (Alt+2 / Alt+D + Enter on dates)",
+                "imprest_old_date",
+            ),
+        ]
+    )
 
 
 class LoadSettingsDialog(QDialog):
@@ -202,16 +210,22 @@ class LoadSettingsDialog(QDialog):
         self.radio_fast_send = QRadioButton("Fast Send")
         self.radio_fast_send.setToolTip(LOAD_MODES[2][0])
         self.radio_imprest = QRadioButton("Imprest")
-        self.radio_imprest.setToolTip(LOAD_MODES[3][0])
+        self.radio_imprest.setToolTip("Imprest  (Alt+2 / Alt+D)")
         self.radio_imprest_old_date = QRadioButton("Imprest Old Date")
-        self.radio_imprest_old_date.setToolTip(LOAD_MODES[4][0])
+        self.radio_imprest_old_date.setToolTip(
+            "Imprest Old Date  (Alt+2 / Alt+D + Enter on dates)"
+        )
         self.radio_per_row.setChecked(True)
 
         mg.addWidget(self.radio_per_cell, 0, 0)
         mg.addWidget(self.radio_per_row, 0, 1)
         mg.addWidget(self.radio_fast_send, 1, 0)
-        mg.addWidget(self.radio_imprest, 1, 1)
-        mg.addWidget(self.radio_imprest_old_date, 2, 0, 1, 2)
+        if IMPREST_ENABLED:
+            mg.addWidget(self.radio_imprest, 1, 1)
+            mg.addWidget(self.radio_imprest_old_date, 2, 0, 1, 2)
+        else:
+            self.radio_imprest.setVisible(False)
+            self.radio_imprest_old_date.setVisible(False)
 
         mg.addWidget(QLabel("After each row:"), 3, 0)
         self.eor_combo = QComboBox()
