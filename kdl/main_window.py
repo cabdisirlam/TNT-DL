@@ -3094,18 +3094,18 @@ class MainWindow(QMainWindow):
         style_action(self.step_btn, "#2563EB", "#FFFFFF", "#1E3A8A")
         style_action(self.statement_btn, "#2563EB", "#FFFFFF", "#1D4ED8")
         if self.receipt_recon_btn is not None:
-            style_action(self.receipt_recon_btn, "#7C3AED", "#FFFFFF", "#5B21B6")
+            style_action(self.receipt_recon_btn, "#0B5EA8", "#FFFFFF", "#17365D")
         if self.imprest_recon_btn is not None:
-            style_action(self.imprest_recon_btn, "#0891B2", "#FFFFFF", "#0E7490")
+            style_action(self.imprest_recon_btn, "#0F766E", "#FFFFFF", "#115E59")
         if self.filter_engine_btn is not None:
-            style_action(self.filter_engine_btn, "#4F46E5", "#FFFFFF", "#3730A3")
+            style_action(self.filter_engine_btn, "#0369A1", "#FFFFFF", "#075985")
         if self.report_btn is not None:
             style_action(self.report_btn, "#0F766E", "#FFFFFF", "#115E59")
         if self.budget_btn is not None:
             style_action(self.budget_btn, "#C77A11", "#FFFFFF", "#9A5A09")
         if self.imprest_btn is not None:
             style_action(self.imprest_btn, "#0891B2", "#FFFFFF", "#0E7490")
-        style_action(self.rec_btn, "#BE123C", "#FFFFFF", "#881337")
+        style_action(self.rec_btn, "#B91C1C", "#FFFFFF", "#7F1D1D")
         style_action(self.convert_table_btn, "#0F766E", "#FFFFFF", "#115E59")
         style_action(self.convert_cell_btn, "#0EA5E9", "#0F172A", "#0369A1")
 
