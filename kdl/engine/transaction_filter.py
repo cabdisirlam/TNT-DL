@@ -35,8 +35,8 @@ RECONCILIATION_HEADERS = (
     "Description",
     "Period",
     "Opening Balance",
+    "Debit",
     "Credit",
-    "Payment / Debit",
     "Calculated Closing",
     "IFMIS Closing",
     "Difference",
@@ -119,8 +119,8 @@ class _BalanceReconciliation:
     description: str
     period: str
     opening_balance: Decimal
+    debit: Decimal
     credit: Decimal
-    payment: Decimal
     closing_balance: Decimal
     beginning_row: int
     period_total_row: int
@@ -128,7 +128,7 @@ class _BalanceReconciliation:
 
     @property
     def calculated_closing(self) -> Decimal:
-        return self.opening_balance + self.credit + self.payment
+        return self.opening_balance + self.debit + self.credit
 
     @property
     def difference(self) -> Decimal:
@@ -329,8 +329,8 @@ def _read_balance_reconciliations(ws) -> list[_BalanceReconciliation]:
                 "description": current_description,
                 "period": _display_text(values[1]),
                 "opening_balance": _signed_balance(values[2], values[3]),
+                "debit": None,
                 "credit": None,
-                "payment": None,
                 "beginning_row": row_number,
                 "period_total_row": None,
             }
@@ -339,21 +339,21 @@ def _read_balance_reconciliations(ws) -> list[_BalanceReconciliation]:
         if second == "periodtotal" and pending is not None:
             debit = _decimal_amount(values[2]) or Decimal("0.00")
             credit = _decimal_amount(values[3]) or Decimal("0.00")
-            pending["payment"] = -abs(debit) if debit != 0 else Decimal("0.00")
+            pending["debit"] = -abs(debit) if debit != 0 else Decimal("0.00")
             pending["credit"] = abs(credit) if credit != 0 else Decimal("0.00")
             pending["period_total_row"] = row_number
             continue
 
         if first == "endingbalanceforperiod" and pending is not None:
-            if pending["credit"] is not None and pending["payment"] is not None:
+            if pending["debit"] is not None and pending["credit"] is not None:
                 reconciliations.append(
                     _BalanceReconciliation(
                         account=pending["account"],
                         description=pending["description"],
                         period=pending["period"],
                         opening_balance=pending["opening_balance"],
+                        debit=pending["debit"],
                         credit=pending["credit"],
-                        payment=pending["payment"],
                         closing_balance=_signed_balance(values[2], values[3]),
                         beginning_row=pending["beginning_row"],
                         period_total_row=pending["period_total_row"],
@@ -406,7 +406,7 @@ def _build_balance_reconciliation_sheet(
     ws.merge_cells("B4:F4")
     summary_values = {
         "A3": "Formula",
-        "B3": "Opening Balance + Credit + Payment / Debit = Closing Balance",
+        "B3": "Opening Balance + Debit + Credit = Closing Balance",
         "G3": "Periods",
         "H3": len(reconciliations),
         "I3": "Passed",
@@ -440,8 +440,8 @@ def _build_balance_reconciliation_sheet(
             item.description,
             item.period,
             float(item.opening_balance),
+            float(item.debit),
             float(item.credit),
-            float(item.payment),
             f"=D{row_number}+E{row_number}+F{row_number}",
             float(item.closing_balance),
             f"=G{row_number}-H{row_number}",
@@ -644,14 +644,14 @@ def create_filtered_workbook(
             "Filter Engine completed.",
             f"Source sheet: {resolved_sheet_name}",
             f"Transaction rows retained: {len(rows):,}",
-            f"Payment / Debit total (negative): {debit_total:,.2f}",
+            f"Debit total (negative): {debit_total:,.2f}",
             f"Credit total (positive): {credit_total:,.2f}",
             f"Net movement: {debit_total + credit_total:,.2f}",
             f"Balance periods reconciled: {len(reconciliations):,}",
             f"Balance checks passed: {sum(item.status == 'PASS' for item in reconciliations):,}",
             f"Balance exceptions: {sum(item.status != 'PASS' for item in reconciliations):,}",
             "",
-            "Opening + Credit + Payment / Debit is checked against IFMIS Closing.",
+            "Opening + Debit + Credit is checked against IFMIS Closing.",
             "Count formulas were added using Transaction Number.",
             "The original workbook was not changed.",
         )

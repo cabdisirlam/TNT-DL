@@ -134,8 +134,9 @@ class TransactionFilterDialog(QDialog):
         intro_row.addWidget(intro, 1)
         intro_row.addWidget(
             create_hint_button(
-                "The engine standardizes Source through Credit, makes Debit/Payment "
-                "negative and Credit positive, and checks opening + credit + payment "
+                "The engine standardizes Source through Credit, keeps values in their "
+                "original columns, makes Debit negative and Credit positive, and checks "
+                "opening + debit + credit "
                 "against closing. "
                 "It does not use either Imprest loading engine.",
                 label="i",
@@ -187,7 +188,7 @@ class TransactionFilterDialog(QDialog):
         workbook_layout = QVBoxLayout(workbook_group)
         workbook_layout.addWidget(QLabel("Filtered_Data • Balance_Reconciliation"))
         note = QLabel(
-            "Debit/Payment values are negative, credits are positive, totals and "
+            "Debit values are negative, credits are positive, totals and "
             "Count are formula-driven, and balance periods are reconciled."
         )
         note.setObjectName("DialogHint")
